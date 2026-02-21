@@ -49,6 +49,7 @@ export default function EpicCycleDialog() {
   const epics = useStore((state) => state.epics)
   const stories = useStore((state) => state.stories)
   const fullCycle = useStore((state) => state.fullCycle)
+  const chatThreads = useStore((state) => state.chatThreads)
   const setSelectedChatAgent = useStore((state) => state.setSelectedChatAgent)
   const setViewMode = useStore((state) => state.setViewMode)
 
@@ -120,8 +121,12 @@ export default function EpicCycleDialog() {
 
   const elapsedTime = epicCycle.startTime ? Date.now() - epicCycle.startTime : 0
 
+  // Check if any agent is busy with a chat interaction
+  const isAnyAgentBusy = Object.values(chatThreads).some(t => t?.isTyping)
+
   const handleStart = () => {
     if (!selectedEpicId) return
+    if (fullCycle.isRunning || isAnyAgentBusy) return
     const selectedStories = eligibleStories.slice(0, effectiveCount)
     const storyIds = selectedStories.map((s) => s.id)
     startEpicCycle(selectedEpicId, storyIds)
@@ -414,7 +419,7 @@ export default function EpicCycleDialog() {
               startIcon={<PlayArrowIcon />}
               variant="contained"
               color="primary"
-              disabled={isRunningOnDifferentEpic}
+              disabled={isRunningOnDifferentEpic || fullCycle.isRunning || isAnyAgentBusy}
             >
               Start ({effectiveCount} {effectiveCount === 1 ? 'story' : 'stories'})
             </Button>

@@ -53,6 +53,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
 
   const { getNextSteps, getAgent } = useWorkflow()
   const { fullCycle, start: startFullCycle } = useFullCycle()
+  const epicCycle = useStore((state) => state.epicCycle)
 
   // Get effective status (may be overridden to 'human-review' at app level)
   const effectiveStatus = getEffectiveStatus(story)
@@ -314,9 +315,19 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
     startFullCycle(story.id)
   }
 
-  // Check if full cycle can be started (available from any status except done)
-  const canStartFullCycle = toolSupportsHeadless && effectiveStatus !== 'done' && developerMode !== 'human'
+  // Full Cycle section visibility (always show when conditions met)
+  const showFullCycleSection = toolSupportsHeadless && effectiveStatus !== 'done' && developerMode !== 'human'
   const isFullCycleRunning = fullCycle.isRunning && fullCycle.storyId === story.id
+
+  // Determine why the button is disabled (null = not disabled)
+  const isAnyAgentBusy = Object.values(chatThreads).some(t => t?.isTyping)
+  const fullCycleBusyReason = fullCycle.isRunning
+    ? (isFullCycleRunning ? null : 'Another story full cycle is running')
+    : epicCycle.isRunning
+      ? 'Epic cycle automation is running'
+      : isAnyAgentBusy
+        ? 'An agent is currently busy'
+        : null
 
   return (
     <>
@@ -576,8 +587,8 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
         </Box>
 
         {/* Full Cycle Automation Button - Only for backlog/ready-for-dev with headless support */}
-        {canStartFullCycle && (
-          <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider', bgcolor: 'primary.lighter' }}>
+        {showFullCycleSection && (
+          <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider', bgcolor: 'primary.lighter', opacity: fullCycleBusyReason ? 0.6 : 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <RocketLaunchIcon sx={{ fontSize: 18, color: 'primary.main' }} />
               <Box sx={{ flex: 1 }}>
@@ -585,21 +596,27 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
                   Full Cycle Automation
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {effectiveStatus === 'backlog' || effectiveStatus === 'ready-for-dev'
-                    ? 'Create branch, implement, review, and complete'
-                    : 'Continue with review and complete remaining steps'}
+                  {fullCycleBusyReason
+                    ? fullCycleBusyReason
+                    : effectiveStatus === 'backlog' || effectiveStatus === 'ready-for-dev'
+                      ? 'Create branch, implement, review, and complete'
+                      : 'Continue with review and complete remaining steps'}
                 </Typography>
               </Box>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={handleStartFullCycle}
-                disabled={fullCycle.isRunning}
-                startIcon={isFullCycleRunning ? <CircularProgress size={12} color="inherit" /> : <RocketLaunchIcon />}
-                sx={{ fontSize: '0.7rem', py: 0.5, px: 1.5 }}
-              >
-                {isFullCycleRunning ? 'Running...' : 'Run'}
-              </Button>
+              <Tooltip title={fullCycleBusyReason || ''}>
+                <span>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    onClick={handleStartFullCycle}
+                    disabled={fullCycle.isRunning || !!fullCycleBusyReason}
+                    startIcon={isFullCycleRunning ? <CircularProgress size={12} color="inherit" /> : <RocketLaunchIcon />}
+                    sx={{ fontSize: '0.7rem', py: 0.5, px: 1.5 }}
+                  >
+                    {isFullCycleRunning ? 'Running...' : 'Run'}
+                  </Button>
+                </span>
+              </Tooltip>
             </Box>
           </Box>
         )}

@@ -2,7 +2,6 @@ import { useMemo, useState, useEffect } from 'react'
 import { Box, Typography, Tooltip, IconButton, Chip, CircularProgress } from '@mui/material'
 import CircleIcon from '@mui/icons-material/Circle'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
-import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
 import DownloadIcon from '@mui/icons-material/Download'
 import InstallDesktopIcon from '@mui/icons-material/InstallDesktop'
@@ -54,9 +53,6 @@ export default function StatusBar() {
   const lastRefreshed = useStore((state) => state.lastRefreshed)
   const isWatching = useStore((state) => state.isWatching)
   const setHelpPanelOpen = useStore((state) => state.setHelpPanelOpen)
-  const fullCycle = useStore((state) => state.fullCycle)
-  const setFullCycleDialogOpen = useStore((state) => state.setFullCycleDialogOpen)
-  const setFullCycleMinimized = useStore((state) => state.setFullCycleMinimized)
   const projectCostTotal = useStore((state) => state.projectCostTotal)
   const developerMode = useStore((state) => state.developerMode)
 
@@ -157,35 +153,6 @@ export default function StatusBar() {
             {developerMode === 'human' ? 'Manual Dev' : 'AI Driven'}
           </Typography>
         </Tooltip>
-
-        {/* Full Cycle Progress Indicator (when minimized) */}
-        {fullCycle.isRunning && fullCycle.minimized && (
-          <Tooltip title={`Full Cycle: ${fullCycle.stepName} (${fullCycle.currentStep + 1}/${fullCycle.totalSteps})`}>
-            <Chip
-              size="small"
-              icon={<CircularProgress size={12} color="inherit" />}
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <RocketLaunchIcon sx={{ fontSize: 12 }} />
-                  <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                    {fullCycle.currentStep + 1}/{fullCycle.totalSteps}
-                  </Typography>
-                </Box>
-              }
-              onClick={() => {
-                setFullCycleMinimized(false)
-                setFullCycleDialogOpen(true)
-              }}
-              color="primary"
-              sx={{
-                cursor: 'pointer',
-                height: 20,
-                '& .MuiChip-icon': { ml: 0.5 },
-                '& .MuiChip-label': { px: 0.5 }
-              }}
-            />
-          </Tooltip>
-        )}
 
         {/* Story counts by status */}
         {statusDisplay.length > 0 && (

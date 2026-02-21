@@ -11,9 +11,10 @@ interface ChatInputProps {
   onCancel?: () => void
   disabled?: boolean
   agentId: string
+  busyReason?: string
 }
 
-export default function ChatInput({ onSend, onCancel, disabled = false, agentId }: ChatInputProps) {
+export default function ChatInput({ onSend, onCancel, disabled = false, agentId, busyReason }: ChatInputProps) {
   const [message, setMessage] = useState('')
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -131,7 +132,7 @@ export default function ChatInput({ onSend, onCancel, disabled = false, agentId 
           multiline
           maxRows={6}
           fullWidth
-          placeholder="Type a message or select a command..."
+          placeholder={busyReason || "Type a message or select a command..."}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}

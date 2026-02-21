@@ -18,6 +18,7 @@ import SportsEsportsIcon from '@mui/icons-material/SportsEsports'
 import HistoryIcon from '@mui/icons-material/History'
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import CircularProgress from '@mui/material/CircularProgress'
 import DescriptionIcon from '@mui/icons-material/Description'
 import SearchBar from '../SearchBar/SearchBar'
 import EpicFilter from '../EpicFilter/EpicFilter'
@@ -47,6 +48,9 @@ export default function Header() {
   const stories = useStore((state) => state.stories)
   const epicCycle = useStore((state) => state.epicCycle)
   const setEpicCycleDialogOpen = useStore((state) => state.setEpicCycleDialogOpen)
+  const fullCycle = useStore((state) => state.fullCycle)
+  const setFullCycleDialogOpen = useStore((state) => state.setFullCycleDialogOpen)
+  const setFullCycleMinimized = useStore((state) => state.setFullCycleMinimized)
   const setProjectWorkflowsDialogOpen = useStore((state) => state.setProjectWorkflowsDialogOpen)
   const scannedWorkflowConfig = useStore((state) => state.scannedWorkflowConfig)
   const developerMode = useStore((state) => state.developerMode)
@@ -184,24 +188,85 @@ export default function Header() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <SearchBar />
             <EpicFilter />
-            {showRunEpic && (
-              <Tooltip title={epicCycle.isRunning ? 'Epic cycle running...' : backlogCount > 0 ? `Run Epic (${backlogCount} backlog)` : 'Epic Cycle'}>
+            {showRunEpic && !epicCycle.isRunning && (
+              <Tooltip title={backlogCount > 0 ? `Run Epic (${backlogCount} backlog)` : 'Epic Cycle'}>
                 <IconButton
                   onClick={() => setEpicCycleDialogOpen(true)}
                   size="small"
-                  sx={{
-                    color: epicCycle.isRunning ? 'primary.main' : 'text.secondary',
-                    ...(epicCycle.isRunning && {
-                      animation: 'pulse 1.5s ease-in-out infinite',
-                      '@keyframes pulse': {
-                        '0%, 100%': { opacity: 1 },
-                        '50%': { opacity: 0.5 }
-                      }
-                    })
-                  }}
+                  sx={{ color: 'text.secondary' }}
                 >
                   <RocketLaunchIcon fontSize="small" />
                 </IconButton>
+              </Tooltip>
+            )}
+            {epicCycle.isRunning && (() => {
+              const currentStoryId = epicCycle.storyQueue[epicCycle.currentStoryIndex]
+              const currentStory = currentStoryId ? stories.find(s => s.id === currentStoryId) : null
+              const completedCount = epicCycle.storyStatuses.filter(s => s === 'completed').length
+              const totalCount = epicCycle.storyQueue.length
+              // Get agent activity from whichever chatThread is currently typing
+              const activeThread = Object.values(chatThreads).find(t => t?.isTyping)
+              const agentActivity = activeThread?.thinkingActivity
+              const stepInfo = fullCycle.isRunning ? fullCycle.stepName : 'Preparing...'
+              return (
+                <Tooltip title={`Epic Cycle: ${currentStory?.title || currentStoryId || '...'} — ${stepInfo}${agentActivity ? ` (${agentActivity})` : ''}`}>
+                  <Chip
+                    size="small"
+                    icon={<CircularProgress size={12} color="inherit" />}
+                    label={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <RocketLaunchIcon sx={{ fontSize: 12 }} />
+                        <Typography variant="caption" sx={{ fontWeight: 600, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {currentStory ? `${currentStory.epicId}.${currentStory.storyNumber}` : '...'}: {stepInfo}
+                        </Typography>
+                        <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                          {completedCount + 1}/{totalCount}
+                        </Typography>
+                      </Box>
+                    }
+                    onClick={() => setEpicCycleDialogOpen(true)}
+                    color="primary"
+                    sx={{
+                      cursor: 'pointer',
+                      height: 24,
+                      '& .MuiChip-icon': { ml: 0.5 },
+                      '& .MuiChip-label': { px: 0.5 },
+                      animation: 'pulse 1.5s ease-in-out infinite',
+                      '@keyframes pulse': {
+                        '0%, 100%': { opacity: 1 },
+                        '50%': { opacity: 0.75 }
+                      }
+                    }}
+                  />
+                </Tooltip>
+              )
+            })()}
+            {/* Full Cycle Progress Indicator (when minimized, standalone only) */}
+            {!epicCycle.isRunning && fullCycle.isRunning && fullCycle.minimized && (
+              <Tooltip title={`Full Cycle: ${fullCycle.stepName} (${fullCycle.currentStep + 1}/${fullCycle.totalSteps})`}>
+                <Chip
+                  size="small"
+                  icon={<CircularProgress size={12} color="inherit" />}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <RocketLaunchIcon sx={{ fontSize: 12 }} />
+                      <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                        {fullCycle.currentStep + 1}/{fullCycle.totalSteps}
+                      </Typography>
+                    </Box>
+                  }
+                  onClick={() => {
+                    setFullCycleMinimized(false)
+                    setFullCycleDialogOpen(true)
+                  }}
+                  color="primary"
+                  sx={{
+                    cursor: 'pointer',
+                    height: 24,
+                    '& .MuiChip-icon': { ml: 0.5 },
+                    '& .MuiChip-label': { px: 0.5 }
+                  }}
+                />
               </Tooltip>
             )}
           </Box>

@@ -28,10 +28,21 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
   const [atBottom, setAtBottom] = useState(true)
   const prevIsTypingRef = useRef(false)
 
+  const fullCycle = useStore((state) => state.fullCycle)
+  const epicCycle = useStore((state) => state.epicCycle)
+
   const thread = chatThreads[agentId]
   const messages = thread?.messages || []
   const isTyping = thread?.isTyping || false
   const thinkingActivity = thread?.thinkingActivity
+
+  // Determine if agent is busy with automation cycle
+  const isBusyWithCycle = fullCycle.isRunning || epicCycle.isRunning
+  const cycleBusyReason = fullCycle.isRunning
+    ? 'Agent busy with Full Cycle automation...'
+    : epicCycle.isRunning
+      ? 'Agent busy with Epic Cycle automation...'
+      : undefined
 
   // Get agents from workflow (based on current project type)
   const { agents } = useWorkflow()
@@ -229,8 +240,13 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
   // Handle pending chat messages from other components (e.g., StoryCard, Wizard)
   useEffect(() => {
     if (pendingChatMessage && pendingChatMessage.agentId === agentId && projectPath) {
-      // Skip if already processing a send
+      // Skip if already processing a send or if a cycle is running
       if (isSendingRef.current) return
+      if (isBusyWithCycle) {
+        console.log('[ChatThread] Skipping pending message - cycle automation is running')
+        clearPendingChatMessage()
+        return
+      }
       isSendingRef.current = true
 
       // Store story context if provided
@@ -338,9 +354,10 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
       {/* Input */}
       <ChatInput
         onSend={handleSendMessage}
-        onCancel={handleCancel}
-        disabled={isTyping}
+        onCancel={isTyping ? handleCancel : undefined}
+        disabled={isTyping || isBusyWithCycle}
         agentId={agentId}
+        busyReason={cycleBusyReason}
       />
     </Box>
   )
