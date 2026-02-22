@@ -60,7 +60,7 @@ export default function Header() {
   const scannedWorkflowConfig = useStore((state) => state.scannedWorkflowConfig)
   const developerMode = useStore((state) => state.developerMode)
   const bmadScanResult = useStore((state) => state.bmadScanResult)
-  const { folders, allFiles, getModuleLabel } = useDocuments()
+  const { folders, getModuleLabel } = useDocuments()
   const [docsAnchor, setDocsAnchor] = useState<null | HTMLElement>(null)
   const [selectedArtifact, setSelectedArtifact] = useState<DocumentFile | null>(null)
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
