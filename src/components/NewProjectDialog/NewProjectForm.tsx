@@ -17,12 +17,17 @@ import {
   FormControlLabel,
   Checkbox,
   ToggleButtonGroup,
-  ToggleButton
+  ToggleButton,
+  ListItemText
 } from '@mui/material'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import AddIcon from '@mui/icons-material/Add'
+import CloseIcon from '@mui/icons-material/Close'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import GitHubIcon from '@mui/icons-material/GitHub'
+import CircularProgress from '@mui/material/CircularProgress'
 import Tooltip from '@mui/material/Tooltip'
+import IconButton from '@mui/material/IconButton'
 import { useStore } from '../../store'
 
 const ADDON_MODULES = [
@@ -44,10 +49,15 @@ export default function NewProjectForm({ open, onClose }: NewProjectFormProps) {
   const [projectName, setProjectName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [primaryType, setPrimaryType] = useState<'bmm' | 'gds'>('bmm')
+  const [primaryType, setPrimaryType] = useState<'bmm' | 'gds' | 'tools'>('bmm')
   const [addonModules, setAddonModules] = useState<string[]>([])
   const [developerType, setDeveloperType] = useState<'ai' | 'human'>('ai')
   const [outputFolder, setOutputFolderLocal] = useState('_bmad-output')
+  const [customModules, setCustomModules] = useState<{ code: string; name?: string; path: string; source?: 'local' | 'github'; repo?: string }[]>([])
+  const [customModuleError, setCustomModuleError] = useState<string | null>(null)
+  const [githubInput, setGithubInput] = useState('')
+  const [githubLoading, setGithubLoading] = useState(false)
+  const [githubStatus, setGithubStatus] = useState('')
 
   // When dialog opens, preselect parent of current project
   useEffect(() => {
@@ -65,6 +75,11 @@ export default function NewProjectForm({ open, onClose }: NewProjectFormProps) {
     setAddonModules([])
     setDeveloperType('ai')
     setOutputFolderLocal('_bmad-output')
+    setCustomModules([])
+    setCustomModuleError(null)
+    setGithubInput('')
+    setGithubLoading(false)
+    setGithubStatus('')
   }, [])
 
   const handleClose = useCallback(() => {
@@ -78,6 +93,97 @@ export default function NewProjectForm({ open, onClose }: NewProjectFormProps) {
       setParentPath(result.path)
       setError(null)
     }
+  }, [])
+
+  const checkCodeConflict = useCallback((code: string) => {
+    const reserved = primaryType === 'tools' ? ['core'] : [primaryType, 'core']
+    const allCodes = [...addonModules, ...reserved, ...customModules.map(m => m.code)]
+    return allCodes.includes(code)
+  }, [primaryType, addonModules, customModules])
+
+  // Remove custom modules that now conflict when primary type or addon selection changes
+  useEffect(() => {
+    const reserved = primaryType === 'tools' ? ['core'] : [primaryType, 'core']
+    const builtinCodes = new Set([...addonModules, ...reserved])
+    setCustomModules(prev => {
+      const filtered = prev.filter(m => !builtinCodes.has(m.code))
+      return filtered.length === prev.length ? prev : filtered
+    })
+  }, [primaryType, addonModules])
+
+  const handleBrowseLocalModule = useCallback(async () => {
+    setCustomModuleError(null)
+    const result = await window.wizardAPI.selectDirectoryAny()
+    if (!result?.path) return
+
+    if (customModules.some(m => m.path === result.path)) {
+      setCustomModuleError('This module directory is already added')
+      return
+    }
+
+    const validation = await window.wizardAPI.validateCustomModule(result.path)
+    if (!validation.valid) {
+      setCustomModuleError(validation.error || 'Invalid custom module')
+      return
+    }
+
+    if (checkCodeConflict(validation.code!)) {
+      setCustomModuleError(`Module code "${validation.code}" conflicts with an existing module`)
+      return
+    }
+
+    setCustomModules(prev => [...prev, { code: validation.code!, name: validation.name, path: result.path, source: 'local' }])
+  }, [customModules, checkCodeConflict])
+
+  const handleAddGithubModule = useCallback(async () => {
+    const input = githubInput.trim()
+    if (!input) return
+
+    setCustomModuleError(null)
+    setGithubLoading(true)
+    setGithubStatus('Verifying module and cloning repository...')
+
+    try {
+      // Check for duplicate repo input
+      if (customModules.some(m => m.repo === input || m.repo === input.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, ''))) {
+        setCustomModuleError('This repository is already added')
+        return
+      }
+
+      const validation = await window.wizardAPI.validateCustomModule(input)
+      if (!validation.valid) {
+        setCustomModuleError(validation.error || 'Invalid module')
+        return
+      }
+
+      // Check for duplicate path (in case of different input formats pointing to same repo)
+      if (customModules.some(m => m.path === validation.path)) {
+        setCustomModuleError('This module is already added')
+        return
+      }
+
+      if (checkCodeConflict(validation.code!)) {
+        setCustomModuleError(`Module code "${validation.code}" conflicts with an existing module`)
+        return
+      }
+
+      setCustomModules(prev => [...prev, {
+        code: validation.code!,
+        name: validation.name,
+        path: validation.path!,
+        source: validation.source,
+        repo: validation.repo
+      }])
+      setGithubInput('')
+    } finally {
+      setGithubLoading(false)
+      setGithubStatus('')
+    }
+  }, [githubInput, customModules, checkCodeConflict])
+
+  const handleRemoveCustomModule = useCallback((path: string) => {
+    setCustomModules(prev => prev.filter(m => m.path !== path))
+    setCustomModuleError(null)
   }, [])
 
   const handleToggleAddon = useCallback((moduleId: string) => {
@@ -107,14 +213,23 @@ export default function NewProjectForm({ open, onClose }: NewProjectFormProps) {
       return
     }
 
-    // Build final module list: primary type plus add-ons (GDS doesn't need BMM explicitly)
-    const modules = [primaryType, ...addonModules]
+    // Build final module list: primary type plus add-ons
+    // For tools-only, modules are just the addons (no bmm/gds prefix)
+    // Custom modules with known official codes go into modules list (not custom paths)
+    const officialCodes = new Set(['bmm', 'gds', 'bmb', 'cis', 'tea'])
+    const knownCustomModules = customModules.filter(m => officialCodes.has(m.code)).map(m => m.code)
+    const trueCustomPaths = customModules.filter(m => !officialCodes.has(m.code)).map(m => m.path)
 
-    startProjectWizard(result.path, outputFolder, developerType, modules)
+    const modules = primaryType === 'tools'
+      ? [...addonModules, ...knownCustomModules]
+      : [primaryType, ...addonModules, ...knownCustomModules]
+
+    const customPaths = trueCustomPaths
+    startProjectWizard(result.path, outputFolder, developerType, modules, customPaths.length ? customPaths : undefined)
     setCreating(false)
     reset()
     onClose()
-  }, [parentPath, projectName, outputFolder, developerType, primaryType, addonModules, startProjectWizard, reset, onClose])
+  }, [parentPath, projectName, outputFolder, developerType, primaryType, addonModules, customModules, startProjectWizard, reset, onClose])
 
   return (
     <Dialog
@@ -194,16 +309,21 @@ export default function NewProjectForm({ open, onClose }: NewProjectFormProps) {
               size="small"
             >
               <ToggleButton value="bmm" sx={{ textTransform: 'none' }}>
-                Standard Development
+                Agile
               </ToggleButton>
               <ToggleButton value="gds" sx={{ textTransform: 'none' }}>
-                Game Development
+                Game Dev
+              </ToggleButton>
+              <ToggleButton value="tools" sx={{ textTransform: 'none' }}>
+                Tools Only
               </ToggleButton>
             </ToggleButtonGroup>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
               {primaryType === 'bmm'
                 ? 'Full-stack software development with PRD, Architecture, and Epics'
-                : 'Game development with Game Brief, GDD, Game Architecture, and Epics'
+                : primaryType === 'gds'
+                  ? 'Game development with Game Brief, GDD, Game Architecture, and Epics'
+                  : 'Install BMAD add-on modules only (no story board). Select at least one module below.'
               }
             </Typography>
           </Box>
@@ -233,6 +353,67 @@ export default function NewProjectForm({ open, onClose }: NewProjectFormProps) {
             ))}
           </Box>
 
+          {/* Custom modules */}
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+              Custom Modules
+            </Typography>
+            {customModules.map((mod) => (
+              <Stack key={mod.path} direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                <Typography variant="body2" sx={{ flex: 1, fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  {mod.name || mod.code} <Typography component="span" variant="caption" color="text.secondary">
+                    ({mod.code}) {mod.source === 'github' && mod.repo ? `— ${mod.repo}` : ''}
+                  </Typography>
+                </Typography>
+                <IconButton size="small" onClick={() => handleRemoveCustomModule(mod.path)}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            ))}
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: customModules.length ? 0.5 : 0 }}>
+              <TextField
+                size="small"
+                placeholder="owner/repo or GitHub URL"
+                value={githubInput}
+                onChange={(e) => { setGithubInput(e.target.value); setCustomModuleError(null) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddGithubModule() }}
+                disabled={githubLoading}
+                sx={{ flex: 1 }}
+                InputProps={{
+                  startAdornment: <GitHubIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
+                }}
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={handleAddGithubModule}
+                disabled={!githubInput.trim() || githubLoading}
+                sx={{ textTransform: 'none', minWidth: 'auto', px: 2 }}
+              >
+                {githubLoading ? <CircularProgress size={18} /> : 'Add'}
+              </Button>
+            </Stack>
+            {githubStatus && (
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                {githubStatus}
+              </Typography>
+            )}
+            <Button
+              size="small"
+              startIcon={<FolderOpenIcon />}
+              onClick={handleBrowseLocalModule}
+              sx={{ textTransform: 'none', mt: 0.5 }}
+            >
+              Browse Local...
+            </Button>
+            {customModuleError && (
+              <Alert severity="error" sx={{ py: 0, mt: 1 }}>
+                {customModuleError}
+              </Alert>
+            )}
+          </Box>
+
+          {primaryType !== 'tools' && (
           <Stack direction="row" alignItems="center" spacing={0.5}>
             <FormControl size="small" fullWidth>
               <InputLabel>Development Mode</InputLabel>
@@ -240,21 +421,26 @@ export default function NewProjectForm({ open, onClose }: NewProjectFormProps) {
                 value={developerType}
                 label="Development Mode"
                 onChange={(e) => setDeveloperType(e.target.value as 'ai' | 'human')}
+                renderValue={(value) => value === 'ai' ? 'AI Driven Development (Prototyping)' : 'Manual Development (Production)'}
               >
-                <MenuItem value="ai">AI Driven Development</MenuItem>
-                <MenuItem value="human">Manual Development</MenuItem>
+                <MenuItem value="ai">
+                  <ListItemText primary="AI Driven Development" secondary="Recommended for prototyping" />
+                </MenuItem>
+                <MenuItem value="human">
+                  <ListItemText primary="Manual Development" secondary="Recommended for production" />
+                </MenuItem>
               </Select>
             </FormControl>
             <Tooltip
               title={
                 <Box sx={{ p: 0.5 }}>
-                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>AI Driven Development</Typography>
+                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>AI Driven Development (Prototyping)</Typography>
                   <Typography variant="caption" display="block" sx={{ mb: 1 }}>
-                    AI agents implement stories, run tests, and maintain the story file automatically. Best when using AI coding assistants as your primary development workflow.
+                    AI agents autonomously implement stories, create branches, write code, run tests, and update story files. The full cycle and epic cycle automation workflows are available. Best for prototyping and rapid iteration where speed is prioritized.
                   </Typography>
-                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>Manual Development</Typography>
+                  <Typography variant="subtitle2" fontWeight={600} gutterBottom>Manual Development (Production)</Typography>
                   <Typography variant="caption" display="block">
-                    You write the code yourself using the story file as a spec. The code review workflow verifies your work against the spec and updates the story file for you.
+                    You implement each story yourself using the story file as your spec. Workflows guide you through creating branches, writing code, and submitting for review. The code review workflow verifies your implementation against the spec and updates the story status. This mode modifies the installed BMAD workflows to support a human-driven development process. Best for production code where quality and control are prioritized.
                   </Typography>
                 </Box>
               }
@@ -272,6 +458,7 @@ export default function NewProjectForm({ open, onClose }: NewProjectFormProps) {
               />
             </Tooltip>
           </Stack>
+          )}
 
           <TextField
             label="Output Folder"
@@ -298,7 +485,7 @@ export default function NewProjectForm({ open, onClose }: NewProjectFormProps) {
         <Button
           variant="contained"
           onClick={handleCreate}
-          disabled={!parentPath || !projectName.trim() || creating}
+          disabled={!parentPath || !projectName.trim() || creating || (primaryType === 'tools' && addonModules.length === 0 && customModules.length === 0)}
         >
           {creating ? 'Creating...' : 'Create & Start Wizard'}
         </Button>

@@ -252,7 +252,7 @@ class ChatAgentManager {
     options: {
       agentId: string
       projectPath: string
-      projectType: 'bmm' | 'gds'
+      projectType: 'bmm' | 'gds' | 'dashboard'
       tool?: AITool
       model?: ClaudeModel
       customEndpoint?: CustomEndpointConfig | null

@@ -167,13 +167,24 @@ export default function ProjectSwitcher() {
             sx: {
               minWidth: 320,
               maxHeight: 400,
-              mt: 1
+              mt: 1,
+              WebkitAppRegion: 'no-drag'
             }
           }
         }}
       >
+        <MenuItem onClick={handleOpenProject} sx={{ py: 1.5 }}>
+          <FolderOpenIcon sx={{ fontSize: 20, mr: 1.5, color: 'text.secondary' }} />
+          <Typography variant="body2">Open Project...</Typography>
+        </MenuItem>
+        <MenuItem onClick={handleNewProject} sx={{ py: 1.5 }}>
+          <AddIcon sx={{ fontSize: 20, mr: 1.5, color: 'text.secondary' }} />
+          <Typography variant="body2">New Project...</Typography>
+        </MenuItem>
+
         {recentProjects.length > 0 && (
           <Box>
+            <Divider sx={{ my: 1 }} />
             <InputBase
               inputRef={searchInputRef}
               placeholder="Recent Projects"
@@ -277,18 +288,8 @@ export default function ProjectSwitcher() {
                 </IconButton>
               </MenuItem>
             ))}
-            <Divider sx={{ my: 1 }} />
           </Box>
         )}
-
-        <MenuItem onClick={handleOpenProject} sx={{ py: 1.5 }}>
-          <FolderOpenIcon sx={{ fontSize: 20, mr: 1.5, color: 'text.secondary' }} />
-          <Typography variant="body2">Open Project...</Typography>
-        </MenuItem>
-        <MenuItem onClick={handleNewProject} sx={{ py: 1.5 }}>
-          <AddIcon sx={{ fontSize: 20, mr: 1.5, color: 'text.secondary' }} />
-          <Typography variant="body2">New Project...</Typography>
-        </MenuItem>
       </Menu>
 
     </Box>

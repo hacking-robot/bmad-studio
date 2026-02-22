@@ -3,7 +3,7 @@ import { useStore } from '../store'
 import { parseSprintStatus } from '../utils/parseSprintStatus'
 import { parseEpicsUnified, getAllStories } from '../utils/parseEpicsUnified'
 import { parseStoryContent } from '../utils/parseStory'
-import { getEpicsFullPath, getSprintStatusFullPath } from '../utils/projectTypes'
+import { getEpicsFullPath, getSprintStatusFullPath, hasBoardModule } from '../utils/projectTypes'
 import { mergeWorkflowConfig } from '../utils/workflowMerge'
 import { flushPendingThreadSave } from '../utils/chatUtils'
 import type { BmadScanResult } from '../types/bmadScan'
@@ -32,6 +32,7 @@ export function useProjectData() {
     setBmadScanResult,
     setScannedWorkflowConfig,
     setBmadVersionError,
+    setViewMode,
     projectWizard
   } = useStore()
 
@@ -67,7 +68,8 @@ export function useProjectData() {
         setPendingNewProject({
           path: result.path,
           projectType: result.projectType,
-          outputFolder: dirOutputFolder
+          outputFolder: dirOutputFolder,
+          bmadInstalled: result.bmadInstalled
         })
         setNewProjectDialogOpen(true)
         return false // Don't set project yet - let dialog handle it
@@ -78,6 +80,10 @@ export function useProjectData() {
       setProjectPath(result.path)
       setProjectType(result.projectType)
       setOutputFolder(resolvedOutputFolder)
+      // Set correct viewMode for the project type
+      if (result.projectType === 'dashboard') {
+        setViewMode('dashboard')
+      }
       addRecentProject({
         path: result.path,
         projectType: result.projectType,
@@ -125,7 +131,12 @@ export function useProjectData() {
       chatThreads: {},
       selectedChatAgent: null,
       gitDiffPanelOpen: false,
-      gitDiffPanelBranch: null
+      gitDiffPanelBranch: null,
+      // Set correct viewMode for the target project type
+      viewMode: project.projectType === 'dashboard' ? 'dashboard' : 'board',
+      // Clear stale scan data so hasBrd computes correctly before new scan completes
+      bmadScanResult: null,
+      scannedWorkflowConfig: null
     })
   }, [])
 
@@ -134,6 +145,12 @@ export function useProjectData() {
 
     // Skip loading if wizard is active (project artifacts don't exist yet)
     if (wizardIsActive) return
+
+    // Dashboard projects have no board data to load
+    if (projectType === 'dashboard') {
+      setLoading(false)
+      return
+    }
 
     // Get current state values (don't use reactive values to avoid infinite loops)
     const { stories: currentStories, notificationsEnabled, isUserDragging, setIsUserDragging } = useStore.getState()
@@ -301,7 +318,7 @@ export function useProjectData() {
         // Scan _bmad/ to detect the correct module type (don't trust store — it may be stale)
         try {
           const scanResult = await window.fileAPI.scanBmad(projectPath!) as BmadScanResult | null
-          const detectedType = scanResult?.modules.includes('gds') ? 'gds' : 'bmm'
+          const detectedType = scanResult?.modules.includes('gds') ? 'gds' : scanResult?.modules ? (hasBoardModule(scanResult.modules) ? 'bmm' : 'dashboard') : 'bmm'
           const modules = [detectedType]
           console.log(`[useProjectData] Detected modules from scan: [${detectedType}]`)
           useStore.getState().startProjectWizard(projectPath!, currentOutput, currentDevMode as 'ai' | 'human', modules)
@@ -452,12 +469,33 @@ export function useProjectData() {
             return
           }
           setBmadVersionError(null)
+
+          // If .claude/commands/ is missing (BMAD installed without Claude Code as a tool),
+          // redirect to the wizard so the user can run install to add Claude Code support.
+          // The wizard's install step runs `npx bmad-method install --tools claude-code`.
+          if (result.missingClaudeCommands) {
+            const installedModules = result.modules.filter(m => m !== 'core')
+            const moduleList = installedModules.length > 0 ? installedModules : hasBoardModule(result.modules) ? ['bmm'] : []
+            console.log(`[useProjectData] Missing .claude/commands/ — opening wizard to install Claude Code support (modules: ${moduleList.join(',')})`)
+            const { outputFolder: currentOutput, developerMode: currentDevMode } = useStore.getState()
+            useStore.getState().startProjectWizard(projectPath!, currentOutput, currentDevMode as 'ai' | 'human', moduleList)
+            return
+          }
+
           // Auto-correct project type from scan data (fixes stale recent project entries)
-          const scanDetectedType = result.modules.includes('gds') ? 'gds' as const : 'bmm' as const
+          const scanDetectedType = result.modules.includes('gds')
+            ? 'gds' as const
+            : hasBoardModule(result.modules)
+              ? 'bmm' as const
+              : 'dashboard' as const
           const { projectType: currentProjectType } = useStore.getState()
           if (currentProjectType !== scanDetectedType) {
             console.log(`[useProjectData] Correcting project type: ${currentProjectType} → ${scanDetectedType}`)
             setProjectType(scanDetectedType)
+            // Set initial viewMode for dashboard projects
+            if (scanDetectedType === 'dashboard') {
+              useStore.getState().setViewMode('dashboard')
+            }
           }
           const merged = mergeWorkflowConfig(result, scanDetectedType)
           console.log('[useProjectData] Merged config agents:', merged.agents.length)
@@ -504,6 +542,9 @@ export function useProjectData() {
 
     // Skip file watching if wizard is active (wizard has its own watcher)
     if (wizardIsActive) return
+
+    // Dashboard projects have no board files to watch
+    if (projectType === 'dashboard') return
 
     // Start watching for file changes
     window.fileAPI.startWatching(projectPath, projectType, outputFolder)

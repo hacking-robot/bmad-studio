@@ -52,7 +52,19 @@ interface BoardOverlay {
   projectWorkflows?: Record<string, OverlayProjectWorkflowPhase>
 }
 
+/** Empty overlay for dashboard projects — no board statuses/transitions */
+const emptyOverlay: BoardOverlay = {
+  statuses: [],
+  transitions: [],
+  statusActions: {},
+  agentOverrides: {},
+  projectWorkflows: {}
+}
+
 function selectOverlay(projectType: ProjectType | null): BoardOverlay {
+  if (projectType === 'dashboard') {
+    return emptyOverlay
+  }
   if (projectType === 'gds') {
     return overlayGds as unknown as BoardOverlay
   }
@@ -221,19 +233,79 @@ function resolveProjectWorkflows(
  * Merge scan results with a board overlay to produce a WorkflowConfig.
  * Components consume the same WorkflowConfig interface regardless of data source.
  */
+/** Module display names for auto-generated dashboard workflow phases */
+const MODULE_LABELS: Record<string, { label: string; icon: string }> = {
+  core: { label: 'Core', icon: '⚙️' },
+  bmb: { label: 'BMad Builder', icon: '🔨' },
+  cis: { label: 'Creative Intelligence', icon: '💡' },
+  tea: { label: 'Test Architect', icon: '🧪' },
+  bmm: { label: 'BMAD Method', icon: '📋' },
+  gds: { label: 'Game Dev Studio', icon: '🎮' }
+}
+
+/**
+ * Auto-generate projectWorkflows for dashboard projects by grouping
+ * scanned workflows by module. Each module becomes a phase.
+ */
+function generateDashboardWorkflows(
+  scan: BmadScanResult,
+  agents: AgentDefinition[]
+): Record<string, ProjectWorkflowPhase> {
+  const result: Record<string, ProjectWorkflowPhase> = {}
+
+  // Group workflows by module
+  const byModule = new Map<string, NextStepAction[]>()
+  for (const wf of scan.workflows) {
+    // Find which agent owns this workflow
+    const match = findAgentForWorkflow(wf.name, wf.module, scan)
+    if (!match) continue
+    if (!agents.some(a => a.id === match.agentId)) continue
+
+    const command = stableCmd(match.actualModule, wf.name, 'workflows')
+    const action: NextStepAction = {
+      label: wf.description || wf.name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      agentId: match.agentId,
+      command,
+      description: wf.description || wf.name
+    }
+
+    const moduleKey = wf.module
+    if (!byModule.has(moduleKey)) byModule.set(moduleKey, [])
+    byModule.get(moduleKey)!.push(action)
+  }
+
+  for (const [mod, workflows] of byModule) {
+    if (workflows.length === 0) continue
+    const meta = MODULE_LABELS[mod] || { label: mod.toUpperCase(), icon: '📦' }
+    result[mod] = {
+      label: meta.label,
+      icon: meta.icon,
+      workflows
+    }
+  }
+
+  return result
+}
+
 export function mergeWorkflowConfig(
   scan: BmadScanResult,
   projectType: ProjectType | null
 ): WorkflowConfig {
   const overlay = selectOverlay(projectType)
+  const isDashboard = projectType === 'dashboard'
 
-  // Build agents: only include agents that have an overlay entry for this project type
-  // This naturally excludes core agents (bmad-master) and cross-module agents (e.g. BMM agents in a BMGD project)
+  // Build agents: for dashboard, include ALL scanned agents (no overlay filter);
+  // for board projects, only include agents with an overlay entry
   const agents: AgentDefinition[] = scan.agents
-    .filter(a => !!overlay.agentOverrides[a.id])
+    .filter(a => isDashboard || !!overlay.agentOverrides[a.id])
     .map(scanned => {
       const ui = overlay.agentOverrides[scanned.id]
       const commands = buildAgentCommands(scanned)
+
+      // Generate a color from the agent ID for dashboard agents without overlay
+      const defaultColor = isDashboard && !ui
+        ? `hsl(${Math.abs([...scanned.id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0)) % 360}, 50%, 45%)`
+        : '#6B7280'
 
       return {
         id: scanned.id,
@@ -242,7 +314,7 @@ export function mergeWorkflowConfig(
         avatar: ui?.avatar || scanned.id.slice(0, 2).toUpperCase(),
         description: scanned.identity || scanned.role || scanned.title,
         whenToUse: ui?.whenToUse || '',
-        color: ui?.color || '#6B7280',
+        color: ui?.color || defaultColor,
         commands,
         examplePrompts: ui?.examplePrompts || []
       }
@@ -251,8 +323,11 @@ export function mergeWorkflowConfig(
   // Build statusActions: resolve commandRef to full path, skip missing
   const statusActions = resolveStatusActions(overlay, scan, agents)
 
-  // Build projectWorkflows: resolve commandRef to full path, skip missing
-  const projectWorkflows = resolveProjectWorkflows(overlay, scan, agents)
+  // Build projectWorkflows: for dashboard, auto-generate from scan data;
+  // for board projects, resolve from overlay
+  const projectWorkflows = isDashboard
+    ? generateDashboardWorkflows(scan, agents)
+    : resolveProjectWorkflows(overlay, scan, agents)
 
   return {
     version: scan.version || '1.0',

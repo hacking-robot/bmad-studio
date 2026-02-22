@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Dialog,
   DialogTitle,
@@ -14,6 +14,8 @@ import GroupIcon from '@mui/icons-material/Group'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import TerminalIcon from '@mui/icons-material/Terminal'
 import FlagIcon from '@mui/icons-material/Flag'
+import { useStore } from '../../store'
+import { hasBoardModule } from '../../utils/projectTypes'
 import OverviewTab from './OverviewTab'
 import AgentsTab from './AgentsTab'
 import WorkflowTab from './WorkflowTab'
@@ -49,14 +51,31 @@ interface HelpPanelProps {
 }
 
 export default function HelpPanel({ open, onClose, initialTab = 0 }: HelpPanelProps) {
+  const projectType = useStore((state) => state.projectType)
+  const bmadScanResult = useStore((state) => state.bmadScanResult)
+  const hasBrd = bmadScanResult?.modules ? hasBoardModule(bmadScanResult.modules) : projectType !== 'dashboard'
+
+  const tabs = useMemo(() => {
+    const all = [
+      { label: 'Overview', icon: <InfoIcon />, component: <OverviewTab /> },
+      { label: 'Agents', icon: <GroupIcon />, component: <AgentsTab /> },
+      { label: 'Workflow', icon: <AccountTreeIcon />, component: <WorkflowTab /> },
+      { label: 'Commands', icon: <TerminalIcon />, component: <CommandsTab /> },
+    ]
+    if (hasBrd) {
+      all.push({ label: 'Epics', icon: <FlagIcon />, component: <EpicsTab /> })
+    }
+    return all
+  }, [hasBrd])
+
   const [tabValue, setTabValue] = useState(initialTab)
 
   // Reset to initial tab when dialog opens
   useEffect(() => {
     if (open) {
-      setTabValue(initialTab)
+      setTabValue(Math.min(initialTab, tabs.length - 1))
     }
-  }, [open, initialTab])
+  }, [open, initialTab, tabs.length])
 
   // Listen for keyboard shortcut (Cmd+Shift+H or F1)
   useEffect(() => {
@@ -123,55 +142,24 @@ export default function HelpPanel({ open, onClose, initialTab = 0 }: HelpPanelPr
           variant="scrollable"
           scrollButtons="auto"
         >
-          <Tab
-            icon={<InfoIcon />}
-            iconPosition="start"
-            label="Overview"
-            sx={{ minHeight: 48 }}
-          />
-          <Tab
-            icon={<GroupIcon />}
-            iconPosition="start"
-            label="Agents"
-            sx={{ minHeight: 48 }}
-          />
-          <Tab
-            icon={<AccountTreeIcon />}
-            iconPosition="start"
-            label="Workflow"
-            sx={{ minHeight: 48 }}
-          />
-          <Tab
-            icon={<TerminalIcon />}
-            iconPosition="start"
-            label="Commands"
-            sx={{ minHeight: 48 }}
-          />
-          <Tab
-            icon={<FlagIcon />}
-            iconPosition="start"
-            label="Epics"
-            sx={{ minHeight: 48 }}
-          />
+          {tabs.map((tab) => (
+            <Tab
+              key={tab.label}
+              icon={tab.icon}
+              iconPosition="start"
+              label={tab.label}
+              sx={{ minHeight: 48 }}
+            />
+          ))}
         </Tabs>
       </Box>
 
       <DialogContent>
-        <TabPanel value={tabValue} index={0}>
-          <OverviewTab />
-        </TabPanel>
-        <TabPanel value={tabValue} index={1}>
-          <AgentsTab />
-        </TabPanel>
-        <TabPanel value={tabValue} index={2}>
-          <WorkflowTab />
-        </TabPanel>
-        <TabPanel value={tabValue} index={3}>
-          <CommandsTab />
-        </TabPanel>
-        <TabPanel value={tabValue} index={4}>
-          <EpicsTab />
-        </TabPanel>
+        {tabs.map((tab, index) => (
+          <TabPanel key={tab.label} value={tabValue} index={index}>
+            {tab.component}
+          </TabPanel>
+        ))}
       </DialogContent>
     </Dialog>
   )

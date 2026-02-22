@@ -32,12 +32,15 @@ export default function NewProjectDialog() {
   const handleStartWizard = () => {
     if (!pendingNewProject) return
     setNewProjectDialogOpen(false)
-    startProjectWizard(pendingNewProject.path, pendingNewProject.outputFolder)
+    // Pass detected project type as modules so the wizard uses the correct steps (BMM vs GDS)
+    const modules = pendingNewProject.projectType === 'gds' ? ['gds'] : pendingNewProject.projectType === 'dashboard' ? [] : ['bmm']
+    startProjectWizard(pendingNewProject.path, pendingNewProject.outputFolder, undefined, modules)
     setPendingNewProject(null)
   }
 
   const projectName = pendingNewProject?.path.split('/').pop() || 'Unknown'
-  const projectTypeName = pendingNewProject?.projectType === 'gds' ? 'Game Dev Studio' : 'BMAD Method'
+  const projectTypeName = pendingNewProject?.projectType === 'gds' ? 'Game Dev Studio' : pendingNewProject?.projectType === 'dashboard' ? 'BMAD Tools' : 'BMAD Method'
+  const bmadInstalled = pendingNewProject?.bmadInstalled ?? false
 
   return (
     <Dialog
@@ -67,7 +70,7 @@ export default function NewProjectDialog() {
             <FolderOpenIcon sx={{ color: 'white' }} />
           </Box>
           <Typography variant="h6" fontWeight={600}>
-            New BMAD Project Detected
+            {bmadInstalled ? 'Project Setup Incomplete' : 'New BMAD Project Detected'}
           </Typography>
         </Stack>
       </DialogTitle>
@@ -76,16 +79,20 @@ export default function NewProjectDialog() {
         <Stack spacing={2.5}>
           <Alert severity="info" sx={{ mt: 1 }}>
             <Typography variant="body2">
-              <strong>{projectName}</strong> appears to be a new {projectTypeName} project
-              that hasn't been initialized yet.
+              {bmadInstalled ? (
+                <><strong>{projectName}</strong> has BMAD installed but is missing planning artifacts needed for the board.</>
+              ) : (
+                <><strong>{projectName}</strong> appears to be a new {projectTypeName} project that hasn't been initialized yet.</>
+              )}
             </Typography>
           </Alert>
 
           <Typography variant="body2" color="text.secondary">
-            The Project Wizard will guide you through setting up your BMAD project step by step.
-            It will install the BMAD method, then walk you through creating a PRD, architecture,
-            and epics using AI agents. Uses standard (BMM) development. For game dev or add-on
-            modules, use File &gt; New Project.
+            {bmadInstalled ? (
+              <>The Project Wizard will guide you through creating the remaining artifacts — epics, stories, and sprint planning — using AI agents. BMAD is already installed and will be skipped.</>
+            ) : (
+              <>The Project Wizard will guide you through setting up your BMAD project step by step. It will install the BMAD method, then walk you through creating a PRD, architecture, and epics using AI agents. Uses standard (BMM) development. For game dev or add-on modules, use File &gt; New Project.</>
+            )}
           </Typography>
 
           <Typography variant="caption" color="text.secondary">

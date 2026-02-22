@@ -7,13 +7,18 @@ import {
   Stack,
   Collapse,
   Link,
-  Divider
+  Divider,
+  List,
+  ListItemButton,
+  ListItemText,
+  IconButton
 } from '@mui/material'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import AddIcon from '@mui/icons-material/Add'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import CloseIcon from '@mui/icons-material/Close'
 import { useProjectData } from '../../hooks/useProjectData'
 import { useStore } from '../../store'
 import logoDark from '../../assets/logo-dark.svg'
@@ -21,11 +26,14 @@ import logoLight from '../../assets/logo-light.svg'
 import { NewProjectForm } from '../NewProjectDialog'
 
 export default function WelcomeDialog() {
-  const { selectProject } = useProjectData()
+  const { selectProject, switchToProject } = useProjectData()
   const error = useStore((state) => state.error)
   const themeMode = useStore((state) => state.themeMode)
+  const recentProjects = useStore((state) => state.recentProjects)
+  const removeRecentProject = useStore((state) => state.removeRecentProject)
   const [showInfo, setShowInfo] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null)
 
   const handleSelectProject = async () => {
     await selectProject()
@@ -101,9 +109,56 @@ export default function WelcomeDialog() {
             </Button>
           </Stack>
 
-          <Typography variant="caption" color="text.secondary">
-            Open an existing BMAD project or create a new one
-          </Typography>
+          {recentProjects.length > 0 && (
+            <>
+              <Divider sx={{ width: '100%', my: 0 }} />
+              <Box sx={{ width: '100%', textAlign: 'left' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ px: 1, mb: 0.5, display: 'block' }}>
+                  Recent Projects
+                </Typography>
+                <List dense disablePadding sx={{ maxHeight: 200, overflow: 'auto' }}>
+                  {recentProjects.map((project) => (
+                    <ListItemButton
+                      key={project.path}
+                      onClick={() => switchToProject(project)}
+                      onMouseEnter={() => setHoveredItem(project.path)}
+                      onMouseLeave={() => setHoveredItem(null)}
+                      sx={{ borderRadius: 1, py: 0.5 }}
+                    >
+                      <ListItemText
+                        primary={project.name}
+                        secondary={project.path}
+                        primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+                        secondaryTypographyProps={{
+                          variant: 'caption',
+                          noWrap: true,
+                          sx: { overflow: 'hidden', textOverflow: 'ellipsis' }
+                        }}
+                      />
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeRecentProject(project.path)
+                        }}
+                        sx={{
+                          opacity: hoveredItem === project.path ? 1 : 0,
+                          transition: 'opacity 0.2s',
+                          ml: 1,
+                          '&:hover': {
+                            bgcolor: 'error.main',
+                            color: 'error.contrastText'
+                          }
+                        }}
+                      >
+                        <CloseIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    </ListItemButton>
+                  ))}
+                </List>
+              </Box>
+            </>
+          )}
 
           <NewProjectForm open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
 

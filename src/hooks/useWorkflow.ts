@@ -23,8 +23,13 @@ export function useWorkflow() {
 
   // Memoize the helper functions based on project type
   const helpers = useMemo(() => {
-    // Prefer scanned config when available, fall back to static
-    const workflow = scannedConfig || getWorkflowForType(projectType)
+    // Prefer scanned config; fall back to static only for board rendering (statuses/transitions)
+    // Agents are always scan-driven — no stale/static agents before BMAD is installed
+    const workflow = scannedConfig || {
+      ...getWorkflowForType(projectType),
+      agents: [],
+      projectWorkflows: undefined
+    }
 
     return {
       // Get all statuses

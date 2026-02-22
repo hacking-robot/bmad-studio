@@ -61,7 +61,8 @@ export default function FullCycleOrchestrator() {
 
   // Get steps based on project type and review count
   const getSteps = useCallback((): FullCycleStep[] => {
-    return buildFullCycleSteps(projectType || 'bmm', fullCycleReviewCount)
+    const pt = projectType === 'dashboard' ? 'bmm' : (projectType || 'bmm')
+    return buildFullCycleSteps(pt, fullCycleReviewCount)
   }, [projectType, fullCycleReviewCount])
 
   // Save chat history before clearing - preserves conversation for story card

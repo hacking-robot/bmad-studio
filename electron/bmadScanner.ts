@@ -41,6 +41,8 @@ export interface BmadScanResult {
   agents: ScannedAgent[]
   workflows: ScannedWorkflow[]
   detectedDeveloperMode: 'ai' | 'human' | null
+  installedIdes: string[]
+  missingClaudeCommands: boolean
   scannedAt: string
 }
 
@@ -177,16 +179,37 @@ async function discoverModules(bmadPath: string): Promise<string[]> {
     // ignore
   }
 
+  // Scan custom modules in _config/custom/{module-id}/
+  try {
+    const customDir = join(bmadPath, '_config', 'custom')
+    if (existsSync(customDir)) {
+      const customEntries = await readdir(customDir)
+      for (const entry of customEntries) {
+        if (entry.startsWith('.')) continue
+        if (modules.includes(entry)) continue // skip if already discovered as official module
+        // Custom modules have agents at _config/custom/{id}/src/{id}/agents/
+        const agentsDir = join(customDir, entry, 'src', entry, 'agents')
+        if (existsSync(agentsDir)) {
+          // Store as __custom:{code}:{relative-path} so scanModuleAgents can resolve it
+          // while downstream code can extract the module code
+          modules.push(`__custom:${entry}:${join('_config', 'custom', entry, 'src', entry)}`)
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   return modules
 }
 
 /**
  * Read manifest.yaml if it exists to get version info.
  */
-async function readManifest(bmadPath: string): Promise<{ version: string | null; modules: string[] | null }> {
+async function readManifest(bmadPath: string): Promise<{ version: string | null; modules: string[] | null; ides: string[] }> {
   const manifestPath = join(bmadPath, '_config', 'manifest.yaml')
   if (!existsSync(manifestPath)) {
-    return { version: null, modules: null }
+    return { version: null, modules: null, ides: [] }
   }
 
   try {
@@ -212,9 +235,20 @@ async function readManifest(bmadPath: string): Promise<{ version: string | null;
       }).filter(Boolean)
     }
 
-    return { version, modules }
+    // Parse ides list (e.g., ides:\n  - claude-code\n  - crush)
+    const idesMatch = content.match(/^ides:\s*\n([\s\S]*?)(?=^\S|\Z)/m)
+    let ides: string[] = []
+    if (idesMatch) {
+      const block = idesMatch[1]
+      ides = block.split('\n')
+        .filter(l => /^\s+-/.test(l))
+        .map(l => l.replace(/^\s*-\s*/, '').trim())
+        .filter(Boolean)
+    }
+
+    return { version, modules, ides }
   } catch {
-    return { version: null, modules: null }
+    return { version: null, modules: null, ides: [] }
   }
 }
 
@@ -531,23 +565,45 @@ export async function scanBmadProject(projectPath: string): Promise<BmadScanResu
   // Scan agents from all modules
   const allAgents: ScannedAgent[] = []
   for (const module of modules) {
-    const moduleAgents = await scanModuleAgents(bmadPath, module)
-    allAgents.push(...moduleAgents)
+    if (module.startsWith('__custom:')) {
+      // Custom module: __custom:{code}:{relative-path}
+      const parts = module.split(':')
+      const code = parts[1]
+      const relPath = parts.slice(2).join(':')
+      const moduleAgents = await scanModuleAgents(bmadPath, relPath)
+      // Override module name to use the code, not the path
+      for (const agent of moduleAgents) {
+        agent.module = code
+      }
+      allAgents.push(...moduleAgents)
+    } else {
+      const moduleAgents = await scanModuleAgents(bmadPath, module)
+      allAgents.push(...moduleAgents)
+    }
   }
   console.log(`[Scanner] Total agents found: ${allAgents.length}`)
 
+  // Clean module list: replace __custom:{code}:{path} entries with just the code
+  const cleanModules = modules.map(m => m.startsWith('__custom:') ? m.split(':')[1] : m)
+
   // Scan workflows
-  const workflows = await scanWorkflows(projectPath, modules)
+  const workflows = await scanWorkflows(projectPath, cleanModules)
 
   // Detect developer mode from workflow content
-  const detectedDeveloperMode = await detectDeveloperMode(bmadPath, modules)
+  const detectedDeveloperMode = await detectDeveloperMode(bmadPath, cleanModules)
+
+  // Check if Claude Code commands are installed
+  const claudeCommandsDir = join(projectPath, '.claude', 'commands')
+  const missingClaudeCommands = !existsSync(claudeCommandsDir)
 
   return {
     version: manifest.version,
-    modules,
+    modules: cleanModules,
     agents: allAgents,
     workflows,
     detectedDeveloperMode,
+    installedIdes: manifest.ides,
+    missingClaudeCommands,
     scannedAt: new Date().toISOString()
   }
 }

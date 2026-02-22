@@ -55,6 +55,7 @@ export default function StatusBar() {
   const setHelpPanelOpen = useStore((state) => state.setHelpPanelOpen)
   const projectCostTotal = useStore((state) => state.projectCostTotal)
   const developerMode = useStore((state) => state.developerMode)
+  const viewMode = useStore((state) => state.viewMode)
 
   // Auto-update state from global store
   const updateStatus = useStore((state) => state.updateStatus)
@@ -147,12 +148,14 @@ export default function StatusBar() {
           <UncommittedChanges />
         </Box>
 
-        {/* Developer mode indicator */}
-        <Tooltip title={developerMode === 'human' ? 'Manual Development mode' : 'AI Driven Development mode'}>
-          <Typography variant="caption" color="text.secondary" sx={{ cursor: 'help' }}>
-            {developerMode === 'human' ? 'Manual Dev' : 'AI Driven'}
-          </Typography>
-        </Tooltip>
+        {/* Developer mode indicator - only shown in board mode */}
+        {viewMode === 'board' && (
+          <Tooltip title={developerMode === 'human' ? 'Manual Development mode' : 'AI Driven Development mode'}>
+            <Typography variant="caption" color="text.secondary" sx={{ cursor: 'help' }}>
+              {developerMode === 'human' ? 'Manual Dev' : 'AI Driven'}
+            </Typography>
+          </Tooltip>
+        )}
 
         {/* Story counts by status */}
         {statusDisplay.length > 0 && (

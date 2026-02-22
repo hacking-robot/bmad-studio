@@ -22,4 +22,13 @@
 | #19634 | " | 🔵 | Preload Script Exposes Update API But No Listeners Configured | ~345 |
 | #19630 | 3:51 PM | 🔵 | Auto-updater Check Timing Investigation | ~366 |
 | #18639 | 9:06 AM | 🔵 | BMadBoard scanner dynamically discovers agents and workflows using file naming conventions | ~467 |
+
+### Feb 22, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #20370 | 2:20 PM | 🟣 | Custom Module Identifier Protocol Added | ~356 |
+| #20366 | 2:19 PM | 🟣 | Custom Module Discovery in BMAD Scanner | ~403 |
+| #20362 | 2:18 PM | 🔵 | BMAD Scanner Main Orchestration Flow | ~479 |
+| #20358 | 2:17 PM | 🔵 | BMAD Scanner Module Discovery Logic | ~427 |
 </claude-mem-context>

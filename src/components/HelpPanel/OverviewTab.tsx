@@ -10,10 +10,12 @@ export default function OverviewTab() {
   const projectWorkflows = getProjectWorkflows()
   const hasPhases = Object.keys(projectWorkflows).length > 0
 
-  const title = projectType === 'gds' ? 'Game Dev Studio' : 'BMAD Method'
+  const title = projectType === 'gds' ? 'Game Dev Studio' : projectType === 'dashboard' ? 'BMAD Tools' : 'BMAD Method'
   const description = projectType === 'gds'
     ? 'Game Dev Studio is an AI-powered framework for game development. Specialized agents guide you from concept to playable game, covering design, architecture, implementation, and testing.'
-    : 'BMAD (Breakthrough Method of Agile AI-Driven Development) is an AI-powered framework that uses specialized agents to guide you through software development. Each agent has a specific role, from analysis through implementation.'
+    : projectType === 'dashboard'
+      ? 'This project uses BMAD add-on modules with specialized agents and workflows. Use the Dashboard to browse available workflows and chat with agents.'
+      : 'BMAD (Breakthrough Method of Agile AI-Driven Development) is an AI-powered framework that uses specialized agents to guide you through software development. Each agent has a specific role, from analysis through implementation.'
 
   return (
     <Box>

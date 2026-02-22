@@ -273,7 +273,8 @@ export default function EpicFilter() {
               sx: {
                 p: 2,
                 maxWidth: 400,
-                borderRadius: 1.5
+                borderRadius: 1.5,
+                WebkitAppRegion: 'no-drag'
               }
             }
           }}
@@ -383,7 +384,8 @@ export default function EpicFilter() {
                 maxWidth: 400,
                 maxHeight: 500,
                 overflow: 'auto',
-                borderRadius: 1.5
+                borderRadius: 1.5,
+                WebkitAppRegion: 'no-drag'
               }
             }
           }}
@@ -477,7 +479,8 @@ export default function EpicFilter() {
         PaperProps={{
           sx: {
             minWidth: 280,
-            maxHeight: 400
+            maxHeight: 400,
+            WebkitAppRegion: 'no-drag'
           }
         }}
       >

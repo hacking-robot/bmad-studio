@@ -24,11 +24,13 @@ export function useFullCycle() {
 
   // Get steps based on project type and review count
   const getSteps = useCallback((): FullCycleStep[] => {
-    return buildFullCycleSteps(projectType || 'bmm', fullCycleReviewCount)
+    const pt = projectType === 'dashboard' ? 'bmm' : (projectType || 'bmm')
+    return buildFullCycleSteps(pt, fullCycleReviewCount)
   }, [projectType, fullCycleReviewCount])
 
-  // Start the full cycle for a story
+  // Start the full cycle for a story (not available for dashboard projects)
   const start = useCallback((storyId: string) => {
+    if (projectType === 'dashboard') return
     const steps = getSteps()
     const story = stories.find((s) => s.id === storyId)
     if (!story) {

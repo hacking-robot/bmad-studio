@@ -1,8 +1,9 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { Box, Button, Typography, CircularProgress, Alert } from '@mui/material'
 import DownloadIcon from '@mui/icons-material/Download'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import { useStore } from '../../store'
+import type { BmadScanResult } from '../../types/bmadScan'
 
 interface InstallStepProps {
   onComplete: () => void
@@ -47,6 +48,19 @@ export default function InstallStep({ onComplete }: InstallStepProps) {
 
   const modules = projectWizard.selectedModules || ['bmm']
   const hasGds = modules.includes('gds')
+  const customContentPaths = projectWizard.customContentPaths
+
+  // Detect if BMAD is already installed but missing Claude Code commands
+  const [isAddingClaudeCode, setIsAddingClaudeCode] = useState(false)
+  useEffect(() => {
+    if (!projectWizard.projectPath) return
+    window.fileAPI.scanBmad(projectWizard.projectPath).then((scanResult) => {
+      const result = scanResult as BmadScanResult | null
+      if (result?.missingClaudeCommands) {
+        setIsAddingClaudeCode(true)
+      }
+    }).catch(() => {})
+  }, [projectWizard.projectPath])
 
   const handleInstall = useCallback(async () => {
     if (!projectWizard.projectPath) return
@@ -54,21 +68,25 @@ export default function InstallStep({ onComplete }: InstallStepProps) {
     setWizardError(null)
     updateWizardStep(0, 'active')
 
-    const result = await window.wizardAPI.install(projectWizard.projectPath, false, outputFolder, modules)
+    const result = await window.wizardAPI.install(projectWizard.projectPath, false, outputFolder, modules, customContentPaths)
     if (!result.success) {
       updateWizardStep(0, 'error')
       setWizardError(result.error || 'Failed to start installation')
     }
-  }, [projectWizard.projectPath, outputFolder, modules, updateWizardStep, setWizardError])
+  }, [projectWizard.projectPath, outputFolder, modules, customContentPaths, updateWizardStep, setWizardError])
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, p: 2 }}>
       <Typography variant="body2" color="text.secondary">
-        This will run <code>npx bmad-method install</code> to set up BMAD in your project folder
-        {hasGds ? ' with the Game Dev Studio module' : ''}.
-        It installs the necessary configuration files and templates.
-        {modules.length > 1 && (
-          <> Modules: <strong>{modules.join(', ')}</strong></>
+        {isAddingClaudeCode ? (
+          <>BMAD is installed but Claude Code commands are missing. This will re-run <code>npx bmad-method install</code> to add Claude Code support so workflows and agents can be used from BMad Studio.</>
+        ) : (
+          <>This will run <code>npx bmad-method install</code> to set up BMAD in your project folder
+          {hasGds ? ' with the Game Dev Studio module' : ''}.
+          It installs the necessary configuration files and templates.
+          {modules.length > 1 && (
+            <> Modules: <strong>{modules.join(', ')}</strong></>
+          )}</>
         )}
       </Typography>
 
@@ -78,7 +96,7 @@ export default function InstallStep({ onComplete }: InstallStepProps) {
           startIcon={<DownloadIcon />}
           onClick={handleInstall}
         >
-          Install BMAD Method
+          {isAddingClaudeCode ? 'Add Claude Code Support' : 'Install BMAD Method'}
         </Button>
       )}
 

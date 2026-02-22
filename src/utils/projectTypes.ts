@@ -1,4 +1,4 @@
-export type ProjectType = 'bmm' | 'gds'
+export type ProjectType = 'bmm' | 'gds' | 'dashboard'
 
 export interface ProjectConfig {
   epicsPath: string
@@ -13,7 +13,16 @@ export const PROJECT_CONFIGS: Record<ProjectType, ProjectConfig> = {
   gds: {
     epicsPath: 'planning-artifacts/epics.md',
     sprintStatusPath: 'implementation-artifacts/sprint-status.yaml'
+  },
+  dashboard: {
+    epicsPath: '',
+    sprintStatusPath: ''
   }
+}
+
+/** Check if the installed modules include a board-capable module (bmm or gds) */
+export function hasBoardModule(modules: string[]): boolean {
+  return modules.some(m => m === 'bmm' || m === 'gds')
 }
 
 export function getEpicsFullPath(projectPath: string, projectType: ProjectType, outputFolder: string = '_bmad-output'): string {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, screen, Notification, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, screen, Notification, nativeImage, net } from 'electron'
 import { join, dirname, basename, resolve } from 'path'
 import { readFile, readdir, stat, writeFile, mkdir } from 'fs/promises'
 import { existsSync, watch, FSWatcher, readdirSync, readFileSync, appendFileSync } from 'fs'
@@ -20,7 +20,7 @@ let watchDebounceTimer: NodeJS.Timeout | null = null
 // Settings file path in user data directory
 const getSettingsPath = () => join(app.getPath('userData'), 'settings.json')
 
-type ProjectType = 'bmm' | 'gds'
+type ProjectType = 'bmm' | 'gds' | 'dashboard'
 
 interface AgentHistoryEntry {
   id: string
@@ -614,7 +614,13 @@ ipcMain.handle('select-directory', async () => {
 
   // Check if output directory exists - if not, it's a new project for the wizard
   if (!existsSync(bmadOutputPath)) {
-    return { path: projectPath, projectType: 'bmm' as ProjectType, isNewProject: true, outputFolder }
+    // Still detect project type from _bmad/ modules if they exist
+    const bmadPathCheck = join(projectPath, '_bmad')
+    const hasGds = existsSync(join(bmadPathCheck, 'gds'))
+    const hasBmm = existsSync(join(bmadPathCheck, 'bmm'))
+    const detectedType: ProjectType = hasGds ? 'gds' : hasBmm ? 'bmm' : 'dashboard'
+    const bmadInstalled = existsSync(bmadPathCheck)
+    return { path: projectPath, projectType: detectedType, isNewProject: true, outputFolder, bmadInstalled }
   }
 
   // Check for required files
@@ -633,15 +639,22 @@ ipcMain.handle('select-directory', async () => {
     } catch { /* ignore */ }
   }
 
-  // Detect project type: GDS if gds module directory exists, otherwise BMM (default)
+  // Detect project type: GDS > BMM > Dashboard (tools-only, no board module)
   const bmadPath = join(projectPath, '_bmad')
   const hasGdsModule = existsSync(join(bmadPath, 'gds'))
-  let projectType: ProjectType = hasGdsModule ? 'gds' : 'bmm'
+  const hasBmmModule = existsSync(join(bmadPath, 'bmm'))
+  let projectType: ProjectType = hasGdsModule ? 'gds' : hasBmmModule ? 'bmm' : 'dashboard'
 
-  // Check if this is a new/empty project
+  // Dashboard projects only need _bmad/ to exist — no sprint-status/epics required
+  if (projectType === 'dashboard') {
+    const isNewProject = !existsSync(bmadPath)
+    return { path: projectPath, projectType: isNewProject ? 'bmm' as ProjectType : projectType, isNewProject, outputFolder, bmadInstalled: existsSync(bmadPath) }
+  }
+
+  // Check if this is a new/empty project (board projects need sprint-status and epics)
   const isNewProject = !hasSprintStatus || !hasBmmEpics
 
-  return { path: projectPath, projectType, isNewProject, outputFolder }
+  return { path: projectPath, projectType, isNewProject, outputFolder, bmadInstalled: existsSync(bmadPath) }
 })
 
 ipcMain.handle('read-file', async (_, filePath: string) => {
@@ -1876,7 +1889,7 @@ app.whenReady().then(() => {
 ipcMain.handle('chat-load-agent', async (_, options: {
   agentId: string
   projectPath: string
-  projectType: 'bmm' | 'gds'
+  projectType: 'bmm' | 'gds' | 'dashboard'
   tool?: AITool
   model?: ClaudeModel
   customEndpoint?: { name: string; baseUrl: string; apiKey: string; modelName: string } | null
@@ -2064,7 +2077,294 @@ ipcMain.handle('check-environment', async () => {
 // BMAD Install handler - runs npx bmad-method install
 let bmadInstallProcess: ReturnType<typeof spawnChild> | null = null
 
-ipcMain.handle('bmad-install', async (_, projectPath: string, useAlpha?: boolean, outputFolder?: string, modules?: string[]) => {
+// Parse a GitHub input (shorthand, HTTPS, or SSH) into owner, repo, and clone URL.
+// Returns null if the input is not a GitHub reference.
+function parseGitHubInput(input: string): { owner: string; repo: string; cloneUrl: string } | { error: string } | null {
+  if (input.startsWith('git@github.com:')) {
+    const match = input.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/)
+    if (!match) return { error: 'Invalid SSH GitHub URL' }
+    return { owner: match[1], repo: match[2], cloneUrl: input }
+  }
+  if (input.startsWith('https://github.com/')) {
+    const match = input.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/)
+    if (!match) return { error: 'Invalid GitHub URL' }
+    return { owner: match[1], repo: match[2], cloneUrl: input.endsWith('.git') ? input : `${input}.git` }
+  }
+  if (/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(input)) {
+    const [owner, repo] = input.split('/')
+    return { owner, repo, cloneUrl: `https://github.com/${owner}/${repo}.git` }
+  }
+  return null
+}
+
+// Check if a file exists in a GitHub repo via raw.githubusercontent.com (no auth needed for public repos).
+async function githubFileExists(owner: string, repo: string, filePath: string): Promise<boolean> {
+  try {
+    const url = `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/${filePath}`
+    const response = await net.fetch(url, { method: 'HEAD' })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+// Verify a GitHub repo contains module.yaml before cloning.
+// Returns the relative path to module.yaml, or an error.
+async function verifyGitHubModuleExists(owner: string, repo: string): Promise<{ yamlRelPath: string } | { error: string }> {
+  if (await githubFileExists(owner, repo, 'module.yaml')) {
+    return { yamlRelPath: 'module.yaml' }
+  }
+  if (await githubFileExists(owner, repo, 'src/module.yaml')) {
+    return { yamlRelPath: 'src/module.yaml' }
+  }
+  return { error: `Repository ${owner}/${repo} does not contain a module.yaml (checked root and src/)` }
+}
+
+// Run a git command asynchronously with credential prompts disabled and a timeout.
+// Non-blocking — does not freeze the Electron main process.
+function runGitAsync(args: string[], cwd: string): Promise<{ stdout: string; error?: string }> {
+  return new Promise((resolve) => {
+    const env = { ...process.env }
+    delete env.GPG_TTY
+    env.GIT_TERMINAL_PROMPT = '0' // Prevent git from prompting for HTTPS credentials
+    env.GIT_SSH_COMMAND = 'ssh -o BatchMode=yes' // Prevent SSH from prompting for passphrase
+
+    const child = spawnChild('git', args, {
+      cwd,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env
+    })
+
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
+    child.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
+
+    const timeout = setTimeout(() => {
+      child.kill()
+      resolve({ stdout: '', error: 'Git operation timed out — the repository may require authentication' })
+    }, 30_000)
+
+    child.on('error', (err) => {
+      clearTimeout(timeout)
+      resolve({ stdout: '', error: err.message })
+    })
+
+    child.on('close', (code) => {
+      clearTimeout(timeout)
+      if (code !== 0) {
+        const msg = stderr.trim()
+        if (msg.includes('could not read Username') || msg.includes('Authentication failed') || msg.includes('Permission denied')) {
+          resolve({ stdout: '', error: 'Repository requires authentication — only public repos or repos with pre-configured SSH keys are supported' })
+        } else {
+          resolve({ stdout, error: msg || 'Git command failed' })
+        }
+      } else {
+        resolve({ stdout })
+      }
+    })
+  })
+}
+
+// Clone or update a GitHub module repo into the local cache.
+async function cloneGitHubRepo(owner: string, repo: string, cloneUrl: string): Promise<{ path: string } | { error: string }> {
+  const cacheDir = join(app.getPath('userData'), 'module-cache')
+  const modulePath = join(cacheDir, `${owner}--${repo}`)
+
+  if (existsSync(modulePath)) {
+    const result = await runGitAsync(['pull', '--ff-only'], modulePath)
+    if (result.error) {
+      console.warn(`Failed to update cached module ${owner}/${repo}: ${result.error}`)
+    }
+  } else {
+    if (!existsSync(cacheDir)) {
+      await mkdir(cacheDir, { recursive: true })
+    }
+    const result = await runGitAsync(['clone', '--depth', '1', cloneUrl, modulePath], cacheDir)
+    if (result.error) {
+      return { error: result.error }
+    }
+  }
+
+  return { path: modulePath }
+}
+
+ipcMain.handle('validate-custom-module', async (_, input: string) => {
+  try {
+    let dirPath = input
+    let source: 'local' | 'github' = 'local'
+    let repoSlug: string | undefined
+
+    const parsed = parseGitHubInput(input)
+    if (parsed && 'error' in parsed) {
+      return { valid: false, error: parsed.error }
+    }
+
+    if (parsed) {
+      // Verify module.yaml exists in the repo before downloading anything
+      const verify = await verifyGitHubModuleExists(parsed.owner, parsed.repo)
+      if ('error' in verify) {
+        return { valid: false, error: verify.error }
+      }
+
+      // Module.yaml confirmed — now clone
+      const cloneResult = await cloneGitHubRepo(parsed.owner, parsed.repo, parsed.cloneUrl)
+      if ('error' in cloneResult) {
+        return { valid: false, error: cloneResult.error }
+      }
+
+      dirPath = cloneResult.path
+      source = 'github'
+      repoSlug = `${parsed.owner}/${parsed.repo}`
+    }
+
+    // Look for module.yaml: root first, then src/module.yaml
+    let yamlPath = join(dirPath, 'module.yaml')
+    if (!existsSync(yamlPath)) {
+      yamlPath = join(dirPath, 'src', 'module.yaml')
+    }
+    if (!existsSync(yamlPath)) {
+      return { valid: false, error: source === 'github'
+        ? 'Repository does not contain a module.yaml (checked root and src/)'
+        : 'No module.yaml found in directory' }
+    }
+
+    const content = await readFile(yamlPath, 'utf-8')
+    const codeMatch = content.match(/^\s*code:\s*['"]?([^'"\n\s]+)['"]?/m)
+    if (!codeMatch) {
+      return { valid: false, error: 'module.yaml is missing required "code" field' }
+    }
+    const nameMatch = content.match(/^\s*name:\s*['"]?([^'"\n]+?)['"]?\s*$/m)
+    return {
+      valid: true,
+      code: codeMatch[1],
+      name: nameMatch ? nameMatch[1].trim() : undefined,
+      path: dirPath,
+      source,
+      repo: repoSlug
+    }
+  } catch (err) {
+    return { valid: false, error: `Failed to read module: ${(err as Error).message}` }
+  }
+})
+
+/**
+ * After BMAD install, generate missing .claude/commands/ files for custom modules.
+ * The BMAD installer compiles custom module agents but doesn't create slash command files for them.
+ */
+async function generateCustomModuleCommands(projectPath: string): Promise<void> {
+  const customDir = join(projectPath, '_bmad', '_config', 'custom')
+  if (!existsSync(customDir)) return
+
+  const commandsDir = join(projectPath, '.claude', 'commands')
+  if (!existsSync(commandsDir)) {
+    await mkdir(commandsDir, { recursive: true })
+  }
+
+  const customEntries = await readdir(customDir)
+  for (const moduleId of customEntries) {
+    if (moduleId.startsWith('.') || moduleId.endsWith('.yaml')) continue
+    const moduleSrcDir = join(customDir, moduleId, 'src', moduleId)
+
+    // Generate agent command files
+    const agentsDir = join(moduleSrcDir, 'agents')
+    if (existsSync(agentsDir)) {
+      const agentFiles = await readdir(agentsDir)
+      for (const file of agentFiles) {
+        if (!file.endsWith('.md')) continue
+        const agentName = file.replace('.md', '')
+        const commandFile = join(commandsDir, `bmad-agent-${moduleId}-${agentName}.md`)
+        if (existsSync(commandFile)) continue
+
+        const agentPath = `_bmad/_config/custom/${moduleId}/src/${moduleId}/agents/${file}`
+        const content = [
+          '---',
+          `name: '${agentName}'`,
+          `description: '${agentName} agent (custom module: ${moduleId})'`,
+          'disable-model-invocation: true',
+          '---',
+          '',
+          'You must fully embody this agent\'s persona and follow all activation instructions exactly as specified. NEVER break character until given an exit command.',
+          '',
+          '<agent-activation CRITICAL="TRUE">',
+          `1. LOAD the FULL agent file from {project-root}/${agentPath}`,
+          '2. READ its entire contents - this contains the complete agent persona, menu, and instructions',
+          '3. FOLLOW every step in the <activation> section precisely',
+          '4. DISPLAY the welcome/greeting as instructed',
+          '5. PRESENT the numbered menu',
+          '6. WAIT for user input before proceeding',
+          '</agent-activation>'
+        ].join('\n')
+
+        await writeFile(commandFile, content, 'utf-8')
+        console.log(`[BMAD Install] Generated command: bmad-agent-${moduleId}-${agentName}.md`)
+      }
+    }
+
+    // Generate workflow command files from module-help.csv
+    const moduleHelpPath = join(customDir, moduleId, 'module-help.csv')
+    if (existsSync(moduleHelpPath)) {
+      const csv = await readFile(moduleHelpPath, 'utf-8')
+      const lines = csv.split('\n').filter(Boolean)
+      for (let i = 1; i < lines.length; i++) {
+        const fields = lines[i].split(',').map(f => f.trim().replace(/^"|"$/g, ''))
+        if (fields.length < 7) continue
+        const [, , name, , , workflowFile, commandName] = fields
+        if (!commandName || !workflowFile) continue
+
+        const commandFile = join(commandsDir, `${commandName}.md`)
+        if (existsSync(commandFile)) continue
+
+        // Determine if workflow file is .yaml or .md
+        const hasYaml = existsSync(join(projectPath, workflowFile.replace('.md', '.yaml')))
+        const yamlPath = hasYaml ? workflowFile.replace('.md', '.yaml') : workflowFile
+
+        let content: string
+        if (hasYaml) {
+          content = [
+            '---',
+            `name: '${commandName.replace('bmad-', '')}'`,
+            `description: '${name} (custom module: ${moduleId})'`,
+            'disable-model-invocation: true',
+            '---',
+            '',
+            'IT IS CRITICAL THAT YOU FOLLOW THESE STEPS - while staying in character as the current agent persona you may have loaded:',
+            '',
+            '<steps CRITICAL="TRUE">',
+            `1. Always LOAD the FULL @{project-root}/_bmad/core/tasks/workflow.xml`,
+            `2. READ its entire contents - this is the CORE OS for EXECUTING the specific workflow-config @{project-root}/${yamlPath}`,
+            `3. Pass the yaml path @{project-root}/${yamlPath} as 'workflow-config' parameter to the workflow.xml instructions`,
+            '4. Follow workflow.xml instructions EXACTLY as written to process and follow the specific workflow config and its instructions',
+            '5. Save outputs after EACH section when generating any documents from templates',
+            '</steps>'
+          ].join('\n')
+        } else {
+          content = [
+            '---',
+            `name: '${commandName.replace('bmad-', '')}'`,
+            `description: '${name} (custom module: ${moduleId})'`,
+            'disable-model-invocation: true',
+            '---',
+            '',
+            'IT IS CRITICAL THAT YOU FOLLOW THESE STEPS:',
+            '',
+            '<steps CRITICAL="TRUE">',
+            `1. LOAD the FULL workflow file from {project-root}/${workflowFile}`,
+            '2. READ its entire contents',
+            '3. Follow the workflow instructions precisely',
+            '4. Save outputs after EACH section',
+            '</steps>'
+          ].join('\n')
+        }
+
+        await writeFile(commandFile, content, 'utf-8')
+        console.log(`[BMAD Install] Generated command: ${commandName}.md`)
+      }
+    }
+  }
+}
+
+ipcMain.handle('bmad-install', async (_, projectPath: string, useAlpha?: boolean, outputFolder?: string, modules?: string[], customContentPaths?: string[]) => {
   if (bmadInstallProcess) {
     return { success: false, error: 'Installation already in progress' }
   }
@@ -2073,6 +2373,8 @@ ipcMain.handle('bmad-install', async (_, projectPath: string, useAlpha?: boolean
     const folder = outputFolder || '_bmad-output'
     const packageName = useAlpha ? 'bmad-method@alpha' : 'bmad-method'
     const moduleList = (modules?.length) ? modules.join(',') : 'bmm'
+    // Use --action update if BMAD is already installed (adds tools/modules without full reinstall)
+    const isUpdate = existsSync(join(projectPath, '_bmad', '_config', 'manifest.yaml'))
     // Stable v6 supports non-interactive flags; alpha does not
     const args = useAlpha
       ? [packageName, 'install']
@@ -2082,7 +2384,9 @@ ipcMain.handle('bmad-install', async (_, projectPath: string, useAlpha?: boolean
           '--modules', moduleList,
           '--tools', 'claude-code',
           '--output-folder', folder,
-          '--yes'
+          '--yes',
+          ...(isUpdate ? ['--action', 'update'] : []),
+          ...(customContentPaths?.length ? ['--custom-content', customContentPaths.join(',')] : [])
         ]
 
     console.log('[BMAD Install] Running: npx', args.join(' '))
@@ -2111,9 +2415,21 @@ ipcMain.handle('bmad-install', async (_, projectPath: string, useAlpha?: boolean
       }
     })
 
-    proc.on('exit', (code, signal) => {
+    proc.on('exit', async (code, signal) => {
       console.log('[BMAD Install] Exited:', { code, signal })
       bmadInstallProcess = null
+
+      // Generate missing command files for custom modules after successful install
+      // Always run (not just when customContentPaths provided) — handles update installs
+      // where custom modules are already compiled into _bmad/_config/custom/
+      if (code === 0) {
+        try {
+          await generateCustomModuleCommands(projectPath)
+        } catch (err) {
+          console.error('[BMAD Install] Error generating custom module commands:', err)
+        }
+      }
+
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('bmad:install-complete', {
           success: code === 0,

@@ -77,6 +77,13 @@ const commonOptions: ThemeOptions = {
           fontWeight: 500
         }
       }
+    },
+    MuiBackdrop: {
+      styleOverrides: {
+        root: {
+          WebkitAppRegion: 'no-drag'
+        }
+      }
     }
   }
 }

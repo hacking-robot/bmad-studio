@@ -16,7 +16,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { gruvboxDark, gruvboxLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useStore } from '../../store'
 import { gruvbox } from '../../theme'
-import { PlanningArtifact, getArtifactTypeLabel, getArtifactTypeColor } from '../../hooks/usePlanningArtifacts'
+import { type DocumentFile, getArtifactTypeLabel, getArtifactTypeColor } from '../../hooks/useDocuments'
 
 // Factory function to create code component with theme awareness
 const createCodeBlock = (isDark: boolean): Components['code'] => {
@@ -64,7 +64,7 @@ const createCodeBlock = (isDark: boolean): Components['code'] => {
 }
 
 interface ArtifactViewerProps {
-  artifact: PlanningArtifact | null
+  artifact: DocumentFile | null
   onClose: () => void
 }
 

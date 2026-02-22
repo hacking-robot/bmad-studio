@@ -120,6 +120,13 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const viewMode = useStore((state) => state.viewMode)
   const { loadProjectData } = useProjectData()
 
+  // In non-board mode, auto-enable disableGitBranching
+  useEffect(() => {
+    if (viewMode !== 'board' && !disableGitBranching) {
+      setDisableGitBranching(true)
+    }
+  }, [viewMode])
+
   const selectedTool = AI_TOOLS.find((t) => t.id === aiTool) || AI_TOOLS[0]
 
   // Fetch app version
@@ -263,7 +270,8 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
           paper: {
             sx: {
               minWidth: 220,
-              mt: 1
+              mt: 1,
+              WebkitAppRegion: 'no-drag'
             }
           }
         }}
@@ -342,37 +350,41 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
         </MenuItem>
         {!compact && (
           <>
-            <MenuItem onClick={() => setEnableHumanReviewColumn(!enableHumanReviewColumn)}>
-              <ListItemIcon>
-                <RateReviewIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary="Human Review Column"
-                secondary="Review checklist step"
-                secondaryTypographyProps={{ variant: 'caption' }}
-              />
-              <Switch
-                edge="end"
-                checked={enableHumanReviewColumn}
-                size="small"
-              />
-            </MenuItem>
-            <MenuItem onClick={() => setFullCycleReviewCount(fullCycleReviewCount >= 5 ? 0 : fullCycleReviewCount + 1)}>
-              <ListItemIcon>
-                <RepeatIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary="Full Cycle Reviews"
-                secondary={fullCycleReviewCount === 0 ? 'No reviews' : `${fullCycleReviewCount} review round${fullCycleReviewCount > 1 ? 's' : ''}`}
-                secondaryTypographyProps={{ variant: 'caption' }}
-              />
-              <Chip
-                label={fullCycleReviewCount}
-                size="small"
-                color={fullCycleReviewCount === 0 ? 'default' : 'primary'}
-                sx={{ minWidth: 32, ml: 1 }}
-              />
-            </MenuItem>
+            {viewMode === 'board' && (
+              <MenuItem onClick={() => setEnableHumanReviewColumn(!enableHumanReviewColumn)}>
+                <ListItemIcon>
+                  <RateReviewIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Human Review Column"
+                  secondary="Review checklist step"
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                />
+                <Switch
+                  edge="end"
+                  checked={enableHumanReviewColumn}
+                  size="small"
+                />
+              </MenuItem>
+            )}
+            {viewMode === 'board' && (
+              <MenuItem onClick={() => setFullCycleReviewCount(fullCycleReviewCount >= 5 ? 0 : fullCycleReviewCount + 1)}>
+                <ListItemIcon>
+                  <RepeatIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Full Cycle Reviews"
+                  secondary={fullCycleReviewCount === 0 ? 'No reviews' : `${fullCycleReviewCount} review round${fullCycleReviewCount > 1 ? 's' : ''}`}
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                />
+                <Chip
+                  label={fullCycleReviewCount}
+                  size="small"
+                  color={fullCycleReviewCount === 0 ? 'default' : 'primary'}
+                  sx={{ minWidth: 32, ml: 1 }}
+                />
+              </MenuItem>
+            )}
             <MenuItem onClick={handleChatSettingsClick}>
               <ListItemIcon>
                 <ChatIcon fontSize="small" />
@@ -444,21 +456,23 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
                 size="small"
               />
             </MenuItem>
-            <MenuItem onClick={() => setDisableGitBranching(!disableGitBranching)}>
-              <ListItemIcon>
-                <GitIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary="Disable Git Branching"
-                secondary="Skip branch creation & merging"
-                secondaryTypographyProps={{ variant: 'caption' }}
-              />
-              <Switch
-                edge="end"
-                checked={disableGitBranching}
-                size="small"
-              />
-            </MenuItem>
+            {viewMode === 'board' && (
+              <MenuItem onClick={() => setDisableGitBranching(!disableGitBranching)}>
+                <ListItemIcon>
+                  <GitIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Disable Git Branching"
+                  secondary="Skip branch creation & merging"
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                />
+                <Switch
+                  edge="end"
+                  checked={disableGitBranching}
+                  size="small"
+                />
+              </MenuItem>
+            )}
           </>
         )}
         {!compact && (

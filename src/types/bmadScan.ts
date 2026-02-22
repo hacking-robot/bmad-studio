@@ -35,5 +35,7 @@ export interface BmadScanResult {
   agents: ScannedAgent[]
   workflows: ScannedWorkflow[]
   detectedDeveloperMode: 'ai' | 'human' | null  // detected from workflow file content
+  installedIdes: string[]       // e.g. ['claude-code'] or ['crush', 'cursor']
+  missingClaudeCommands: boolean // true if .claude/commands/ doesn't exist
   scannedAt: string             // ISO timestamp
 }

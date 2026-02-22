@@ -34,6 +34,7 @@ export interface ProjectWizardState {
   outputFolder?: string // Custom output folder name (defaults to _bmad-output)
   developerMode?: 'ai' | 'human' // Development mode (ai = standard, human = modified workflows)
   selectedModules?: string[] // e.g. ['bmm', 'gds', 'cis'] — defaults to ['bmm'] when undefined
+  customContentPaths?: string[] // Filesystem paths to custom module directories
   currentStep: number
   stepStatuses: WizardStepStatus[]
   installProgress: string[]  // Log lines from npx install
