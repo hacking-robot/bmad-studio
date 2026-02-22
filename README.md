@@ -69,17 +69,15 @@
 | Project Types | BMM (BMAD Method), GDS (BMAD Game Dev) |
 | AI Tool | Claude Code |
 
-> **Note**: BMad Studio requires **BMAD 6**. Earlier versions are blocked at startup. Builds are available for macOS, Windows, and Linux, but only **macOS** has been tested.
-
 ## Download
 
 [![Latest Release](https://img.shields.io/github/v/release/hacking-robot/bmad-studio?label=Latest&color=E97451)](https://github.com/hacking-robot/bmad-studio/releases/latest)
 
 | Platform | Download |
 |----------|----------|
-| macOS | [![Download for macOS](https://img.shields.io/badge/Download-.dmg-E97451)](https://github.com/hacking-robot/bmad-studio/releases/latest) |
-| Windows | [![Download for Windows](https://img.shields.io/badge/Download-.exe-E97451)](https://github.com/hacking-robot/bmad-studio/releases/latest) |
-| Linux | [![Download for Linux](https://img.shields.io/badge/Download-.AppImage-E97451)](https://github.com/hacking-robot/bmad-studio/releases/latest) |
+| macOS | [![Download for macOS](https://img.shields.io/badge/Download-.dmg-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
+| Windows (Not tested)| [![Download for Windows](https://img.shields.io/badge/Download-.exe-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
+| Linux (Not tested) | [![Download for Linux](https://img.shields.io/badge/Download-.AppImage-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
 
 ## Build from Source
 
@@ -100,64 +98,12 @@ npm run build
 
 ## Usage
 
-1. Launch BMad Studio
-2. Select your BMAD project folder (or create a new project with the wizard)
-3. View your stories organized by status on the sprint board
-4. Click a story card to view full details, chat history, and file changes
-5. Use `Cmd/Ctrl+K` to open the command palette for quick actions
-6. Open the agent chat sidebar to communicate with BMAD agents
-7. Run Full Cycle or Epic Cycle to automate story processing end-to-end
+1. Launch BMad Board
+2. Select your BMAD or BMAD game project folder
+3. View your stories organized by status
+4. Click a story card to view full details
+5. Use `Cmd+P` to open the command palette for quick actions
 
-### Supported Project Structures
-
-**BMM (BMAD Method)** projects:
-```
-your-project/
-├── _bmad/                    # BMAD agent & workflow definitions
-├── docs/
-│   ├── planning-artifacts/
-│   │   ├── epics.md          # Epic definitions
-│   │   └── stories/
-│   │       ├── story-1.md
-│   │       └── story-2.md
-│   └── implementation-artifacts/
-│       └── sprint-status.yaml  # Story status tracking
-```
-
-**GDS (BMAD Game Dev)** projects:
-```
-your-project/
-├── _bmad/                    # BMAD agent & workflow definitions
-├── epics.md                  # Epic definitions at root
-└── docs/
-    └── stories/
-        ├── epic-1/
-        │   ├── 1-1-story-slug.md
-        │   └── 1-2-another-story.md
-        └── epic-2/
-            └── 2-1-story-name.md
-```
-
-### Story Status
-
-Stories use frontmatter to define their status:
-
-```yaml
----
-status: ready-for-dev
----
-```
-
-Valid statuses: `backlog`, `ready-for-dev`, `in-progress`, `review`, `done`, `optional`
-
-## Development
-
-```bash
-npm run dev              # Vite dev server only
-npm run electron:dev     # Full Electron app in dev mode
-npm run build            # Production build
-npm run typecheck        # Type checking
-```
 
 ## Tech Stack
 
