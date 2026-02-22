@@ -32,8 +32,6 @@
 | BMAD Version | **BMAD 6** |
 | Project Types | BMAD, BMAD Game |
 
-> **Note**: BMad Board has only be tested on **BMAD 6** projects. Earlier versions of BMAD may not work. Only **BMAD** and **BMAD Game** project types have been tested.
-
 ## Download
 
 [![Latest Release](https://img.shields.io/github/v/release/hacking-robot/bmad-board?label=Latest&color=E97451)](https://github.com/hacking-robot/bmad-board/releases/latest)
@@ -41,8 +39,8 @@
 | Platform | Download |
 |----------|----------|
 | macOS | [![Download for macOS](https://img.shields.io/badge/Download-.dmg-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
-| Windows | [![Download for Windows](https://img.shields.io/badge/Download-.exe-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
-| Linux | [![Download for Linux](https://img.shields.io/badge/Download-.AppImage-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
+| Windows (Not tested)| [![Download for Windows](https://img.shields.io/badge/Download-.exe-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
+| Linux (Not tested) | [![Download for Linux](https://img.shields.io/badge/Download-.AppImage-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
 
 ## Build from Source
 
@@ -69,44 +67,6 @@ npm run build
 4. Click a story card to view full details
 5. Use `Cmd+P` to open the command palette for quick actions
 
-### Project Structure Requirements
-
-Your BMAD project should have:
-
-```
-your-project/
-├── docs/
-│   ├── epics/
-│   │   ├── epic-1.md
-│   │   └── epic-2.md
-│   └── stories/
-│       ├── epic-1/
-│       │   ├── 1-1-story-slug.md
-│       │   └── 1-2-another-story.md
-│       └── epic-2/
-│           └── 2-1-story-name.md
-```
-
-### Story Status
-
-Stories use frontmatter to define their status:
-
-```yaml
----
-status: ready-for-dev
----
-```
-
-Valid statuses: `backlog`, `ready-for-dev`, `in-progress`, `review`, `done`, `optional`
-
-## Development
-
-```bash
-npm run dev              # Vite dev server only
-npm run electron:dev     # Full Electron app in dev mode
-npm run build            # Production build
-npm run typecheck        # Type checking
-```
 
 ## Tech Stack
 
