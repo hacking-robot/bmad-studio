@@ -1,13 +1,13 @@
 <div align="center">
-  <img src="assets/banner.svg" alt="BMad Board" width="500">
-  <p><strong>Visualize and automate your BMAD sprint workflow with AI-powered agents</strong></p>
+  <img src="assets/banner.svg" alt="BMad Studio" width="500">
+  <p><strong>A desktop IDE for managing BMAD projects — sprint board, agent automation, and full lifecycle control</strong></p>
 
   ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey) ![Electron](https://img.shields.io/badge/electron-33-47848F)
 </div>
 
 ---
 
-<img src="assets/screenshot1.png" alt="BMad Board Screenshot" width="100%">
+<img src="assets/screenshot1.png" alt="BMad Studio Screenshot" width="100%">
 
 ## Features
 
@@ -69,24 +69,24 @@
 | Project Types | BMM (BMAD Method), GDS (BMAD Game Dev) |
 | AI Tool | Claude Code |
 
-> **Note**: BMad Board requires **BMAD 6**. Earlier versions are blocked at startup. Builds are available for macOS, Windows, and Linux, but only **macOS** has been tested.
+> **Note**: BMad Studio requires **BMAD 6**. Earlier versions are blocked at startup. Builds are available for macOS, Windows, and Linux, but only **macOS** has been tested.
 
 ## Download
 
-[![Latest Release](https://img.shields.io/github/v/release/hacking-robot/bmad-board?label=Latest&color=E97451)](https://github.com/hacking-robot/bmad-board/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/hacking-robot/bmad-studio?label=Latest&color=E97451)](https://github.com/hacking-robot/bmad-studio/releases/latest)
 
 | Platform | Download |
 |----------|----------|
-| macOS | [![Download for macOS](https://img.shields.io/badge/Download-.dmg-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
-| Windows | [![Download for Windows](https://img.shields.io/badge/Download-.exe-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
-| Linux | [![Download for Linux](https://img.shields.io/badge/Download-.AppImage-E97451)](https://github.com/hacking-robot/bmad-board/releases/latest) |
+| macOS | [![Download for macOS](https://img.shields.io/badge/Download-.dmg-E97451)](https://github.com/hacking-robot/bmad-studio/releases/latest) |
+| Windows | [![Download for Windows](https://img.shields.io/badge/Download-.exe-E97451)](https://github.com/hacking-robot/bmad-studio/releases/latest) |
+| Linux | [![Download for Linux](https://img.shields.io/badge/Download-.AppImage-E97451)](https://github.com/hacking-robot/bmad-studio/releases/latest) |
 
 ## Build from Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/hacking-robot/bmad-board.git
-cd bmad-board
+git clone https://github.com/hacking-robot/bmad-studio.git
+cd bmad-studio
 
 # Install dependencies
 npm install
@@ -100,7 +100,7 @@ npm run build
 
 ## Usage
 
-1. Launch BMad Board
+1. Launch BMad Studio
 2. Select your BMAD project folder (or create a new project with the wizard)
 3. View your stories organized by status on the sprint board
 4. Click a story card to view full details, chat history, and file changes

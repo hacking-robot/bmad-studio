@@ -1,5 +1,5 @@
 {
-  "name": "bmadboard",
+  "name": "bmad-studio",
   "version": "1.0.60",
   "description": "A beautiful sprint board for BMAD projects",
   "main": "dist-electron/main.js",
@@ -54,8 +54,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.bmadboard.app",
-    "productName": "BMad Board",
+    "appId": "com.bmadstudio.app",
+    "productName": "BMad Studio",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -100,7 +100,7 @@
     "publish": {
       "provider": "github",
       "owner": "hacking-robot",
-      "repo": "bmad-board"
+      "repo": "bmad-studio"
     }
   }
 }

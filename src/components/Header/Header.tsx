@@ -117,7 +117,7 @@ export default function Header() {
           <Box
             component="img"
             src={logoSrc}
-            alt="BMad Board"
+            alt="BMad Studio"
             sx={{ width: 28, height: 28, borderRadius: 1 }}
           />
           <Typography
@@ -126,7 +126,7 @@ export default function Header() {
             fontWeight={500}
             sx={{ whiteSpace: 'nowrap' }}
           >
-            BMad Board
+            BMad Studio
           </Typography>
           {isGameProject && (
             <Chip

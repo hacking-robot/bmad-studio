@@ -1,61 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1024 1024">
-  <!-- Dark mode in-app logo -->
-  <defs>
-    <linearGradient id="bg" x1="0.1" y1="0" x2="0.9" y2="1">
-      <stop offset="0%" stop-color="#2d7a4e"/>
-      <stop offset="100%" stop-color="#1a5535"/>
-    </linearGradient>
-    <linearGradient id="shine" x1="0.5" y1="0" x2="0.5" y2="1">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.05)"/>
-      <stop offset="40%" stop-color="rgba(255,255,255,0)"/>
-      <stop offset="100%" stop-color="rgba(0,0,0,0.08)"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0%" stop-color="rgba(254,128,25,0.6)"/>
-      <stop offset="60%" stop-color="rgba(254,128,25,0.15)"/>
-      <stop offset="100%" stop-color="rgba(254,128,25,0)"/>
-    </radialGradient>
-  </defs>
-
-  <rect x="64" y="64" width="896" height="896" rx="196" fill="url(#bg)"/>
-  <rect x="64" y="64" width="896" height="896" rx="196" fill="url(#shine)"/>
-
-  <rect x="185" y="210" width="190" height="8" rx="4" fill="#fe8019" opacity="0.8"/>
-  <rect x="415" y="210" width="190" height="8" rx="4" fill="#fabd2f" opacity="0.7"/>
-  <rect x="645" y="210" width="190" height="8" rx="4" fill="#8ec07c" opacity="0.7"/>
-
-  <rect x="195" y="245" width="170" height="105" rx="16" fill="rgba(251,241,199,0.82)"/>
-  <rect x="201" y="251" width="6" height="93" rx="3" fill="#fe8019" opacity="0.75"/>
-  <rect x="218" y="268" width="100" height="8" rx="4" fill="rgba(60,56,54,0.18)"/>
-  <rect x="218" y="286" width="72" height="8" rx="4" fill="rgba(60,56,54,0.1)"/>
-
-  <rect x="195" y="370" width="170" height="105" rx="16" fill="rgba(251,241,199,0.62)"/>
-  <rect x="201" y="376" width="6" height="93" rx="3" fill="#fe8019" opacity="0.55"/>
-  <rect x="218" y="393" width="90" height="8" rx="4" fill="rgba(60,56,54,0.14)"/>
-  <rect x="218" y="411" width="65" height="8" rx="4" fill="rgba(60,56,54,0.08)"/>
-
-  <rect x="195" y="495" width="170" height="105" rx="16" fill="rgba(251,241,199,0.42)"/>
-  <rect x="201" y="501" width="6" height="93" rx="3" fill="#fe8019" opacity="0.35"/>
-
-  <circle cx="510" cy="298" r="85" fill="url(#glow)"/>
-  <rect x="425" y="245" width="170" height="105" rx="16" fill="rgba(251,241,199,0.92)" stroke="rgba(254,128,25,0.5)" stroke-width="2.5"/>
-  <rect x="431" y="251" width="6" height="93" rx="3" fill="#fabd2f" opacity="0.85"/>
-  <rect x="448" y="268" width="105" height="8" rx="4" fill="rgba(60,56,54,0.2)"/>
-  <rect x="448" y="286" width="78" height="8" rx="4" fill="rgba(60,56,54,0.12)"/>
-  <rect x="448" y="318" width="55" height="18" rx="9" fill="rgba(254,128,25,0.18)"/>
-
-  <rect x="425" y="370" width="170" height="105" rx="16" fill="rgba(251,241,199,0.55)"/>
-  <rect x="431" y="376" width="6" height="93" rx="3" fill="#fabd2f" opacity="0.5"/>
-  <rect x="448" y="393" width="95" height="8" rx="4" fill="rgba(60,56,54,0.12)"/>
-
-  <rect x="655" y="245" width="170" height="80" rx="16" fill="rgba(251,241,199,0.6)"/>
-  <rect x="661" y="251" width="6" height="68" rx="3" fill="#8ec07c" opacity="0.55"/>
-
-  <rect x="655" y="345" width="170" height="80" rx="16" fill="rgba(251,241,199,0.48)"/>
-  <rect x="661" y="351" width="6" height="68" rx="3" fill="#8ec07c" opacity="0.42"/>
-
-  <rect x="655" y="445" width="170" height="80" rx="16" fill="rgba(251,241,199,0.36)"/>
-  <rect x="661" y="451" width="6" height="68" rx="3" fill="#8ec07c" opacity="0.3"/>
-
-  <rect x="655" y="545" width="170" height="80" rx="16" fill="rgba(251,241,199,0.24)"/>
+  <rect x="64" y="64" width="896" height="896" rx="196" fill="#282828"/>
+  <text x="512" y="512" text-anchor="middle" dominant-baseline="central"
+        font-family="Hack, 'Hack Nerd Font Mono', monospace"
+        font-size="700" font-weight="700" fill="#b8bb26">B</text>
 </svg>

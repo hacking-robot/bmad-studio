@@ -128,6 +128,7 @@ const electronStorage = {
           developerMode,
           bmadUserName,
           bmadLanguage,
+          hasConfiguredProfile,
           disableEnvCheck,
           gitDiffPanelWidth,
         } = parsed.state;
@@ -201,6 +202,7 @@ const electronStorage = {
           fullCycleReviewCount: fullCycleReviewCount ?? 1,
           bmadUserName: bmadUserName || '',
           bmadLanguage: bmadLanguage || 'en',
+          hasConfiguredProfile: hasConfiguredProfile ?? false,
           disableEnvCheck: disableEnvCheck ?? false,
           gitDiffPanelWidth: gitDiffPanelWidth ?? 600,
         });
@@ -302,6 +304,10 @@ interface AppState {
   setBmadUserName: (name: string) => void;
   bmadLanguage: string;
   setBmadLanguage: (lang: string) => void;
+  profileDialogOpen: boolean;
+  setProfileDialogOpen: (open: boolean) => void;
+  hasConfiguredProfile: boolean;
+  setHasConfiguredProfile: (configured: boolean) => void;
 
   // Project
   projectPath: string | null;
@@ -710,6 +716,10 @@ export const useStore = create<AppState>()(
       setBmadUserName: (name) => set({ bmadUserName: name }),
       bmadLanguage: "English",
       setBmadLanguage: (lang) => set({ bmadLanguage: lang }),
+      profileDialogOpen: false,
+      setProfileDialogOpen: (open) => set({ profileDialogOpen: open }),
+      hasConfiguredProfile: false,
+      setHasConfiguredProfile: (configured) => set({ hasConfiguredProfile: configured }),
 
       // Project
       projectPath: null,
@@ -1754,7 +1764,7 @@ export const useStore = create<AppState>()(
       },
     }),
     {
-      name: "bmadboard-storage",
+      name: "bmad-studio-storage",
       storage: createJSONStorage(() => electronStorage),
       partialize: (state) => ({
         themeMode: state.themeMode,
@@ -1790,6 +1800,7 @@ export const useStore = create<AppState>()(
         developerMode: state.developerMode,
         bmadUserName: state.bmadUserName,
         bmadLanguage: state.bmadLanguage,
+        hasConfiguredProfile: state.hasConfiguredProfile,
         gitDiffPanelWidth: state.gitDiffPanelWidth,
       }),
       onRehydrateStorage: () => (state) => {

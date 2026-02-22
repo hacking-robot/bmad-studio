@@ -48,6 +48,8 @@ export default function App() {
   const setUpdateStatus = useStore((state) => state.setUpdateStatus)
   const setUpdateVersion = useStore((state) => state.setUpdateVersion)
   const setUpdateDownloadPercent = useStore((state) => state.setUpdateDownloadPercent)
+  const hasConfiguredProfile = useStore((state) => state.hasConfiguredProfile)
+  const setProfileDialogOpen = useStore((state) => state.setProfileDialogOpen)
 
   // Listen for auto-updater status (must be at app level so events aren't missed)
   useEffect(() => {
@@ -94,6 +96,13 @@ export default function App() {
       })
     }
   }, [hasHydrated, projectPath, envCheckResults, disableEnvCheck, setEnvCheckDialogOpen, setEnvCheckResults, setEnvCheckLoading])
+
+  // Open profile dialog on first launch once a project is loaded
+  useEffect(() => {
+    if (hasHydrated && projectPath && !wizardActive && !hasConfiguredProfile) {
+      setProfileDialogOpen(true)
+    }
+  }, [hasHydrated, projectPath, wizardActive, hasConfiguredProfile, setProfileDialogOpen])
 
   // Listen for custom event to open help panel
   useEffect(() => {

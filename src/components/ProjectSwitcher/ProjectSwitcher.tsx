@@ -30,7 +30,7 @@ export default function ProjectSwitcher() {
   const { selectProject, switchToProject } = useProjectData()
 
   const open = Boolean(anchorEl)
-  const projectName = projectPath?.split('/').pop() || 'BMad Board'
+  const projectName = projectPath?.split('/').pop() || 'BMad Studio'
 
   // Filter projects based on search query
   const filteredProjects = recentProjects.filter((project) => {

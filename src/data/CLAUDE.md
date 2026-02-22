@@ -21,6 +21,7 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #17467 | 6:22 PM | 🔵 | Human Developer Mode files exist as alternative to AI-focused BMAD workflows | ~354 |
+| #17077 | 4:17 PM | 🔵 | Wizard Steps Configuration and Phases | ~328 |
 
 ### Feb 21, 2026
 

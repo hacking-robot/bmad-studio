@@ -103,7 +103,7 @@ export default function OverviewTab() {
       <Divider sx={{ my: 3 }} />
 
       <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-        BMad Board
+        BMad Studio
       </Typography>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>

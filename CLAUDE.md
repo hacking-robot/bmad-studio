@@ -1,4 +1,4 @@
-# BMadBoard
+# BMad Studio
 
 Electron desktop application for visualizing and managing BMAD projects as a story board with integrated AI agent automation.
 

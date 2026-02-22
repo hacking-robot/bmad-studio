@@ -106,6 +106,6 @@ jobs:
       contents: write
     steps:
       - name: Publish release
-        run: gh release edit "v${{ needs.version.outputs.new_version }}" --repo "${{ github.repository }}" --draft=false --title "BMad Board v${{ needs.version.outputs.new_version }}"
+        run: gh release edit "v${{ needs.version.outputs.new_version }}" --repo "${{ github.repository }}" --draft=false --title "BMad Studio v${{ needs.version.outputs.new_version }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

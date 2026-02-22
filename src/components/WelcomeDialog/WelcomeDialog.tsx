@@ -59,7 +59,7 @@ export default function WelcomeDialog() {
           <Box
             component="img"
             src={themeMode === 'dark' ? logoDark : logoLight}
-            alt="BMad Board"
+            alt="BMad Studio"
             sx={{
               width: 80,
               height: 80,
@@ -69,7 +69,7 @@ export default function WelcomeDialog() {
 
           <Box>
             <Typography variant="h4" fontWeight={700} gutterBottom>
-              BMad Board
+              BMad Studio
             </Typography>
             <Typography variant="body1" color="text.secondary">
               Select a project folder to get started.
@@ -146,7 +146,7 @@ export default function WelcomeDialog() {
                   implements features.
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  BMad Board visualizes your project's progress as stories move through the development
+                  BMad Studio visualizes your project's progress as stories move through the development
                   lifecycle—from backlog to done.
                 </Typography>
                 <Link

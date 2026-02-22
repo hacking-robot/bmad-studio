@@ -12,7 +12,7 @@ import { getAugmentedEnv, findBinary } from './envUtils'
 import { scanBmadProject } from './bmadScanner'
 
 // Set app name (shows in menu bar on macOS)
-app.setName('BMad Board')
+app.setName('BMad Studio')
 
 let mainWindow: BrowserWindow | null = null
 let watchDebounceTimer: NodeJS.Timeout | null = null
@@ -597,7 +597,7 @@ ipcMain.handle('select-directory', async () => {
         const stats2 = await stat(candidatePath)
         if (stats2.isDirectory()) {
           // Check for wizard state file (interrupted install) or BMAD output structure (completed install)
-          const hasWizardState = existsSync(join(candidatePath, '.bmadboard-wizard.json'))
+          const hasWizardState = existsSync(join(candidatePath, '.bmad-studio-wizard.json'))
           const hasBmadStructure = existsSync(join(candidatePath, 'implementation-artifacts'))
             || existsSync(join(candidatePath, 'planning-artifacts'))
           if (hasWizardState || hasBmadStructure) {
@@ -1713,7 +1713,7 @@ interface StoryChatHistory {
 
 const getProjectStoryChatDir = (projectPath: string, outputFolder: string = '_bmad-output') => join(projectPath, outputFolder, 'chat-history')
 const getProjectStoryChatPath = (projectPath: string, storyId: string, outputFolder: string = '_bmad-output') => join(getProjectStoryChatDir(projectPath, outputFolder), `${storyId}.json`)
-const getUserStoryChatDir = () => join(homedir(), '.config', 'bmadboard', 'story-chats')
+const getUserStoryChatDir = () => join(homedir(), '.config', 'bmad-studio', 'story-chats')
 const getUserStoryChatPath = (storyId: string) => join(getUserStoryChatDir(), `${storyId}.json`)
 
 // Ensure story chat directories exist
@@ -2220,7 +2220,7 @@ ipcMain.handle('save-wizard-state', async (_, projectPath: string, state: unknow
     if (!existsSync(wizardDir)) {
       await mkdir(wizardDir, { recursive: true })
     }
-    const wizardPath = join(wizardDir, '.bmadboard-wizard.json')
+    const wizardPath = join(wizardDir, '.bmad-studio-wizard.json')
     await writeFile(wizardPath, JSON.stringify(state, null, 2))
     return true
   } catch (error) {
@@ -2232,7 +2232,7 @@ ipcMain.handle('save-wizard-state', async (_, projectPath: string, state: unknow
 ipcMain.handle('load-wizard-state', async (_, projectPath: string, outputFolder?: string) => {
   try {
     const folder = outputFolder || '_bmad-output'
-    const wizardPath = join(projectPath, folder, '.bmadboard-wizard.json')
+    const wizardPath = join(projectPath, folder, '.bmad-studio-wizard.json')
     if (!existsSync(wizardPath)) return null
     const content = await readFile(wizardPath, 'utf-8')
     return JSON.parse(content)
@@ -2244,7 +2244,7 @@ ipcMain.handle('load-wizard-state', async (_, projectPath: string, outputFolder?
 ipcMain.handle('delete-wizard-state', async (_, projectPath: string, outputFolder?: string) => {
   try {
     const folder = outputFolder || '_bmad-output'
-    const wizardPath = join(projectPath, folder, '.bmadboard-wizard.json')
+    const wizardPath = join(projectPath, folder, '.bmad-studio-wizard.json')
     if (existsSync(wizardPath)) {
       const { unlink } = await import('fs/promises')
       await unlink(wizardPath)

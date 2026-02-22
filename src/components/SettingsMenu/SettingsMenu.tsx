@@ -9,6 +9,8 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogActions,
+  Button,
   Box,
   Typography,
   Radio,
@@ -56,7 +58,9 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [toolDialogOpen, setToolDialogOpen] = useState(false)
   const [chatSettingsDialogOpen, setChatSettingsDialogOpen] = useState(false)
-  const [profileDialogOpen, setProfileDialogOpen] = useState(false)
+  const profileDialogOpen = useStore((state) => state.profileDialogOpen)
+  const setProfileDialogOpen = useStore((state) => state.setProfileDialogOpen)
+  const setHasConfiguredProfile = useStore((state) => state.setHasConfiguredProfile)
   const [branchDialogOpen, setBranchDialogOpen] = useState(false)
   const [cliStatus, setCliStatus] = useState<Record<string, CLIDetectionResult>>({})
   const [detectingCli, setDetectingCli] = useState(false)
@@ -751,13 +755,13 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
       {/* BMAD Profile Dialog */}
       <Dialog
         open={profileDialogOpen}
-        onClose={() => setProfileDialogOpen(false)}
+        onClose={() => { setProfileDialogOpen(false); setHasConfiguredProfile(true) }}
         maxWidth="xs"
         fullWidth
       >
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           BMAD Profile
-          <IconButton size="small" onClick={() => setProfileDialogOpen(false)}>
+          <IconButton size="small" onClick={() => { setProfileDialogOpen(false); setHasConfiguredProfile(true) }}>
             <CloseIcon />
           </IconButton>
         </DialogTitle>
@@ -786,6 +790,11 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
             />
           </Box>
         </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setProfileDialogOpen(false); setHasConfiguredProfile(true) }}>
+            Done
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* Chat Settings Dialog */}
