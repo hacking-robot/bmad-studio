@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "projectType": "bmgd",
+  "projectType": "gds",
   "statuses": [
     {
       "id": "backlog",
@@ -77,19 +77,19 @@
         {
           "label": "Create Story",
           "agentId": "game-scrum-master",
-          "command": "/bmad:bmgd:workflows:create-story",
+          "command": "/bmad-gds-create-story",
           "description": "Use Game Scrum Master to draft story for development"
         },
         {
           "label": "Create GDD",
           "agentId": "game-designer",
-          "command": "/bmad:bmgd:workflows:create-gdd",
+          "command": "/bmad-gds-create-gdd",
           "description": "Use Game Designer to create Game Design Document"
         },
         {
           "label": "Brainstorm Game",
           "agentId": "game-designer",
-          "command": "/bmad:bmgd:workflows:brainstorm-game",
+          "command": "/bmad-gds-brainstorm-game",
           "description": "Use Game Designer to brainstorm game features"
         }
       ]
@@ -99,20 +99,20 @@
         {
           "label": "Implement Story",
           "agentId": "game-dev",
-          "command": "/bmad:bmgd:workflows:dev-story",
+          "command": "/bmad-gds-dev-story",
           "description": "Use Game Dev to implement the game feature",
           "primary": true
         },
         {
           "label": "Quick Prototype",
           "agentId": "game-solo-dev",
-          "command": "/bmad:bmgd:workflows:quick-prototype",
+          "command": "/bmad-gds-quick-prototype",
           "description": "Use Game Solo Dev for rapid prototyping"
         },
         {
           "label": "Game Architecture",
           "agentId": "game-architect",
-          "command": "/bmad:bmgd:workflows:game-architecture",
+          "command": "/bmad-gds-game-architecture",
           "description": "Use Game Architect to design technical approach first"
         }
       ]
@@ -122,26 +122,26 @@
         {
           "label": "Continue Development",
           "agentId": "game-dev",
-          "command": "/bmad:bmgd:agents:game-dev",
+          "command": "/bmad-agent-gds-game-dev",
           "description": "Continue working with Game Dev agent",
           "primary": true
         },
         {
           "label": "Sprint Status",
           "agentId": "game-scrum-master",
-          "command": "/bmad:bmgd:workflows:sprint-status",
+          "command": "/bmad-gds-sprint-status",
           "description": "Use Game SM to check sprint progress"
         },
         {
           "label": "Quick Dev",
           "agentId": "game-solo-dev",
-          "command": "/bmad:bmgd:workflows:quick-dev",
+          "command": "/bmad-gds-quick-dev",
           "description": "Use Game Solo Dev for flexible development"
         },
         {
           "label": "Code Review",
           "agentId": "game-dev",
-          "command": "/bmad:bmgd:workflows:code-review",
+          "command": "/bmad-gds-code-review",
           "description": "Request code review when ready"
         }
       ]
@@ -151,26 +151,26 @@
         {
           "label": "Code Review",
           "agentId": "game-dev",
-          "command": "/bmad:bmgd:workflows:code-review",
+          "command": "/bmad-gds-code-review",
           "description": "Use Game Dev to review code changes",
           "primary": true
         },
         {
           "label": "Test Review",
           "agentId": "game-qa",
-          "command": "/bmad:bmgd:workflows:gametest-test-review",
+          "command": "/bmad-gds-gametest-test-review",
           "description": "Use Game QA to review test coverage"
         },
         {
           "label": "Playtest Plan",
           "agentId": "game-qa",
-          "command": "/bmad:bmgd:workflows:gametest-playtest-plan",
+          "command": "/bmad-gds-gametest-playtest-plan",
           "description": "Use Game QA to create playtest plan"
         },
         {
           "label": "Correct Course",
           "agentId": "game-dev",
-          "command": "/bmad:bmgd:workflows:correct-course",
+          "command": "/bmad-gds-correct-course",
           "description": "Send back with corrections needed"
         }
       ]
@@ -180,26 +180,26 @@
         {
           "label": "Code Review",
           "agentId": "game-dev",
-          "command": "/bmad:bmgd:workflows:code-review",
+          "command": "/bmad-gds-code-review",
           "description": "Use Game Dev to review code changes",
           "primary": true
         },
         {
           "label": "Test Review",
           "agentId": "game-qa",
-          "command": "/bmad:bmgd:workflows:gametest-test-review",
+          "command": "/bmad-gds-gametest-test-review",
           "description": "Use Game QA to review test coverage"
         },
         {
           "label": "Playtest Plan",
           "agentId": "game-qa",
-          "command": "/bmad:bmgd:workflows:gametest-playtest-plan",
+          "command": "/bmad-gds-gametest-playtest-plan",
           "description": "Use Game QA to create playtest plan"
         },
         {
           "label": "Correct Course",
           "agentId": "game-dev",
-          "command": "/bmad:bmgd:workflows:correct-course",
+          "command": "/bmad-gds-correct-course",
           "description": "Send back with corrections needed"
         }
       ]
@@ -209,13 +209,13 @@
         {
           "label": "Retrospective",
           "agentId": "game-scrum-master",
-          "command": "/bmad:bmgd:workflows:retrospective",
+          "command": "/bmad-gds-retrospective",
           "description": "Use Game SM to run retrospective"
         },
         {
           "label": "Performance Test",
           "agentId": "game-qa",
-          "command": "/bmad:bmgd:workflows:gametest-performance",
+          "command": "/bmad-gds-gametest-performance",
           "description": "Use Game QA to validate performance"
         }
       ]
@@ -225,13 +225,13 @@
         {
           "label": "Create Story",
           "agentId": "game-scrum-master",
-          "command": "/bmad:bmgd:workflows:create-story",
+          "command": "/bmad-gds-create-story",
           "description": "Use Game Scrum Master to prioritize and refine story"
         },
         {
           "label": "Quick Prototype",
           "agentId": "game-solo-dev",
-          "command": "/bmad:bmgd:workflows:quick-prototype",
+          "command": "/bmad-gds-quick-prototype",
           "description": "Use Game Solo Dev for quick implementation"
         }
       ]
@@ -246,7 +246,7 @@
       "description": "Lead Game Designer and Creative Vision Architect. Creates Game Design Documents, defines mechanics, systems, and game-type-specific features.",
       "whenToUse": "At the start of a game project to define mechanics, create GDDs, and design game systems.",
       "color": "#8B5CF6",
-      "commands": ["/bmad:bmgd:agents:game-designer", "/bmad:bmgd:workflows:create-gdd", "/bmad:bmgd:workflows:narrative", "/bmad:bmgd:workflows:brainstorm-game"],
+      "commands": ["/bmad-agent-gds-game-designer", "/bmad-gds-create-gdd", "/bmad-gds-narrative", "/bmad-gds-brainstorm-game", "/bmad-gds-game-brief"],
       "examplePrompts": [
         "Create a GDD for a 2D platformer",
         "Design the combat mechanics for the RPG",
@@ -261,7 +261,7 @@
       "description": "Principal Game Systems Architect and Technical Director. Handles engine selection, system architecture, and technical specifications.",
       "whenToUse": "After game design to select engine (Unity, Unreal, Godot), design architecture, and create technical specs.",
       "color": "#10B981",
-      "commands": ["/bmad:bmgd:agents:game-architect", "/bmad:bmgd:workflows:game-architecture"],
+      "commands": ["/bmad-agent-gds-game-architect", "/bmad-gds-game-architecture", "/bmad-gds-generate-project-context", "/bmad-gds-correct-course"],
       "examplePrompts": [
         "Design the entity component system architecture",
         "Select the best engine for our puzzle game",
@@ -276,7 +276,7 @@
       "description": "Game Development Scrum Master and Sprint Orchestrator. Tracks milestones, manages sprints, and facilitates retrospectives.",
       "whenToUse": "During production to plan sprints, track progress, prepare stories, and run retrospectives.",
       "color": "#F59E0B",
-      "commands": ["/bmad:bmgd:agents:game-scrum-master", "/bmad:bmgd:workflows:create-story", "/bmad:bmgd:workflows:sprint-status", "/bmad:bmgd:workflows:sprint-planning", "/bmad:bmgd:workflows:retrospective"],
+      "commands": ["/bmad-agent-gds-game-scrum-master", "/bmad-gds-create-story", "/bmad-gds-sprint-status", "/bmad-gds-sprint-planning", "/bmad-gds-retrospective", "/bmad-gds-correct-course"],
       "examplePrompts": [
         "Generate the current sprint status",
         "Prepare story 2.3 for development",
@@ -291,7 +291,7 @@
       "description": "Senior Game Developer and Technical Implementation Specialist. Implements game features, systems, and mechanics following the GDD and architecture.",
       "whenToUse": "When game stories are ready for development, or when code needs review.",
       "color": "#EF4444",
-      "commands": ["/bmad:bmgd:agents:game-dev", "/bmad:bmgd:workflows:dev-story", "/bmad:bmgd:workflows:code-review"],
+      "commands": ["/bmad-agent-gds-game-dev", "/bmad-gds-dev-story", "/bmad-gds-code-review", "/bmad-gds-quick-dev", "/bmad-gds-quick-prototype"],
       "examplePrompts": [
         "Implement the player movement system",
         "Review the code changes for the inventory feature",
@@ -306,7 +306,7 @@
       "description": "Elite Indie Game Developer and Quick Flow Specialist. Combines rapid prototyping with flexible development for solo developers and small teams.",
       "whenToUse": "For quick prototypes, rapid iteration, or when working solo without full planning overhead.",
       "color": "#EC4899",
-      "commands": ["/bmad:bmgd:agents:game-solo-dev", "/bmad:bmgd:workflows:quick-prototype", "/bmad:bmgd:workflows:quick-dev", "/bmad:bmgd:workflows:quick-spec"],
+      "commands": ["/bmad-agent-gds-game-solo-dev", "/bmad-gds-quick-prototype", "/bmad-gds-quick-dev", "/bmad-gds-quick-spec", "/bmad-gds-code-review", "/bmad-gds-gametest-framework"],
       "examplePrompts": [
         "Quick prototype the core gameplay loop",
         "Rapidly implement the save system",
@@ -321,12 +321,119 @@
       "description": "Game QA Architect and Test Automation Specialist. Creates test frameworks, playtest plans, and validates performance requirements.",
       "whenToUse": "When setting up testing infrastructure, creating playtest plans, or validating game performance.",
       "color": "#06B6D4",
-      "commands": ["/bmad:bmgd:agents:game-qa", "/bmad:bmgd:workflows:gametest-framework", "/bmad:bmgd:workflows:gametest-playtest-plan", "/bmad:bmgd:workflows:gametest-performance"],
+      "commands": ["/bmad-agent-gds-game-qa", "/bmad-gds-gametest-framework", "/bmad-gds-gametest-playtest-plan", "/bmad-gds-gametest-performance", "/bmad-gds-gametest-automate", "/bmad-gds-gametest-test-design", "/bmad-gds-gametest-test-review"],
       "examplePrompts": [
         "Set up the game testing framework",
         "Create a playtest plan for the demo level",
         "Validate the performance on target hardware"
       ]
     }
-  ]
+  ],
+  "projectWorkflows": {
+    "analysis": {
+      "label": "Analysis",
+      "icon": "🔍",
+      "description": "Brainstorm game ideas, define the creative vision, and develop narrative elements.",
+      "workflows": [
+        {
+          "label": "Brainstorm Game",
+          "agentId": "game-designer",
+          "command": "/bmad-gds-brainstorm-game",
+          "description": "Brainstorm game ideas and features",
+          "tooltip": "Interactive brainstorming session to explore game concepts, mechanics, art direction, and core gameplay loops. Produces a brainstorming report to guide game design decisions."
+        },
+        {
+          "label": "Create Game Brief",
+          "agentId": "game-designer",
+          "command": "/bmad-gds-create-game-brief",
+          "description": "Create or update game brief",
+          "tooltip": "Creates a game brief capturing the core concept, genre, target audience, unique selling points, and high-level design pillars. The foundation document for all game development."
+        },
+        {
+          "label": "Narrative",
+          "agentId": "game-designer",
+          "command": "/bmad-gds-narrative",
+          "description": "Develop game narrative and story",
+          "tooltip": "Develops the game's narrative elements: world-building, character backgrounds, story arcs, dialogue systems, and lore. Creates a narrative document that informs level and quest design."
+        }
+      ]
+    },
+    "planning": {
+      "label": "Planning",
+      "icon": "📋",
+      "description": "Create Game Design Documents, define gameplay systems, and plan development stories.",
+      "workflows": [
+        {
+          "label": "Create GDD",
+          "agentId": "game-designer",
+          "command": "/bmad-gds-create-gdd",
+          "description": "Create or update Game Design Document",
+          "tooltip": "Creates a comprehensive Game Design Document (GDD) covering gameplay mechanics, systems design, progression, controls, and technical requirements. The primary reference for all game development work."
+        },
+        {
+          "label": "Create Story",
+          "agentId": "game-scrum-master",
+          "command": "/bmad-gds-create-story",
+          "description": "Create a new development story",
+          "tooltip": "Creates an individual development story with detailed acceptance criteria, technical requirements, and implementation notes. Stories become the work items on your sprint board."
+        }
+      ]
+    },
+    "architecture": {
+      "label": "Architecture",
+      "icon": "🏗️",
+      "description": "Design game technical architecture, plan engine systems, and create component diagrams.",
+      "workflows": [
+        {
+          "label": "Game Architecture",
+          "agentId": "game-architect",
+          "command": "/bmad-gds-game-architecture",
+          "description": "Design game technical architecture",
+          "tooltip": "Designs the game's technical architecture: engine systems, rendering pipeline, physics, networking, asset pipeline, and component structure. Produces an architecture document guiding all implementation."
+        }
+      ]
+    },
+    "management": {
+      "label": "Management",
+      "icon": "📊",
+      "description": "Sprint planning, progress tracking, retrospectives, and project context generation.",
+      "workflows": [
+        {
+          "label": "Sprint Planning",
+          "agentId": "game-scrum-master",
+          "command": "/bmad-gds-sprint-planning",
+          "description": "Plan sprint work",
+          "tooltip": "Helps prioritize stories, estimate effort, and organize the next sprint. Selects which backlog stories to move into the sprint based on capacity and dependencies."
+        },
+        {
+          "label": "Sprint Status",
+          "agentId": "game-scrum-master",
+          "command": "/bmad-gds-sprint-status",
+          "description": "Check sprint progress",
+          "tooltip": "Generates a progress report of the current sprint: which stories are in progress, completed, or blocked. Updates the sprint-status tracking file."
+        },
+        {
+          "label": "Retrospective",
+          "agentId": "game-scrum-master",
+          "command": "/bmad-gds-retrospective",
+          "description": "Run sprint retrospective",
+          "tooltip": "Facilitates a sprint retrospective to review what went well, what didn't, and what to improve. Documents learnings and action items for the next sprint."
+        },
+        {
+          "label": "Correct Course",
+          "agentId": "game-architect",
+          "command": "/bmad-gds-correct-course",
+          "description": "Adjust direction based on findings",
+          "tooltip": "When a story or implementation has gone off-track, this workflow helps diagnose the issue and plan corrections. Use when code review reveals problems or requirements have changed."
+        },
+        {
+          "label": "Generate Project Context",
+          "agentId": "game-architect",
+          "command": "/bmad-gds-generate-project-context",
+          "description": "Generate project context document",
+          "tooltip": "Generates a comprehensive project context summary of all planning artifacts. AI agents use this during development to understand the full project scope."
+        }
+      ]
+    }
+  }
 }

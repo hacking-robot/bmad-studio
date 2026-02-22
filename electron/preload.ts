@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-export type ProjectType = 'bmm' | 'bmgd'
+export type ProjectType = 'bmm' | 'gds'
 
 export interface AgentHistoryEntry {
   id: string
@@ -18,10 +18,12 @@ export interface RecentProject {
   path: string
   projectType: ProjectType
   name: string
+  outputFolder?: string
+  developerMode?: 'ai' | 'human'
 }
 
 export type AITool = 'claude-code' | 'custom-endpoint' | 'cursor' | 'windsurf' | 'roo-code' | 'aider'
-export type ClaudeModel = 'sonnet' | 'opus' | 'haiku'
+export type ClaudeModel = 'sonnet' | 'opus'
 
 // Custom Anthropic-compatible endpoint configuration
 export interface CustomEndpointConfig {
@@ -73,12 +75,14 @@ export interface AppSettings {
   customEndpoint: CustomEndpointConfig | null
   projectPath: string | null
   projectType: ProjectType | null
+  outputFolder: string
   selectedEpicId: number | null
   collapsedColumnsByEpic: Record<string, string[]>
   agentHistory?: AgentHistoryEntry[]
   recentProjects: RecentProject[]
   windowBounds?: WindowBounds
   notificationsEnabled: boolean
+  verboseMode: boolean
   storyOrder: Record<string, Record<string, string[]>> // { [epicId]: { [status]: [storyIds...] } }
   // Git settings
   baseBranch: 'main' | 'master' | 'develop'
@@ -86,6 +90,9 @@ export interface AppSettings {
   bmadInGitignore: boolean // When true, bmad folders are gitignored so branch restrictions are relaxed
   bmadInGitignoreUserSet: boolean // When true, user has manually set bmadInGitignore (don't auto-detect)
   enableEpicBranches: boolean // When true, show epic branch features
+  disableGitBranching: boolean // When true, bypass all branch restrictions and hide branch UI
+  fullCycleReviewCount: number // 0-5, how many code review rounds in full cycle
+  developerMode: 'ai' | 'human' // Development mode (ai = standard, human = modified workflows)
   // Human Review feature
   enableHumanReviewColumn: boolean
   humanReviewChecklist: HumanReviewChecklistItem[]
@@ -100,16 +107,18 @@ export interface AppSettings {
 }
 
 export interface FileAPI {
-  selectDirectory: () => Promise<{ path?: string; projectType?: ProjectType; isNewProject?: boolean; error?: string } | null>
+  selectDirectory: () => Promise<{ path?: string; projectType?: ProjectType; isNewProject?: boolean; outputFolder?: string; error?: string } | null>
   readFile: (filePath: string) => Promise<{ content?: string; error?: string }>
-  listDirectory: (dirPath: string) => Promise<{ files?: string[]; error?: string }>
+  listDirectory: (dirPath: string) => Promise<{ files?: string[]; dirs?: string[]; error?: string }>
   getSettings: () => Promise<AppSettings>
   saveSettings: (settings: Partial<AppSettings>) => Promise<boolean>
-  startWatching: (projectPath: string, projectType: ProjectType) => Promise<boolean>
+  startWatching: (projectPath: string, projectType: ProjectType, outputFolder?: string) => Promise<boolean>
   stopWatching: () => Promise<boolean>
   updateStoryStatus: (filePath: string, newStatus: string) => Promise<{ success: boolean; error?: string }>
+  toggleStoryTask: (filePath: string, taskIndex: number, subtaskIndex: number) => Promise<{ success: boolean; error?: string }>
   showNotification: (title: string, body: string) => Promise<void>
-  checkBmadInGitignore: (projectPath: string) => Promise<{ inGitignore: boolean; error?: string }>
+  checkBmadInGitignore: (projectPath: string, outputFolder?: string) => Promise<{ inGitignore: boolean; error?: string }>
+  scanBmad: (projectPath: string) => Promise<unknown | null>
   onFilesChanged: (callback: () => void) => () => void
   onShowKeyboardShortcuts: (callback: () => void) => () => void
 }
@@ -120,11 +129,13 @@ const fileAPI: FileAPI = {
   listDirectory: (dirPath: string) => ipcRenderer.invoke('list-directory', dirPath),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings: Partial<AppSettings>) => ipcRenderer.invoke('save-settings', settings),
-  startWatching: (projectPath: string, projectType: ProjectType) => ipcRenderer.invoke('start-watching', projectPath, projectType),
+  startWatching: (projectPath: string, projectType: ProjectType, outputFolder?: string) => ipcRenderer.invoke('start-watching', projectPath, projectType, outputFolder),
   stopWatching: () => ipcRenderer.invoke('stop-watching'),
   updateStoryStatus: (filePath: string, newStatus: string) => ipcRenderer.invoke('update-story-status', filePath, newStatus),
+  toggleStoryTask: (filePath: string, taskIndex: number, subtaskIndex: number) => ipcRenderer.invoke('toggle-story-task', filePath, taskIndex, subtaskIndex),
   showNotification: (title: string, body: string) => ipcRenderer.invoke('show-notification', title, body),
-  checkBmadInGitignore: (projectPath: string) => ipcRenderer.invoke('check-bmad-in-gitignore', projectPath),
+  checkBmadInGitignore: (projectPath: string, outputFolder?: string) => ipcRenderer.invoke('check-bmad-in-gitignore', projectPath, outputFolder),
+  scanBmad: (projectPath: string) => ipcRenderer.invoke('scan-bmad', projectPath),
   onFilesChanged: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('files-changed', listener)
@@ -381,23 +392,24 @@ export interface StoryChatHistory {
 }
 
 export interface ChatAPI {
-  // Thread persistence
-  loadThread: (agentId: string) => Promise<AgentThread | null>
-  saveThread: (agentId: string, thread: AgentThread) => Promise<boolean>
-  clearThread: (agentId: string) => Promise<boolean>
-  listThreads: () => Promise<string[]>
+  // Thread persistence (project-scoped)
+  loadThread: (projectPath: string, agentId: string) => Promise<AgentThread | null>
+  saveThread: (projectPath: string, agentId: string, thread: AgentThread) => Promise<boolean>
+  clearThread: (projectPath: string, agentId: string) => Promise<boolean>
+  listThreads: (projectPath: string) => Promise<string[]>
   // Story chat history (persisted to project and user directories)
-  saveStoryChatHistory: (projectPath: string, storyId: string, history: StoryChatHistory) => Promise<boolean>
-  loadStoryChatHistory: (projectPath: string, storyId: string) => Promise<StoryChatHistory | null>
-  listStoryChatHistories: (projectPath: string) => Promise<string[]>
+  saveStoryChatHistory: (projectPath: string, storyId: string, history: StoryChatHistory, outputFolder?: string) => Promise<boolean>
+  loadStoryChatHistory: (projectPath: string, storyId: string, outputFolder?: string) => Promise<StoryChatHistory | null>
+  listStoryChatHistories: (projectPath: string, outputFolder?: string) => Promise<string[]>
   // Agent loading - loads the BMAD agent, returns session ID via event
   loadAgent: (options: {
     agentId: string
     projectPath: string
-    projectType: 'bmm' | 'bmgd'
+    projectType: 'bmm' | 'gds'
     tool?: AITool // AI tool to use (defaults to claude-code)
     model?: ClaudeModel // Claude model to use (only for claude-code)
     customEndpoint?: CustomEndpointConfig | null // Custom endpoint config (for custom-endpoint tool)
+    agentCommand?: string // Pre-resolved agent command from scan data
   }) => Promise<{ success: boolean; error?: string }>
   // Message sending - spawns new process per message, uses --resume for conversation continuity
   sendMessage: (options: {
@@ -420,14 +432,14 @@ export interface ChatAPI {
 }
 
 const chatAPI: ChatAPI = {
-  loadThread: (agentId) => ipcRenderer.invoke('load-chat-thread', agentId),
-  saveThread: (agentId, thread) => ipcRenderer.invoke('save-chat-thread', agentId, thread),
-  clearThread: (agentId) => ipcRenderer.invoke('clear-chat-thread', agentId),
-  listThreads: () => ipcRenderer.invoke('list-chat-threads'),
+  loadThread: (projectPath, agentId) => ipcRenderer.invoke('load-chat-thread', projectPath, agentId),
+  saveThread: (projectPath, agentId, thread) => ipcRenderer.invoke('save-chat-thread', projectPath, agentId, thread),
+  clearThread: (projectPath, agentId) => ipcRenderer.invoke('clear-chat-thread', projectPath, agentId),
+  listThreads: (projectPath) => ipcRenderer.invoke('list-chat-threads', projectPath),
   // Story chat history
-  saveStoryChatHistory: (projectPath, storyId, history) => ipcRenderer.invoke('save-story-chat-history', projectPath, storyId, history),
-  loadStoryChatHistory: (projectPath, storyId) => ipcRenderer.invoke('load-story-chat-history', projectPath, storyId),
-  listStoryChatHistories: (projectPath) => ipcRenderer.invoke('list-story-chat-histories', projectPath),
+  saveStoryChatHistory: (projectPath, storyId, history, outputFolder) => ipcRenderer.invoke('save-story-chat-history', projectPath, storyId, history, outputFolder),
+  loadStoryChatHistory: (projectPath, storyId, outputFolder) => ipcRenderer.invoke('load-story-chat-history', projectPath, storyId, outputFolder),
+  listStoryChatHistories: (projectPath, outputFolder) => ipcRenderer.invoke('list-story-chat-histories', projectPath, outputFolder),
   // Agent loading
   loadAgent: (options) => ipcRenderer.invoke('chat-load-agent', options),
   // Message sending
@@ -470,19 +482,154 @@ export interface CLIDetectionResult {
   error: string | null
 }
 
+export interface EnvCheckItem {
+  id: string
+  label: string
+  status: 'checking' | 'ok' | 'warning' | 'error'
+  version?: string | null
+  detail?: string
+}
+
 export interface CLIAPI {
   detectTool: (toolId: AITool) => Promise<CLIDetectionResult>
   detectAllTools: () => Promise<Record<string, CLIDetectionResult>>
   clearCache: () => Promise<void>
+  checkEnvironment: () => Promise<{ items: EnvCheckItem[] }>
 }
 
 const cliAPI: CLIAPI = {
   detectTool: (toolId) => ipcRenderer.invoke('cli-detect-tool', toolId),
   detectAllTools: () => ipcRenderer.invoke('cli-detect-all-tools'),
-  clearCache: () => ipcRenderer.invoke('cli-clear-cache')
+  clearCache: () => ipcRenderer.invoke('cli-clear-cache'),
+  checkEnvironment: () => ipcRenderer.invoke('check-environment')
 }
 
 contextBridge.exposeInMainWorld('cliAPI', cliAPI)
+
+// Wizard API types
+export interface WizardInstallOutputEvent {
+  type: 'stdout' | 'stderr'
+  chunk: string
+}
+
+export interface WizardInstallCompleteEvent {
+  success: boolean
+  code?: number | null
+  signal?: string | null
+  error?: string
+}
+
+export interface WizardFileChangedEvent {
+  filename: string
+}
+
+export interface WizardAPI {
+  install: (projectPath: string, useAlpha?: boolean, outputFolder?: string, modules?: string[]) => Promise<{ success: boolean; error?: string }>
+  onInstallOutput: (callback: (event: WizardInstallOutputEvent) => void) => () => void
+  onInstallComplete: (callback: (event: WizardInstallCompleteEvent) => void) => () => void
+  startWatching: (projectPath: string, outputFolder?: string) => Promise<boolean>
+  stopWatching: () => Promise<boolean>
+  onFileChanged: (callback: (event: WizardFileChangedEvent) => void) => () => void
+  checkFileExists: (filePath: string) => Promise<boolean>
+  checkDirHasPrefix: (dirPath: string, prefix: string) => Promise<boolean>
+  saveState: (projectPath: string, state: unknown, outputFolder?: string) => Promise<boolean>
+  loadState: (projectPath: string, outputFolder?: string) => Promise<unknown | null>
+  deleteState: (projectPath: string, outputFolder?: string) => Promise<boolean>
+  selectDirectoryAny: () => Promise<{ path: string } | null>
+  createProjectDirectory: (parentPath: string, projectName: string) => Promise<{ success: boolean; path?: string; error?: string }>
+  writeProjectFiles: (projectPath: string, files: { relativePath: string; content: string }[]) => Promise<{ success: boolean; written: number; error?: string }>
+  appendConfigFields: (projectPath: string, fields: Record<string, string>) => Promise<{ success: boolean; updated?: number; error?: string }>
+}
+
+const wizardAPI: WizardAPI = {
+  install: (projectPath, useAlpha, outputFolder, modules) => ipcRenderer.invoke('bmad-install', projectPath, useAlpha, outputFolder, modules),
+  onInstallOutput: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WizardInstallOutputEvent) => callback(data)
+    ipcRenderer.on('bmad:install-output', listener)
+    return () => ipcRenderer.removeListener('bmad:install-output', listener)
+  },
+  onInstallComplete: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WizardInstallCompleteEvent) => callback(data)
+    ipcRenderer.on('bmad:install-complete', listener)
+    return () => ipcRenderer.removeListener('bmad:install-complete', listener)
+  },
+  startWatching: (projectPath, outputFolder) => ipcRenderer.invoke('wizard-start-watching', projectPath, outputFolder),
+  stopWatching: () => ipcRenderer.invoke('wizard-stop-watching'),
+  onFileChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WizardFileChangedEvent) => callback(data)
+    ipcRenderer.on('wizard:file-changed', listener)
+    return () => ipcRenderer.removeListener('wizard:file-changed', listener)
+  },
+  checkFileExists: (filePath) => ipcRenderer.invoke('check-file-exists', filePath),
+  checkDirHasPrefix: (dirPath, prefix) => ipcRenderer.invoke('check-dir-has-prefix', dirPath, prefix),
+  saveState: (projectPath, state, outputFolder) => ipcRenderer.invoke('save-wizard-state', projectPath, state, outputFolder),
+  loadState: (projectPath, outputFolder) => ipcRenderer.invoke('load-wizard-state', projectPath, outputFolder),
+  deleteState: (projectPath, outputFolder) => ipcRenderer.invoke('delete-wizard-state', projectPath, outputFolder),
+  selectDirectoryAny: () => ipcRenderer.invoke('select-directory-any'),
+  createProjectDirectory: (parentPath, projectName) => ipcRenderer.invoke('create-project-directory', parentPath, projectName),
+  writeProjectFiles: (projectPath, files) => ipcRenderer.invoke('write-project-files', projectPath, files),
+  appendConfigFields: (projectPath, fields) => ipcRenderer.invoke('append-config-fields', projectPath, fields)
+}
+
+contextBridge.exposeInMainWorld('wizardAPI', wizardAPI)
+
+// Updater API types
+export interface UpdaterStatusEvent {
+  status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'ready' | 'error' | 'dev-mode'
+  version?: string
+  percent?: number
+  message?: string
+}
+
+export interface UpdaterAPI {
+  checkForUpdates: () => Promise<{ success?: boolean; status?: string; error?: string }>
+  downloadUpdate: () => Promise<{ success: boolean; error?: string }>
+  installUpdate: () => void
+  getAppVersion: () => Promise<string>
+  onUpdateStatus: (callback: (event: UpdaterStatusEvent) => void) => () => void
+}
+
+const updaterAPI: UpdaterAPI = {
+  checkForUpdates: () => ipcRenderer.invoke('updater-check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater-download'),
+  installUpdate: () => ipcRenderer.invoke('updater-install'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  onUpdateStatus: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: UpdaterStatusEvent) => callback(data)
+    ipcRenderer.on('updater:status', listener)
+    return () => ipcRenderer.removeListener('updater:status', listener)
+  }
+}
+
+contextBridge.exposeInMainWorld('updaterAPI', updaterAPI)
+
+// Cost tracking API
+export interface ProjectCostEntry {
+  id: string
+  timestamp: number
+  agentId: string
+  storyId?: string
+  messageId: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  totalCostUsd: number
+  durationMs?: number
+}
+
+export interface CostAPI {
+  appendCost: (projectPath: string, entry: ProjectCostEntry, outputFolder?: string) => Promise<boolean>
+  loadCosts: (projectPath: string, outputFolder?: string) => Promise<ProjectCostEntry[]>
+}
+
+const costAPI: CostAPI = {
+  appendCost: (projectPath, entry, outputFolder) => ipcRenderer.invoke('append-project-cost', projectPath, entry, outputFolder),
+  loadCosts: (projectPath, outputFolder) => ipcRenderer.invoke('load-project-costs', projectPath, outputFolder)
+}
+
+contextBridge.exposeInMainWorld('costAPI', costAPI)
 
 declare global {
   interface Window {
@@ -491,5 +638,8 @@ declare global {
     gitAPI: GitAPI
     chatAPI: ChatAPI
     cliAPI: CLIAPI
+    wizardAPI: WizardAPI
+    updaterAPI: UpdaterAPI
+    costAPI: CostAPI
   }
 }

@@ -9,6 +9,8 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogActions,
+  Button,
   Box,
   Typography,
   Radio,
@@ -22,31 +24,56 @@ import {
   Autocomplete
 } from '@mui/material'
 import SettingsIcon from '@mui/icons-material/Settings'
+import LightModeIcon from '@mui/icons-material/LightMode'
+import DarkModeIcon from '@mui/icons-material/DarkMode'
+import SyncIcon from '@mui/icons-material/Sync'
 import KeyboardIcon from '@mui/icons-material/Keyboard'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
 import NotificationsIcon from '@mui/icons-material/Notifications'
+import BuildIcon from '@mui/icons-material/Build'
 import RateReviewIcon from '@mui/icons-material/RateReview'
 import ChatIcon from '@mui/icons-material/Chat'
+import PersonIcon from '@mui/icons-material/Person'
 import GitIcon from '@mui/icons-material/AccountTree'
 import MergeIcon from '@mui/icons-material/Merge'
+import RepeatIcon from '@mui/icons-material/Repeat'
 import CloseIcon from '@mui/icons-material/Close'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
 import DesktopWindowsIcon from '@mui/icons-material/DesktopWindows'
+import SystemUpdateIcon from '@mui/icons-material/SystemUpdate'
+import DownloadIcon from '@mui/icons-material/Download'
+import InstallDesktopIcon from '@mui/icons-material/InstallDesktop'
+import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest'
 import { useStore } from '../../store'
+import { useProjectData } from '../../hooks/useProjectData'
 import { AI_TOOLS, AITool, CLIDetectionResult, CLAUDE_MODELS, CustomEndpointConfig } from '../../types'
 
-export default function SettingsMenu() {
+interface SettingsMenuProps {
+  compact?: boolean
+}
+
+export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [toolDialogOpen, setToolDialogOpen] = useState(false)
   const [chatSettingsDialogOpen, setChatSettingsDialogOpen] = useState(false)
+  const profileDialogOpen = useStore((state) => state.profileDialogOpen)
+  const setProfileDialogOpen = useStore((state) => state.setProfileDialogOpen)
+  const setHasConfiguredProfile = useStore((state) => state.setHasConfiguredProfile)
   const [branchDialogOpen, setBranchDialogOpen] = useState(false)
   const [cliStatus, setCliStatus] = useState<Record<string, CLIDetectionResult>>({})
   const [detectingCli, setDetectingCli] = useState(false)
   const [availableBranches, setAvailableBranches] = useState<string[]>([])
   const [loadingBranches, setLoadingBranches] = useState(false)
   const open = Boolean(anchorEl)
+
+  // Auto-update state (from global store, listener in App.tsx)
+  const [appVersion, setAppVersion] = useState<string>('')
+  const updateStatus = useStore((state) => state.updateStatus)
+  const setUpdateStatus = useStore((state) => state.setUpdateStatus)
+  const updateVersion = useStore((state) => state.updateVersion)
+  const downloadPercent = useStore((state) => state.updateDownloadPercent)
 
   const aiTool = useStore((state) => state.aiTool)
   const setAITool = useStore((state) => state.setAITool)
@@ -64,19 +91,41 @@ export default function SettingsMenu() {
   })
   const notificationsEnabled = useStore((state) => state.notificationsEnabled)
   const setNotificationsEnabled = useStore((state) => state.setNotificationsEnabled)
+  const verboseMode = useStore((state) => state.verboseMode)
+  const setVerboseMode = useStore((state) => state.setVerboseMode)
   const enableHumanReviewColumn = useStore((state) => state.enableHumanReviewColumn)
   const setEnableHumanReviewColumn = useStore((state) => state.setEnableHumanReviewColumn)
   const maxThreadMessages = useStore((state) => state.maxThreadMessages)
   const setMaxThreadMessages = useStore((state) => state.setMaxThreadMessages)
+  const bmadUserName = useStore((state) => state.bmadUserName)
+  const setBmadUserName = useStore((state) => state.setBmadUserName)
+  const bmadLanguage = useStore((state) => state.bmadLanguage)
+  const setBmadLanguage = useStore((state) => state.setBmadLanguage)
   const baseBranch = useStore((state) => state.baseBranch)
   const setBaseBranch = useStore((state) => state.setBaseBranch)
   const allowDirectEpicMerge = useStore((state) => state.allowDirectEpicMerge)
   const setAllowDirectEpicMerge = useStore((state) => state.setAllowDirectEpicMerge)
   const enableEpicBranches = useStore((state) => state.enableEpicBranches)
   const setEnableEpicBranches = useStore((state) => state.setEnableEpicBranches)
+  const disableGitBranching = useStore((state) => state.disableGitBranching)
+  const setDisableGitBranching = useStore((state) => state.setDisableGitBranching)
+  const disableEnvCheck = useStore((state) => state.disableEnvCheck)
+  const setDisableEnvCheck = useStore((state) => state.setDisableEnvCheck)
+  const fullCycleReviewCount = useStore((state) => state.fullCycleReviewCount)
+  const setFullCycleReviewCount = useStore((state) => state.setFullCycleReviewCount)
   const projectPath = useStore((state) => state.projectPath)
 
+  const themeMode = useStore((state) => state.themeMode)
+  const toggleTheme = useStore((state) => state.toggleTheme)
+  const viewMode = useStore((state) => state.viewMode)
+  const { loadProjectData } = useProjectData()
+
   const selectedTool = AI_TOOLS.find((t) => t.id === aiTool) || AI_TOOLS[0]
+
+  // Fetch app version
+  useEffect(() => {
+    window.updaterAPI.getAppVersion().then(setAppVersion)
+  }, [])
 
   // Detect CLI tools when dialog opens
   useEffect(() => {
@@ -144,6 +193,11 @@ export default function SettingsMenu() {
     setChatSettingsDialogOpen(true)
   }
 
+  const handleProfileClick = () => {
+    handleClose()
+    setProfileDialogOpen(true)
+  }
+
   const handleBranchSettingsClick = () => {
     handleClose()
     setBranchDialogOpen(true)
@@ -155,6 +209,17 @@ export default function SettingsMenu() {
 
   const handleClose = () => {
     setAnchorEl(null)
+  }
+
+  const handleUpdateAction = () => {
+    if (updateStatus === 'available') {
+      window.updaterAPI.downloadUpdate()
+    } else if (updateStatus === 'ready') {
+      window.updaterAPI.installUpdate()
+    } else if (updateStatus === 'idle' || updateStatus === 'error' || updateStatus === 'up-to-date') {
+      setUpdateStatus('checking')
+      window.updaterAPI.checkForUpdates()
+    }
   }
 
   const handleKeyboardShortcuts = () => {
@@ -203,6 +268,20 @@ export default function SettingsMenu() {
           }
         }}
       >
+        <MenuItem onClick={() => { toggleTheme(); handleClose() }}>
+          <ListItemIcon>
+            {themeMode === 'light' ? <DarkModeIcon fontSize="small" /> : <LightModeIcon fontSize="small" />}
+          </ListItemIcon>
+          <ListItemText primary={themeMode === 'light' ? 'Dark Mode' : 'Light Mode'} />
+        </MenuItem>
+        {!compact && viewMode === 'board' && (
+          <MenuItem onClick={() => { loadProjectData(); handleClose() }}>
+            <ListItemIcon>
+              <SyncIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Refresh Board" />
+          </MenuItem>
+        )}
         <MenuItem onClick={handleToolSelect}>
           <ListItemIcon>
             <SmartToyIcon fontSize="small" />
@@ -219,92 +298,224 @@ export default function SettingsMenu() {
             secondaryTypographyProps={{ variant: 'caption' }}
           />
         </MenuItem>
-        <MenuItem onClick={() => setNotificationsEnabled(!notificationsEnabled)}>
+        {!compact && (
+          <MenuItem onClick={() => setNotificationsEnabled(!notificationsEnabled)}>
+            <ListItemIcon>
+              <NotificationsIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Notifications"
+              secondary="Story status changes"
+              secondaryTypographyProps={{ variant: 'caption' }}
+            />
+            <Switch
+              edge="end"
+              checked={notificationsEnabled}
+              size="small"
+            />
+          </MenuItem>
+        )}
+        <MenuItem onClick={() => setVerboseMode(!verboseMode)}>
           <ListItemIcon>
-            <NotificationsIcon fontSize="small" />
+            <BuildIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
-            primary="Notifications"
-            secondary="Story status changes"
+            primary="Verbose Chat"
+            secondary="Show tool calls in messages"
             secondaryTypographyProps={{ variant: 'caption' }}
           />
           <Switch
             edge="end"
-            checked={notificationsEnabled}
+            checked={verboseMode}
             size="small"
           />
         </MenuItem>
-        <MenuItem onClick={() => setEnableHumanReviewColumn(!enableHumanReviewColumn)}>
+        <MenuItem onClick={handleProfileClick}>
           <ListItemIcon>
-            <RateReviewIcon fontSize="small" />
+            <PersonIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
-            primary="Human Review Column"
-            secondary="Review checklist step"
-            secondaryTypographyProps={{ variant: 'caption' }}
-          />
-          <Switch
-            edge="end"
-            checked={enableHumanReviewColumn}
-            size="small"
-          />
-        </MenuItem>
-        <MenuItem onClick={handleChatSettingsClick}>
-          <ListItemIcon>
-            <ChatIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText
-            primary="Chat Settings"
-            secondary={`Max ${maxThreadMessages} messages`}
+            primary="BMAD Profile"
+            secondary={bmadUserName || 'Not set'}
             secondaryTypographyProps={{ variant: 'caption' }}
           />
         </MenuItem>
-        <MenuItem onClick={handleBranchSettingsClick}>
-          <ListItemIcon>
-            <GitIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText
-            primary="Base Branch"
-            secondary={baseBranch}
-            secondaryTypographyProps={{ variant: 'caption' }}
-          />
-        </MenuItem>
-        <MenuItem onClick={() => setAllowDirectEpicMerge(!allowDirectEpicMerge)}>
-          <ListItemIcon>
-            <MergeIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText
-            primary="Direct Epic Merge"
-            secondary="Merge without PR"
-            secondaryTypographyProps={{ variant: 'caption' }}
-          />
-          <Switch
-            edge="end"
-            checked={allowDirectEpicMerge}
-            size="small"
-          />
-        </MenuItem>
-        <MenuItem onClick={() => setEnableEpicBranches(!enableEpicBranches)}>
-          <ListItemIcon>
-            <GitIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText
-            primary="Enable Epic Branches"
-            secondary="Show epic branch controls"
-            secondaryTypographyProps={{ variant: 'caption' }}
-          />
-          <Switch
-            edge="end"
-            checked={enableEpicBranches}
-            size="small"
-          />
-        </MenuItem>
-        <MenuItem onClick={handleKeyboardShortcuts}>
-          <ListItemIcon>
-            <KeyboardIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Keyboard Shortcuts</ListItemText>
-        </MenuItem>
+        {!compact && (
+          <>
+            <MenuItem onClick={() => setEnableHumanReviewColumn(!enableHumanReviewColumn)}>
+              <ListItemIcon>
+                <RateReviewIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Human Review Column"
+                secondary="Review checklist step"
+                secondaryTypographyProps={{ variant: 'caption' }}
+              />
+              <Switch
+                edge="end"
+                checked={enableHumanReviewColumn}
+                size="small"
+              />
+            </MenuItem>
+            <MenuItem onClick={() => setFullCycleReviewCount(fullCycleReviewCount >= 5 ? 0 : fullCycleReviewCount + 1)}>
+              <ListItemIcon>
+                <RepeatIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Full Cycle Reviews"
+                secondary={fullCycleReviewCount === 0 ? 'No reviews' : `${fullCycleReviewCount} review round${fullCycleReviewCount > 1 ? 's' : ''}`}
+                secondaryTypographyProps={{ variant: 'caption' }}
+              />
+              <Chip
+                label={fullCycleReviewCount}
+                size="small"
+                color={fullCycleReviewCount === 0 ? 'default' : 'primary'}
+                sx={{ minWidth: 32, ml: 1 }}
+              />
+            </MenuItem>
+            <MenuItem onClick={handleChatSettingsClick}>
+              <ListItemIcon>
+                <ChatIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Chat Settings"
+                secondary={`Max ${maxThreadMessages} messages`}
+                secondaryTypographyProps={{ variant: 'caption' }}
+              />
+            </MenuItem>
+            {!disableGitBranching && (
+              <MenuItem onClick={handleBranchSettingsClick}>
+                <ListItemIcon>
+                  <GitIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Base Branch"
+                  secondary={baseBranch}
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                />
+              </MenuItem>
+            )}
+            {!disableGitBranching && (
+              <MenuItem onClick={() => setAllowDirectEpicMerge(!allowDirectEpicMerge)}>
+                <ListItemIcon>
+                  <MergeIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Direct Epic Merge"
+                  secondary="Merge without PR"
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                />
+                <Switch
+                  edge="end"
+                  checked={allowDirectEpicMerge}
+                  size="small"
+                />
+              </MenuItem>
+            )}
+            {!disableGitBranching && (
+              <MenuItem onClick={() => setEnableEpicBranches(!enableEpicBranches)}>
+                <ListItemIcon>
+                  <GitIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Enable Epic Branches"
+                  secondary="Show epic branch controls"
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                />
+                <Switch
+                  edge="end"
+                  checked={enableEpicBranches}
+                  size="small"
+                />
+              </MenuItem>
+            )}
+            <MenuItem onClick={() => setDisableEnvCheck(!disableEnvCheck)}>
+              <ListItemIcon>
+                <SettingsSuggestIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Disable Env Check"
+                secondary="Skip startup environment check"
+                secondaryTypographyProps={{ variant: 'caption' }}
+              />
+              <Switch
+                edge="end"
+                checked={disableEnvCheck}
+                size="small"
+              />
+            </MenuItem>
+            <MenuItem onClick={() => setDisableGitBranching(!disableGitBranching)}>
+              <ListItemIcon>
+                <GitIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Disable Git Branching"
+                secondary="Skip branch creation & merging"
+                secondaryTypographyProps={{ variant: 'caption' }}
+              />
+              <Switch
+                edge="end"
+                checked={disableGitBranching}
+                size="small"
+              />
+            </MenuItem>
+          </>
+        )}
+        {!compact && (
+          <>
+            {appVersion && (
+              <MenuItem disabled sx={{ opacity: '0.7 !important' }}>
+                <ListItemIcon>
+                  <SystemUpdateIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Version"
+                  secondary={`v${appVersion}`}
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                />
+              </MenuItem>
+            )}
+            <MenuItem
+              onClick={handleUpdateAction}
+              disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+            >
+              <ListItemIcon>
+                {updateStatus === 'checking' ? (
+                  <CircularProgress size={20} />
+                ) : updateStatus === 'available' ? (
+                  <DownloadIcon fontSize="small" />
+                ) : updateStatus === 'downloading' ? (
+                  <CircularProgress size={20} variant="determinate" value={downloadPercent} />
+                ) : updateStatus === 'ready' ? (
+                  <InstallDesktopIcon fontSize="small" color="success" />
+                ) : (
+                  <SyncIcon fontSize="small" />
+                )}
+              </ListItemIcon>
+              <ListItemText
+                primary={
+                  updateStatus === 'checking' ? 'Checking...'
+                    : updateStatus === 'available' ? `Download v${updateVersion}`
+                    : updateStatus === 'downloading' ? `Downloading... ${downloadPercent}%`
+                    : updateStatus === 'ready' ? `Install v${updateVersion}`
+                    : 'Check for Updates'
+                }
+                secondary={
+                  updateStatus === 'error' ? 'Update check failed'
+                    : updateStatus === 'up-to-date' ? "You're up to date"
+                    : undefined
+                }
+                secondaryTypographyProps={{ variant: 'caption' }}
+              />
+            </MenuItem>
+            <MenuItem onClick={handleKeyboardShortcuts}>
+              <ListItemIcon>
+                <KeyboardIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Keyboard Shortcuts</ListItemText>
+            </MenuItem>
+          </>
+        )}
       </Menu>
 
       {/* AI Tool Selection Dialog */}
@@ -336,7 +547,7 @@ export default function SettingsMenu() {
             Select your AI coding assistant. This determines the command syntax shown in the BMAD Guide.
           </Typography>
           <RadioGroup value={aiTool} onChange={handleToolChange}>
-            {AI_TOOLS.map((tool) => {
+            {AI_TOOLS.filter((t) => t.id === 'claude-code').map((tool) => {
               const status = cliStatus[tool.id]
               const isIdeOnly = !tool.cli.supportsHeadless
               const isAvailable = status?.available
@@ -541,6 +752,51 @@ export default function SettingsMenu() {
         </DialogContent>
       </Dialog>
 
+      {/* BMAD Profile Dialog */}
+      <Dialog
+        open={profileDialogOpen}
+        onClose={() => { setProfileDialogOpen(false); setHasConfiguredProfile(true) }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          BMAD Profile
+          <IconButton size="small" onClick={() => { setProfileDialogOpen(false); setHasConfiguredProfile(true) }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Your name and language are written to project config files during installation. Agents use these for personalized greetings and communication.
+          </Typography>
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <TextField
+              label="First Name"
+              placeholder="Your first name"
+              size="small"
+              value={bmadUserName}
+              onChange={(e) => setBmadUserName(e.target.value)}
+              helperText="Used by BMAD agents for personalized greetings"
+            />
+
+            <TextField
+              label="Communication Language"
+              placeholder="e.g., English, Spanish, Japanese"
+              size="small"
+              value={bmadLanguage}
+              onChange={(e) => setBmadLanguage(e.target.value)}
+              helperText="Language agents will use to communicate with you"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setProfileDialogOpen(false); setHasConfiguredProfile(true) }}>
+            Done
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Chat Settings Dialog */}
       <Dialog
         open={chatSettingsDialogOpen}
@@ -556,7 +812,7 @@ export default function SettingsMenu() {
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            Configure the teammate chat interface settings.
+            Configure the agent chat interface settings.
           </Typography>
 
           <Box sx={{ mb: 3 }}>

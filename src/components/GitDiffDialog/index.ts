@@ -1,1 +1,1 @@
-export { default } from './GitDiffDialog'
+export { default as GitDiffPanel } from './GitDiffDialog'

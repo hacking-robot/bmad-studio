@@ -11,8 +11,10 @@ import {
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import CloseIcon from '@mui/icons-material/Close'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
+import AddIcon from '@mui/icons-material/Add'
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
+import { NewProjectForm } from '../NewProjectDialog'
 
 export default function ProjectSwitcher() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
@@ -28,7 +30,7 @@ export default function ProjectSwitcher() {
   const { selectProject, switchToProject } = useProjectData()
 
   const open = Boolean(anchorEl)
-  const projectName = projectPath?.split('/').pop() || 'BMad Board'
+  const projectName = projectPath?.split('/').pop() || 'BMad Studio'
 
   // Filter projects based on search query
   const filteredProjects = recentProjects.filter((project) => {
@@ -73,8 +75,8 @@ export default function ProjectSwitcher() {
     setAnchorEl(null)
   }
 
-  const handleProjectClick = (path: string, projectType: 'bmm' | 'bmgd') => {
-    switchToProject(path, projectType)
+  const handleProjectClick = (project: import('../../store').RecentProject) => {
+    switchToProject(project)
     handleClose()
   }
 
@@ -83,9 +85,16 @@ export default function ProjectSwitcher() {
     removeRecentProject(path)
   }
 
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
+
   const handleOpenProject = () => {
     selectProject()
     handleClose()
+  }
+
+  const handleNewProject = () => {
+    handleClose()
+    setNewProjectOpen(true)
   }
 
   // Truncate path for display
@@ -95,6 +104,7 @@ export default function ProjectSwitcher() {
   }
 
   return (
+    <>
     <Box
       ref={triggerRef}
       onClick={handleClick}
@@ -176,7 +186,7 @@ export default function ProjectSwitcher() {
                 if (e.key === 'Enter' && filteredProjects.length > 0) {
                   const selectedProject = filteredProjects[preSelectedIndex]
                   if (selectedProject) {
-                    handleProjectClick(selectedProject.path, selectedProject.projectType)
+                    handleProjectClick(selectedProject)
                   }
                 } else if (e.key === 'ArrowDown') {
                   e.preventDefault()
@@ -214,7 +224,7 @@ export default function ProjectSwitcher() {
             {filteredProjects.map((project, index) => (
               <MenuItem
                 key={project.path}
-                onClick={() => handleProjectClick(project.path, project.projectType)}
+                onClick={() => handleProjectClick(project)}
                 selected={project.path === projectPath}
                 onMouseEnter={() => {
                   setHoveredItem(project.path)
@@ -275,7 +285,14 @@ export default function ProjectSwitcher() {
           <FolderOpenIcon sx={{ fontSize: 20, mr: 1.5, color: 'text.secondary' }} />
           <Typography variant="body2">Open Project...</Typography>
         </MenuItem>
+        <MenuItem onClick={handleNewProject} sx={{ py: 1.5 }}>
+          <AddIcon sx={{ fontSize: 20, mr: 1.5, color: 'text.secondary' }} />
+          <Typography variant="body2">New Project...</Typography>
+        </MenuItem>
       </Menu>
+
     </Box>
+    <NewProjectForm open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
+    </>
   )
 }

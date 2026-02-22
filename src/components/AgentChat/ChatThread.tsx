@@ -1,5 +1,6 @@
-import { useEffect, useRef, useCallback } from 'react'
-import { Box } from '@mui/material'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Box, Fab } from '@mui/material'
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
 import { useStore } from '../../store'
 import { useWorkflow } from '../../hooks/useWorkflow'
@@ -24,10 +25,24 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
   const pendingChatMessage = useStore((state) => state.pendingChatMessage)
   const clearPendingChatMessage = useStore((state) => state.clearPendingChatMessage)
 
+  const [atBottom, setAtBottom] = useState(true)
+  const prevIsTypingRef = useRef(false)
+
+  const fullCycle = useStore((state) => state.fullCycle)
+  const epicCycle = useStore((state) => state.epicCycle)
+
   const thread = chatThreads[agentId]
   const messages = thread?.messages || []
   const isTyping = thread?.isTyping || false
   const thinkingActivity = thread?.thinkingActivity
+
+  // Determine if agent is busy with automation cycle
+  const isBusyWithCycle = fullCycle.isRunning || epicCycle.isRunning
+  const cycleBusyReason = fullCycle.isRunning
+    ? 'Agent busy with Full Cycle automation...'
+    : epicCycle.isRunning
+      ? 'Agent busy with Epic Cycle automation...'
+      : undefined
 
   // Get agents from workflow (based on current project type)
   const { agents } = useWorkflow()
@@ -74,16 +89,6 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
     syncAgentStatus()
   }, [agentId, setChatTyping, setChatActivity, updateChatMessage, clearAgentState])
 
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (virtuosoRef.current && messages.length > 0) {
-      virtuosoRef.current.scrollToIndex({
-        index: messages.length - 1,
-        behavior: 'smooth',
-        align: 'end'
-      })
-    }
-  }, [messages.length, isTyping])
 
   const handleSendMessage = useCallback(async (content: string) => {
     if (!projectPath || !content.trim()) return
@@ -129,13 +134,16 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
         const currentAiTool = useStore.getState().aiTool
         const currentClaudeModel = useStore.getState().claudeModel
         const currentCustomEndpoint = useStore.getState().customEndpoint
+        // Pass the resolved agent command from workflow config (first command is the invocation command)
+        const agentCommand = agent?.commands?.[0]
         const result = await window.chatAPI.loadAgent({
           agentId,
           projectPath,
           projectType: currentProjectType,
           tool: currentAiTool,
           model: currentAiTool === 'claude-code' ? currentClaudeModel : undefined,
-          customEndpoint: currentAiTool === 'custom-endpoint' ? currentCustomEndpoint : undefined
+          customEndpoint: currentAiTool === 'custom-endpoint' ? currentCustomEndpoint : undefined,
+          agentCommand
         })
 
         if (!result.success) {
@@ -216,22 +224,30 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
     }
   }, [agentId, setChatTyping, updateChatMessage, clearAgentState])
 
-  // Track pending message ID to prevent duplicate sends
-  const processedPendingRef = useRef<string | null>(null)
+  // Scroll to bottom when typing starts (handles wizard flow where thread is freshly created)
+  useEffect(() => {
+    if (isTyping && !prevIsTypingRef.current && messages.length > 0) {
+      setTimeout(() => {
+        virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: 'end', behavior: 'smooth' })
+      }, 50)
+    }
+    prevIsTypingRef.current = isTyping
+  }, [isTyping, messages.length])
 
-  // Handle pending chat messages from other components (e.g., StoryCard)
+  // Guard against concurrent pending message processing
+  const isSendingRef = useRef(false)
+
+  // Handle pending chat messages from other components (e.g., StoryCard, Wizard)
   useEffect(() => {
     if (pendingChatMessage && pendingChatMessage.agentId === agentId && projectPath) {
-      // Create a unique key for this pending message to prevent duplicate processing
-      const pendingKey = `${pendingChatMessage.agentId}:${pendingChatMessage.message}`
-
-      // Skip if we've already processed this exact message
-      if (processedPendingRef.current === pendingKey) {
+      // Skip if already processing a send or if a cycle is running
+      if (isSendingRef.current) return
+      if (isBusyWithCycle) {
+        console.log('[ChatThread] Skipping pending message - cycle automation is running')
+        clearPendingChatMessage()
         return
       }
-
-      // Mark as processed
-      processedPendingRef.current = pendingKey
+      isSendingRef.current = true
 
       // Store story context if provided
       if (pendingChatMessage.storyId || pendingChatMessage.branchName) {
@@ -245,10 +261,7 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
       // Send the message after a short delay to ensure UI is ready
       setTimeout(() => {
         handleSendMessage(messageToSend)
-        // Reset the processed ref after sending so the same command can be sent again later
-        setTimeout(() => {
-          processedPendingRef.current = null
-        }, 500)
+        isSendingRef.current = false
       }, 100)
     }
   }, [pendingChatMessage, agentId, projectPath, clearPendingChatMessage, handleSendMessage, setThreadContext])
@@ -287,36 +300,64 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
             </Box>
           </Box>
         ) : (
-          <Virtuoso
-            ref={virtuosoRef}
-            data={messages}
-            followOutput="smooth"
-            itemContent={(_index, message) => (
-              <ChatMessage
-                message={message}
-                agentName={agent?.name || 'Teammate'}
-                agentAvatar={agent?.avatar || 'A'}
-              />
+          <Box sx={{ position: 'relative', height: '100%' }}>
+            <Virtuoso
+              ref={virtuosoRef}
+              data={messages}
+              initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
+              followOutput={(isAtBottom) => (isAtBottom || isTyping) ? 'smooth' : false}
+              atBottomStateChange={setAtBottom}
+              atBottomThreshold={50}
+              itemContent={(_index, message) => (
+                <ChatMessage
+                  message={message}
+                  agentName={agent?.name || 'Agent'}
+                  agentAvatar={agent?.avatar || 'A'}
+                />
+              )}
+              style={{ height: '100%' }}
+              components={{
+                Footer: () =>
+                  isTyping ? (
+                    <Box sx={{ px: 2, pb: 2 }}>
+                      <TypingIndicator agentName={agent?.name || 'Agent'} activity={thinkingActivity} />
+                    </Box>
+                  ) : null
+              }}
+            />
+            {!atBottom && (
+              <Fab
+                size="small"
+                onClick={() => virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER, behavior: 'smooth' })}
+                sx={{
+                  position: 'absolute',
+                  bottom: 8,
+                  right: 20,
+                  width: 28,
+                  height: 28,
+                  minHeight: 'unset',
+                  bgcolor: 'background.paper',
+                  color: 'text.secondary',
+                  boxShadow: 1,
+                  opacity: 0.5,
+                  '&:hover': { opacity: 0.85, bgcolor: 'background.paper' },
+                  zIndex: 1
+                }}
+              >
+                <KeyboardArrowDownIcon sx={{ fontSize: 18 }} />
+              </Fab>
             )}
-            style={{ height: '100%' }}
-            components={{
-              Footer: () =>
-                isTyping ? (
-                  <Box sx={{ px: 2, pb: 2 }}>
-                    <TypingIndicator agentName={agent?.name || 'Teammate'} activity={thinkingActivity} />
-                  </Box>
-                ) : null
-            }}
-          />
+          </Box>
         )}
       </Box>
 
       {/* Input */}
       <ChatInput
         onSend={handleSendMessage}
-        onCancel={handleCancel}
-        disabled={isTyping}
+        onCancel={isTyping ? handleCancel : undefined}
+        disabled={isTyping || isBusyWithCycle}
         agentId={agentId}
+        busyReason={cycleBusyReason}
       />
     </Box>
   )

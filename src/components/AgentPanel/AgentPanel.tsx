@@ -241,7 +241,7 @@ export default function AgentPanel() {
           }}
         >
           <Typography variant="subtitle1" fontWeight={600}>
-            Teammate Panel
+            Agent Panel
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <ToggleButtonGroup
@@ -250,7 +250,7 @@ export default function AgentPanel() {
               onChange={handleViewModeChange}
               size="small"
             >
-              <ToggleButton value="running" title="Working Teammates">
+              <ToggleButton value="running" title="Working Agents">
                 <PlayArrowIcon fontSize="small" />
               </ToggleButton>
               <ToggleButton value="history" title="History">
@@ -336,7 +336,7 @@ export default function AgentPanel() {
                       size="small"
                       color="error"
                       onClick={handleKillAgent}
-                      title="Stop teammate"
+                      title="Stop agent"
                     >
                       <StopIcon fontSize="small" />
                     </IconButton>
@@ -363,8 +363,8 @@ export default function AgentPanel() {
               >
                 <Typography color="text.secondary" textAlign="center">
                   {agentList.length === 0
-                    ? 'No teammates working. Start a teammate from a story card.'
-                    : 'Select a teammate tab to view output.'}
+                    ? 'No agents working. Start an agent from a story card.'
+                    : 'Select an agent tab to view output.'}
                 </Typography>
               </Box>
             )}
@@ -502,7 +502,7 @@ export default function AgentPanel() {
                 }}
               >
                 <Typography color="text.secondary" textAlign="center">
-                  No teammate history yet.
+                  No agent history yet.
                   <br />
                   Past sessions will appear here.
                 </Typography>

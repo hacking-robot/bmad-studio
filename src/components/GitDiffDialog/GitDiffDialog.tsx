@@ -1,8 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
   IconButton,
   Typography,
   Box,
@@ -38,9 +35,12 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import { DiffView, DiffModeEnum } from '@git-diff-view/react'
 import { generateDiffFile } from '@git-diff-view/file'
 import { useStore } from '../../store'
+import { AI_TOOLS } from '../../types'
 import { useWorkflow } from '../../hooks/useWorkflow'
 import '@git-diff-view/react/styles/diff-view.css'
 import './diff-styles.css'
+
+const AGENT_PANEL_WIDTH = 500
 
 interface GitChangedFile {
   status: 'A' | 'M' | 'D' | 'R' | 'C'
@@ -59,12 +59,6 @@ interface GitCommit {
 interface GitCommitFile {
   status: 'A' | 'M' | 'D' | 'R' | 'C'
   path: string
-}
-
-interface GitDiffDialogProps {
-  open: boolean
-  onClose: () => void
-  branchName: string
 }
 
 interface FileDiffData {
@@ -458,7 +452,7 @@ function CommitFileDiff({
   )
 }
 
-export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDialogProps) {
+export default function GitDiffPanel() {
   const projectPath = useStore((state) => state.projectPath)
   const themeMode = useStore((state) => state.themeMode)
   const currentBranch = useStore((state) => state.currentBranch)
@@ -466,6 +460,17 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
   const setHasUncommittedChanges = useStore((state) => state.setHasUncommittedChanges)
   const stories = useStore((state) => state.stories)
   const chatThreads = useStore((state) => state.chatThreads)
+  const agentPanelOpen = useStore((state) => state.agentPanelOpen)
+  const enableAgents = useStore((state) => state.enableAgents)
+  const viewMode = useStore((state) => state.viewMode)
+  const aiTool = useStore((state) => state.aiTool)
+
+  // Git diff panel store state
+  const gitDiffPanelOpen = useStore((state) => state.gitDiffPanelOpen)
+  const branchName = useStore((state) => state.gitDiffPanelBranch)
+  const panelWidth = useStore((state) => state.gitDiffPanelWidth)
+  const closeGitDiffPanel = useStore((state) => state.closeGitDiffPanel)
+  const setGitDiffPanelWidth = useStore((state) => state.setGitDiffPanelWidth)
 
   // Get agents from workflow
   const { agents } = useWorkflow()
@@ -493,12 +498,23 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
   // Filter state - hide BMAD folders
   const [hideBmadFolders, setHideBmadFolders] = useState(true)
 
+  // Resize drag state
+  const isDraggingRef = useRef(false)
+  const startXRef = useRef(0)
+  const startWidthRef = useRef(0)
+
+  // Determine if agent panel is visible (must match App.tsx logic exactly)
+  const toolSupportsHeadless = AI_TOOLS.find(t => t.id === aiTool)?.cli.supportsHeadless ?? false
+  const showChatView = viewMode === 'chat' && toolSupportsHeadless
+  const showAgentPanel = agentPanelOpen && enableAgents && !showChatView && toolSupportsHeadless
+
   // Check if this is the current branch with uncommitted changes
   const isCurrentBranch = branchName === currentBranch
   const canCommit = isCurrentBranch && hasUncommittedChanges
 
   // Find if a chat teammate is working on this branch
   const workingTeammate = (() => {
+    if (!branchName) return null
     for (const thread of Object.values(chatThreads)) {
       if (thread.isTyping && thread.branchName === branchName) {
         const agentInfo = agents.find((a) => a.id === thread.agentId)
@@ -521,10 +537,10 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
     return null
   }
 
-  const matchingStory = getStoryFromBranch(branchName)
+  const matchingStory = branchName ? getStoryFromBranch(branchName) : null
 
   const getCommitMessage = () => {
-    if (matchingStory) {
+    if (matchingStory && branchName) {
       return `feat(${branchName}): update story ${matchingStory.epicId}.${matchingStory.storyNumber}`
     }
     return `chore(${branchName}): update`
@@ -553,27 +569,88 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
   }
 
   useEffect(() => {
-    if (open && projectPath) {
+    if (gitDiffPanelOpen && projectPath && branchName) {
       loadChangedFiles()
     }
-  }, [open, projectPath, branchName])
+  }, [gitDiffPanelOpen, projectPath, branchName])
+
+  // Auto-refresh: react to uncommitted changes toggling (polled by UncommittedChanges)
+  const prevHasChangesRef = useRef(hasUncommittedChanges)
+  useEffect(() => {
+    if (prevHasChangesRef.current !== hasUncommittedChanges) {
+      prevHasChangesRef.current = hasUncommittedChanges
+      if (gitDiffPanelOpen && projectPath && branchName) {
+        loadChangedFiles(true)
+      }
+    }
+  }, [hasUncommittedChanges, gitDiffPanelOpen, projectPath, branchName])
+
+  // Auto-refresh: poll every 10s while panel is open
+  useEffect(() => {
+    if (!gitDiffPanelOpen || !projectPath || !branchName) return
+    const interval = setInterval(() => {
+      loadChangedFiles(true)
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [gitDiffPanelOpen, projectPath, branchName])
+
+  // Escape key to close
+  useEffect(() => {
+    if (!gitDiffPanelOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeGitDiffPanel()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [gitDiffPanelOpen, closeGitDiffPanel])
+
+  // Resize drag handlers
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isDraggingRef.current = true
+    startXRef.current = e.clientX
+    startWidthRef.current = panelWidth
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!isDraggingRef.current) return
+      const delta = startXRef.current - ev.clientX
+      const newWidth = startWidthRef.current + delta
+      setGitDiffPanelWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }, [panelWidth, setGitDiffPanelWidth])
 
   const loadChangedFiles = async (isRefresh = false) => {
-    if (!projectPath) return
+    if (!projectPath || !branchName) return
 
     // Show loading on initial load, refreshing state on manual refresh
     if (isRefresh) {
       setRefreshing(true)
     } else if (changedFiles.length === 0) {
       setLoading(true)
+      setError(null)
     }
-    setError(null)
 
     try {
       // Get the default branch to compare against
       const defaultBranchResult = await window.gitAPI.getDefaultBranch(projectPath)
       if (defaultBranchResult.error || !defaultBranchResult.branch) {
-        setError('Could not determine default branch')
+        // On refresh, don't overwrite existing data with transient errors (e.g. git lock during agent work)
+        if (!isRefresh) setError('Could not determine default branch')
         setLoading(false)
         return
       }
@@ -583,15 +660,16 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
       // Get changed files between default branch and the feature branch
       const result = await window.gitAPI.getChangedFiles(projectPath, defaultBranchResult.branch, branchName)
       if (result.error) {
-        setError(result.error)
+        if (!isRefresh) setError(result.error)
         setLoading(false)
         return
       }
 
+      setError(null)
       setChangedFiles(result.files || [])
       setMergeBase(result.mergeBase || '')
     } catch (err) {
-      setError('Failed to load git diff')
+      if (!isRefresh) setError('Failed to load git diff')
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -600,7 +678,7 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
 
   // Load commit history when Commits tab is selected
   const loadCommits = async () => {
-    if (!projectPath || !defaultBranch) return
+    if (!projectPath || !defaultBranch || !branchName) return
 
     setCommitsLoading(true)
     try {
@@ -671,7 +749,8 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
   // Filter out BMAD folders if enabled
   const filteredFiles = useMemo(() => {
     if (!hideBmadFolders) return changedFiles
-    return changedFiles.filter((f) => !f.path.startsWith('_bmad-output/') && !f.path.startsWith('_bmad/'))
+    const folder = useStore.getState().outputFolder
+    return changedFiles.filter((f) => !f.path.startsWith(folder + '/') && !f.path.startsWith('_bmad/'))
   }, [changedFiles, hideBmadFolders])
 
   // Calculate total stats
@@ -720,45 +799,96 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
     }
   }
 
+  // Early return when panel is closed
+  if (!gitDiffPanelOpen || !branchName) return null
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth PaperProps={{ sx: { maxHeight: '90vh' } }}>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 2, pr: 6 }}>
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="h6" fontWeight={600}>
+    <Box
+      sx={{
+        position: 'fixed',
+        top: viewMode === 'board' ? 82 : 44,
+        bottom: 0,
+        right: showAgentPanel ? `${AGENT_PANEL_WIDTH}px` : 0,
+        width: panelWidth,
+        zIndex: 1199,
+        bgcolor: 'background.paper',
+        borderLeft: showAgentPanel ? 0 : 1,
+        borderTop: 1,
+        borderColor: 'divider',
+        display: 'flex',
+        flexDirection: 'column',
+        transition: isDraggingRef.current ? 'none' : 'right 225ms cubic-bezier(0, 0, 0.2, 1)',
+        boxShadow: showAgentPanel ? 0 : 8
+      }}
+    >
+      {/* Resize handle */}
+      <Box
+        onMouseDown={handleResizeMouseDown}
+        sx={{
+          position: 'absolute',
+          left: -3,
+          top: 0,
+          bottom: 0,
+          width: 6,
+          cursor: 'col-resize',
+          zIndex: 1,
+          '&:hover': {
+            bgcolor: 'primary.main',
+            opacity: 0.3
+          }
+        }}
+      />
+
+      {/* Panel header */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 2,
+          py: 1.5,
+          borderBottom: 1,
+          borderColor: 'divider',
+          minHeight: 56
+        }}
+      >
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="subtitle1" fontWeight={600} noWrap>
             Branch Diff
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
             <Chip
               label={branchName}
               size="small"
               sx={{
                 fontFamily: 'monospace',
-                fontSize: '0.75rem',
+                fontSize: '0.7rem',
                 bgcolor: 'primary.main',
-                color: 'white'
+                color: 'white',
+                maxWidth: 200
               }}
             />
             <Typography variant="caption" color="text.secondary">
-              {totalStats.total} file{totalStats.total !== 1 ? 's' : ''} changed
+              {totalStats.total} file{totalStats.total !== 1 ? 's' : ''}
             </Typography>
             {totalStats.added > 0 && (
-              <Chip label={`+${totalStats.added}`} size="small" sx={{ height: 20, bgcolor: '#10B981', color: 'white', fontSize: '0.7rem' }} />
+              <Chip label={`+${totalStats.added}`} size="small" sx={{ height: 18, bgcolor: '#10B981', color: 'white', fontSize: '0.65rem' }} />
             )}
             {totalStats.modified > 0 && (
-              <Chip label={`~${totalStats.modified}`} size="small" sx={{ height: 20, bgcolor: '#F59E0B', color: 'white', fontSize: '0.7rem' }} />
+              <Chip label={`~${totalStats.modified}`} size="small" sx={{ height: 18, bgcolor: '#F59E0B', color: 'white', fontSize: '0.65rem' }} />
             )}
             {totalStats.deleted > 0 && (
-              <Chip label={`-${totalStats.deleted}`} size="small" sx={{ height: 20, bgcolor: '#EF4444', color: 'white', fontSize: '0.7rem' }} />
+              <Chip label={`-${totalStats.deleted}`} size="small" sx={{ height: 18, bgcolor: '#EF4444', color: 'white', fontSize: '0.65rem' }} />
             )}
             {workingTeammate && (
               <Chip
                 label={`${workingTeammate.name} working`}
                 size="small"
                 sx={{
-                  height: 20,
+                  height: 18,
                   bgcolor: 'success.main',
                   color: 'white',
-                  fontSize: '0.7rem',
+                  fontSize: '0.65rem',
                   fontWeight: 600,
                   animation: 'pulse 2s ease-in-out infinite',
                   '@keyframes pulse': {
@@ -781,7 +911,7 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
             />
           }
           label={<Typography variant="caption">Hide BMAD</Typography>}
-          sx={{ mr: 1 }}
+          sx={{ mr: 0 }}
         />
 
         {/* Commit button - only shown for current branch with changes */}
@@ -793,9 +923,9 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
               onClick={handleCommit}
               disabled={committing}
               startIcon={committing ? <CircularProgress size={14} color="inherit" /> : <CommitIcon />}
-              sx={{ minWidth: 90 }}
+              sx={{ minWidth: 80 }}
             >
-              {committing ? 'Committing' : 'Commit'}
+              {committing ? '...' : 'Commit'}
             </Button>
           </Tooltip>
         )}
@@ -805,11 +935,12 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
           <IconButton
             onClick={() => loadChangedFiles(true)}
             disabled={loading || refreshing}
+            size="small"
             sx={{ color: 'text.secondary' }}
           >
             <RefreshIcon
               sx={{
-                fontSize: 20,
+                fontSize: 18,
                 animation: refreshing ? 'spin 1s linear infinite' : 'none',
                 '@keyframes spin': {
                   '0%': { transform: 'rotate(0deg)' },
@@ -828,23 +959,24 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
           size="small"
         >
           <Tooltip title="Split view">
-            <ToggleButton value={DiffModeEnum.Split}>
-              <ViewColumnIcon sx={{ fontSize: 18 }} />
+            <ToggleButton value={DiffModeEnum.Split} sx={{ px: 0.5 }}>
+              <ViewColumnIcon sx={{ fontSize: 16 }} />
             </ToggleButton>
           </Tooltip>
           <Tooltip title="Unified view">
-            <ToggleButton value={DiffModeEnum.Unified}>
-              <ViewStreamIcon sx={{ fontSize: 18 }} />
+            <ToggleButton value={DiffModeEnum.Unified} sx={{ px: 0.5 }}>
+              <ViewStreamIcon sx={{ fontSize: 16 }} />
             </ToggleButton>
           </Tooltip>
         </ToggleButtonGroup>
 
-        <IconButton onClick={onClose} sx={{ position: 'absolute', right: 16, top: 16 }}>
-          <CloseIcon />
+        <IconButton onClick={closeGitDiffPanel} size="small">
+          <CloseIcon sx={{ fontSize: 18 }} />
         </IconButton>
-      </DialogTitle>
+      </Box>
 
-      <DialogContent dividers sx={{ p: 0 }}>
+      {/* Panel body — scrollable */}
+      <Box sx={{ flex: 1, overflow: 'auto' }}>
         {/* Commit error alert */}
         {commitError && (
           <Alert severity="error" onClose={() => setCommitError(null)} sx={{ m: 2, mb: 0 }}>
@@ -1043,7 +1175,7 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
                             <CommitIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
                             {agent && (
-                              <Tooltip title={`${agent.name} teammate work`}>
+                              <Tooltip title={`${agent.name} agent work`}>
                                 <Chip
                                   label={agent.name}
                                   size="small"
@@ -1081,7 +1213,7 @@ export default function GitDiffDialog({ open, onClose, branchName }: GitDiffDial
             )}
           </Box>
         )}
-      </DialogContent>
-    </Dialog>
+      </Box>
+    </Box>
   )
 }

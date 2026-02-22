@@ -34,7 +34,7 @@ export function parseStoryContent(markdown: string): StoryContent {
       currentSection = 'devnotes'
       continue
     }
-    if (line.startsWith('## Dev Agent Record') || line.startsWith('### File List')) {
+    if (line.startsWith('## Dev Agent Record') || line.startsWith('## Development Record') || line.startsWith('### File List')) {
       // Parse file changes
       if (line.startsWith('### File List')) {
         fileChanges = parseFileChanges(lines.slice(i))

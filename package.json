@@ -1,6 +1,6 @@
 {
-  "name": "bmadboard",
-  "version": "1.0.47",
+  "name": "bmad-studio",
+  "version": "1.0.60",
   "description": "A beautiful sprint board for BMAD projects",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "typecheck": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "release": "tsc && vite build && electron-builder --publish always"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -22,6 +23,7 @@
     "@mui/icons-material": "^6.3.0",
     "@mui/material": "^6.3.0",
     "anser": "^2.3.5",
+    "electron-updater": "^6.8.3",
     "execa": "^9.6.1",
     "node-pty": "^1.1.0",
     "react": "^18.3.1",
@@ -52,8 +54,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.bmadboard.app",
-    "productName": "BMad Board",
+    "appId": "com.bmadstudio.app",
+    "productName": "BMad Studio",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -94,6 +96,11 @@
     "linux": {
       "target": "AppImage",
       "icon": "build/icon.png"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "hacking-robot",
+      "repo": "bmad-studio"
     }
   }
 }

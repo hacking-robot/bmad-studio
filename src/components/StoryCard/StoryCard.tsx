@@ -45,12 +45,15 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
   const clearChatThread = useStore((state) => state.clearChatThread)
   const chatThreads = useStore((state) => state.chatThreads)
 
+  const developerMode = useStore((state) => state.developerMode)
+
   // Check if selected AI tool supports headless CLI operation
   const selectedToolInfo = AI_TOOLS.find(t => t.id === aiTool)
   const toolSupportsHeadless = selectedToolInfo?.cli.supportsHeadless ?? false
 
   const { getNextSteps, getAgent } = useWorkflow()
   const { fullCycle, start: startFullCycle } = useFullCycle()
+  const epicCycle = useStore((state) => state.epicCycle)
 
   // Get effective status (may be overridden to 'human-review' at app level)
   const effectiveStatus = getEffectiveStatus(story)
@@ -77,6 +80,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
   const bmadInGitignore = useStore((state) => state.bmadInGitignore)
   const enableEpicBranches = useStore((state) => state.enableEpicBranches)
   const baseBranch = useStore((state) => state.baseBranch)
+  const disableGitBranching = useStore((state) => state.disableGitBranching)
 
   // Compute if we're on this story's branch (derived from store state)
   const storyBranchName = story.id
@@ -91,7 +95,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
 
   // When bmad is gitignored, branch restrictions are relaxed since data persists across branches
   // These determine if actions are allowed (separate from actual branch state for UI)
-  const canExecuteOnAnyBranch = bmadInGitignore
+  const canExecuteOnAnyBranch = bmadInGitignore || disableGitBranching
   const canExecuteStoryActions = isOnStoryBranch || canExecuteOnAnyBranch
   // When epic branches are disabled, we can create story branches from anywhere (they'll be created from base branch)
   // When epic branches are enabled, must be on the epic branch to create story branches
@@ -287,7 +291,8 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
     e.stopPropagation()
     // Close the menu
     handleMenuClose()
-    // Clear the chat thread for a fresh start
+    // Cancel any running process and clear the chat thread for a fresh start
+    window.chatAPI.cancelMessage(agentIdParam).catch(() => {})
     clearChatThread(agentIdParam)
     // Switch to chat view
     setViewMode('chat')
@@ -310,9 +315,19 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
     startFullCycle(story.id)
   }
 
-  // Check if full cycle can be started (available from any status except done)
-  const canStartFullCycle = toolSupportsHeadless && effectiveStatus !== 'done'
+  // Full Cycle section visibility (always show when conditions met)
+  const showFullCycleSection = toolSupportsHeadless && effectiveStatus !== 'done' && developerMode !== 'human'
   const isFullCycleRunning = fullCycle.isRunning && fullCycle.storyId === story.id
+
+  // Determine why the button is disabled (null = not disabled)
+  const isAnyAgentBusy = Object.values(chatThreads).some(t => t?.isTyping)
+  const fullCycleBusyReason = fullCycle.isRunning
+    ? (isFullCycleRunning ? null : 'Another story full cycle is running')
+    : epicCycle.isRunning
+      ? 'Epic cycle automation is running'
+      : isAnyAgentBusy
+        ? 'An agent is currently busy'
+        : null
 
   return (
     <>
@@ -380,7 +395,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
                 {/* Spinning icon: shows when teammate working OR for in-progress/review with git activity */}
                 {(workingTeammate || ((effectiveStatus === 'in-progress' || effectiveStatus === 'review') && (runningAgent || isActivelyWorking))) && (
                   <Tooltip
-                    title={workingTeammate ? `${workingTeammate.name} working` : runningAgent ? 'Teammate working' : 'Recent git activity'}
+                    title={workingTeammate ? `${workingTeammate.name} working` : runningAgent ? 'Agent working' : 'Recent git activity'}
                     arrow
                     placement="top"
                   >
@@ -572,8 +587,8 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
         </Box>
 
         {/* Full Cycle Automation Button - Only for backlog/ready-for-dev with headless support */}
-        {canStartFullCycle && (
-          <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider', bgcolor: 'primary.lighter' }}>
+        {showFullCycleSection && (
+          <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider', bgcolor: 'primary.lighter', opacity: fullCycleBusyReason ? 0.6 : 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <RocketLaunchIcon sx={{ fontSize: 18, color: 'primary.main' }} />
               <Box sx={{ flex: 1 }}>
@@ -581,27 +596,33 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
                   Full Cycle Automation
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {effectiveStatus === 'backlog' || effectiveStatus === 'ready-for-dev'
-                    ? 'Create branch, implement, review, and complete'
-                    : 'Continue with review and complete remaining steps'}
+                  {fullCycleBusyReason
+                    ? fullCycleBusyReason
+                    : effectiveStatus === 'backlog' || effectiveStatus === 'ready-for-dev'
+                      ? 'Create branch, implement, review, and complete'
+                      : 'Continue with review and complete remaining steps'}
                 </Typography>
               </Box>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={handleStartFullCycle}
-                disabled={fullCycle.isRunning}
-                startIcon={isFullCycleRunning ? <CircularProgress size={12} color="inherit" /> : <RocketLaunchIcon />}
-                sx={{ fontSize: '0.7rem', py: 0.5, px: 1.5 }}
-              >
-                {isFullCycleRunning ? 'Running...' : 'Run'}
-              </Button>
+              <Tooltip title={fullCycleBusyReason || ''}>
+                <span>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    onClick={handleStartFullCycle}
+                    disabled={fullCycle.isRunning || !!fullCycleBusyReason}
+                    startIcon={isFullCycleRunning ? <CircularProgress size={12} color="inherit" /> : <RocketLaunchIcon />}
+                    sx={{ fontSize: '0.7rem', py: 0.5, px: 1.5 }}
+                  >
+                    {isFullCycleRunning ? 'Running...' : 'Run'}
+                  </Button>
+                </span>
+              </Tooltip>
             </Box>
           </Box>
         )}
 
-        {/* Step 1: Git Branch Command - Only for ready-for-dev when branch doesn't exist yet */}
-        {effectiveStatus === 'ready-for-dev' && !branchExists && !isOnStoryBranch && (
+        {/* Step 1: Git Branch Command - Only for ready-for-dev when branch doesn't exist yet (hidden when git branching disabled) */}
+        {!disableGitBranching && effectiveStatus === 'ready-for-dev' && !branchExists && !isOnStoryBranch && (
           <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider', bgcolor: 'action.hover' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
               <Chip label="Step 1" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600, bgcolor: 'primary.main', color: 'white' }} />
@@ -661,8 +682,8 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
           </Box>
         )}
 
-        {/* Step 1: Git Commit Command - For review (commit implementation) and done (complete) - only when on story branch with uncommitted changes */}
-        {(effectiveStatus === 'review' || effectiveStatus === 'done') && canExecuteStoryActions && hasUncommittedChanges && (
+        {/* Step 1: Git Commit Command - For review (commit implementation) and done (complete) - only when on story branch with uncommitted changes (hidden when git branching disabled) */}
+        {!disableGitBranching && (effectiveStatus === 'review' || effectiveStatus === 'done') && canExecuteStoryActions && hasUncommittedChanges && (
           <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider', bgcolor: 'action.hover' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
               <Chip label="Step 1" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600, bgcolor: 'primary.main', color: 'white' }} />
@@ -717,7 +738,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
         {nextSteps.length > 0 && (
           <Box sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', bgcolor: 'action.selected' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {((effectiveStatus === 'ready-for-dev' && !branchExists && !isOnStoryBranch) || ((effectiveStatus === 'review' || effectiveStatus === 'done') && canExecuteStoryActions && hasUncommittedChanges)) && (
+              {!disableGitBranching && ((effectiveStatus === 'ready-for-dev' && !branchExists && !isOnStoryBranch) || ((effectiveStatus === 'review' || effectiveStatus === 'done') && canExecuteStoryActions && hasUncommittedChanges)) && (
                 <Chip
                   label="Step 2"
                   size="small"
@@ -726,7 +747,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
               )}
               <GroupsIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
               <Typography variant="body2" fontWeight={500}>
-                Talk to Teammates ({selectedToolInfo?.name || aiTool})
+                {`Talk to Agents (${selectedToolInfo?.name || aiTool})`}
               </Typography>
             </Box>
           </Box>
@@ -751,7 +772,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
                   // Backlog/ready-for-dev stories can be worked on from epic branch (or base branch when epic branches disabled)
                   // When bmad is gitignored, allow from any branch
                   const canExecuteFromParentBranch = (effectiveStatus === 'backlog' || effectiveStatus === 'ready-for-dev') && (enableEpicBranches ? isOnEpicBranch : isOnBaseBranch)
-                  const canExecute = canExecuteStoryActions || canExecuteFromParentBranch
+                  const canExecute = canExecuteStoryActions || canExecuteFromParentBranch || disableGitBranching
                   const isDisabled = !canExecute || isAgentWorking
                   const requiredBranch = enableEpicBranches ? `epic-${story.epicId}` : baseBranch
                   const tooltipTitle = isAgentWorking

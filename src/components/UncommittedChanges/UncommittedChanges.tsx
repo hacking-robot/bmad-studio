@@ -7,20 +7,20 @@ import {
   Popover,
   Alert,
   Button,
+  Chip,
   CircularProgress
 } from '@mui/material'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import CheckIcon from '@mui/icons-material/Check'
-import CompareArrowsIcon from '@mui/icons-material/CompareArrows'
+import CallSplitIcon from '@mui/icons-material/CallSplit'
+import CommitIcon from '@mui/icons-material/Commit'
 import { useStore } from '../../store'
-import GitDiffDialog from '../GitDiffDialog'
 
 export default function UncommittedChanges() {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null)
   const [committing, setCommitting] = useState(false)
   const [commitError, setCommitError] = useState<string | null>(null)
-  const [diffDialogOpen, setDiffDialogOpen] = useState(false)
 
   const projectPath = useStore((state) => state.projectPath)
   const stories = useStore((state) => state.stories)
@@ -28,6 +28,7 @@ export default function UncommittedChanges() {
   const hasChanges = useStore((state) => state.hasUncommittedChanges)
   const setCurrentBranch = useStore((state) => state.setCurrentBranch)
   const setHasUncommittedChanges = useStore((state) => state.setHasUncommittedChanges)
+  const openGitDiffPanel = useStore((state) => state.openGitDiffPanel)
 
   // Parse branch name to find matching story
   // Branch format: epicId-storyId (e.g., "1-1-6-load-built-in-chips")
@@ -133,18 +134,24 @@ export default function UncommittedChanges() {
 
   return (
     <>
-      <Tooltip title="Uncommitted changes - click to commit">
-        <IconButton
+      <Tooltip title="Uncommitted changes - click to view diff or commit">
+
+        <Chip
           size="small"
+          icon={<CommitIcon sx={{ fontSize: 14 }} />}
+          label="Commit Changes"
           onClick={handleClick}
+          color="warning"
+          variant="outlined"
           sx={{
-            p: 0.25,
-            color: 'warning.main',
-            '&:hover': { bgcolor: 'action.hover' }
+            height: 20,
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.65rem',
+            '& .MuiChip-icon': { ml: 0.5, mr: -0.25 },
+            '& .MuiChip-label': { px: 0.5 }
           }}
-        >
-          <CompareArrowsIcon sx={{ fontSize: 16 }} />
-        </IconButton>
+        />
       </Tooltip>
 
       <Popover
@@ -169,9 +176,12 @@ export default function UncommittedChanges() {
           }
         }}
       >
-        <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
-          Commit Changes
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+          <CommitIcon sx={{ fontSize: 18 }} />
+          <Typography variant="subtitle2" fontWeight={600}>
+            Commit Changes
+          </Typography>
+        </Box>
 
         {matchingStory ? (
           <Alert severity="info" sx={{ mb: 1.5, py: 0.5 }}>
@@ -228,10 +238,10 @@ export default function UncommittedChanges() {
             variant="outlined"
             size="small"
             onClick={() => {
-              setDiffDialogOpen(true)
+              openGitDiffPanel(branchName)
               handleClose()
             }}
-            startIcon={<CompareArrowsIcon />}
+            startIcon={<CallSplitIcon />}
             sx={{ flex: 1 }}
           >
             View Diff
@@ -241,20 +251,13 @@ export default function UncommittedChanges() {
             size="small"
             onClick={handleCommit}
             disabled={committing}
-            startIcon={committing ? <CircularProgress size={14} /> : undefined}
+            startIcon={committing ? <CircularProgress size={14} /> : <CommitIcon />}
             sx={{ flex: 1 }}
           >
             {committing ? 'Committing...' : 'Commit'}
           </Button>
         </Box>
       </Popover>
-
-      {/* Git Diff Dialog */}
-      <GitDiffDialog
-        open={diffDialogOpen}
-        onClose={() => setDiffDialogOpen(false)}
-        branchName={branchName}
-      />
     </>
   )
 }

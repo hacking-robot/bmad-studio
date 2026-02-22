@@ -1,97 +1,19 @@
-import { Box, Typography, Link, Paper, Stack, Divider } from '@mui/material'
-import AutoStoriesIcon from '@mui/icons-material/AutoStories'
-import AnalyticsIcon from '@mui/icons-material/Analytics'
-import ArchitectureIcon from '@mui/icons-material/Architecture'
-import BuildIcon from '@mui/icons-material/Build'
-import SportsEsportsIcon from '@mui/icons-material/SportsEsports'
+import { Box, Typography, Link, Paper, Stack, Divider, Chip } from '@mui/material'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { useStore } from '../../store'
-import { ProjectType } from '../../types'
-
-interface Phase {
-  icon: React.ReactNode
-  title: string
-  agent: string
-  description: string
-}
-
-// BMM (BMAD Method) phases
-const bmmPhases: Phase[] = [
-  {
-    icon: <AutoStoriesIcon fontSize="small" />,
-    title: 'Analysis',
-    agent: 'Analyst (Mary)',
-    description: 'Research, brainstorming, and understanding requirements. Document existing projects and explore market context.'
-  },
-  {
-    icon: <AnalyticsIcon fontSize="small" />,
-    title: 'Planning',
-    agent: 'PM (John)',
-    description: 'Create PRDs, define epics and stories, write acceptance criteria. Break down work into manageable pieces.'
-  },
-  {
-    icon: <ArchitectureIcon fontSize="small" />,
-    title: 'Architecture',
-    agent: 'Architect (Winston)',
-    description: 'Design system architecture, create technical specifications, and produce architecture diagrams.'
-  },
-  {
-    icon: <BuildIcon fontSize="small" />,
-    title: 'Implementation',
-    agent: 'SM (Bob), DEV (Amelia), TEA (Murat)',
-    description: 'Story planning, implementation, code review, and testing. Build and verify features.'
-  }
-]
-
-// BMGD (BMAD Game Dev) phases
-const bmgdPhases: Phase[] = [
-  {
-    icon: <AutoStoriesIcon fontSize="small" />,
-    title: 'Concept',
-    agent: 'Game Designer (GD)',
-    description: 'Brainstorm game ideas, define core mechanics, and establish the creative vision for your game.'
-  },
-  {
-    icon: <AnalyticsIcon fontSize="small" />,
-    title: 'Design',
-    agent: 'Game Designer (GD)',
-    description: 'Create Game Design Documents, define gameplay systems, and plan game features and progression.'
-  },
-  {
-    icon: <ArchitectureIcon fontSize="small" />,
-    title: 'Architecture',
-    agent: 'Game Architect (GA)',
-    description: 'Design game architecture, plan technical systems, and create component diagrams.'
-  },
-  {
-    icon: <SportsEsportsIcon fontSize="small" />,
-    title: 'Development',
-    agent: 'Game SM, Game Dev, Game QA',
-    description: 'Story planning, game implementation, playtesting, and quality assurance. Build and polish your game.'
-  }
-]
-
-function getPhases(projectType: ProjectType | null): Phase[] {
-  return projectType === 'bmgd' ? bmgdPhases : bmmPhases
-}
-
-function getDescription(projectType: ProjectType | null): { title: string; description: string } {
-  if (projectType === 'bmgd') {
-    return {
-      title: 'BMAD Game Dev',
-      description: 'BMAD Game Dev is an AI-powered framework for game development. Specialized teammates guide you from concept to playable game, covering design, architecture, implementation, and testing.'
-    }
-  }
-  return {
-    title: 'BMAD Method',
-    description: 'BMAD (Breakthrough Method of Agile AI-Driven Development) is an AI-powered framework that uses specialized teammates to guide you through software development. Each teammate has a specific role, from analysis through implementation.'
-  }
-}
+import { useWorkflow } from '../../hooks/useWorkflow'
 
 export default function OverviewTab() {
   const projectType = useStore((state) => state.projectType)
-  const phases = getPhases(projectType)
-  const { title, description } = getDescription(projectType)
+  const { agents, getProjectWorkflows, getAgentName } = useWorkflow()
+
+  const projectWorkflows = getProjectWorkflows()
+  const hasPhases = Object.keys(projectWorkflows).length > 0
+
+  const title = projectType === 'gds' ? 'Game Dev Studio' : 'BMAD Method'
+  const description = projectType === 'gds'
+    ? 'Game Dev Studio is an AI-powered framework for game development. Specialized agents guide you from concept to playable game, covering design, architecture, implementation, and testing.'
+    : 'BMAD (Breakthrough Method of Agile AI-Driven Development) is an AI-powered framework that uses specialized agents to guide you through software development. Each agent has a specific role, from analysis through implementation.'
 
   return (
     <Box>
@@ -99,41 +21,89 @@ export default function OverviewTab() {
         <strong>{title}</strong> - {description}
       </Typography>
 
-      <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-        The Four Phases
-      </Typography>
+      {hasPhases ? (
+        // Scan-driven: show phases from project workflow config
+        <>
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+            Development Phases
+          </Typography>
 
-      <Stack spacing={2} sx={{ mb: 3 }}>
-        {phases.map((phase, index) => (
-          <Paper
-            key={phase.title}
-            variant="outlined"
-            sx={{
-              p: 2,
-              borderLeft: 4,
-              borderLeftColor: 'primary.main'
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-              {phase.icon}
-              <Typography variant="subtitle1" fontWeight={600}>
-                {index + 1}. {phase.title}
-              </Typography>
-            </Box>
-            <Typography variant="caption" color="primary.main" sx={{ display: 'block', mb: 0.5 }}>
-              {phase.agent}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {phase.description}
-            </Typography>
-          </Paper>
-        ))}
-      </Stack>
+          <Stack spacing={2} sx={{ mb: 3 }}>
+            {Object.entries(projectWorkflows).map(([phaseId, phase], index) => {
+              // Derive unique agents involved in this phase
+              const agentIds = [...new Set(phase.workflows.map((wf) => wf.agentId))]
+
+              return (
+                <Paper
+                  key={phaseId}
+                  variant="outlined"
+                  sx={{ p: 2, borderLeft: 4, borderLeftColor: 'primary.main' }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Typography fontSize="1.2rem">{phase.icon}</Typography>
+                    <Typography variant="subtitle1" fontWeight={600}>
+                      {index + 1}. {phase.label}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.5 }}>
+                    {agentIds.map((id) => (
+                      <Chip
+                        key={id}
+                        label={getAgentName(id)}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        sx={{ height: 22, fontSize: '0.75rem' }}
+                      />
+                    ))}
+                  </Box>
+                  {phase.description && (
+                    <Typography variant="body2" color="text.secondary">
+                      {phase.description}
+                    </Typography>
+                  )}
+                </Paper>
+              )
+            })}
+          </Stack>
+        </>
+      ) : (
+        // Fallback: show agents as the "phases"
+        <>
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+            Agents
+          </Typography>
+
+          <Stack spacing={2} sx={{ mb: 3 }}>
+            {agents.map((agent, index) => (
+              <Paper
+                key={agent.id}
+                variant="outlined"
+                sx={{ p: 2, borderLeft: 4, borderLeftColor: agent.color }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                  <Typography variant="subtitle1" fontWeight={600}>
+                    {index + 1}. {agent.role}
+                  </Typography>
+                  <Chip
+                    label={agent.name}
+                    size="small"
+                    sx={{ bgcolor: agent.color, color: 'white', height: 22, fontSize: '0.75rem' }}
+                  />
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  {agent.description}
+                </Typography>
+              </Paper>
+            ))}
+          </Stack>
+        </>
+      )}
 
       <Divider sx={{ my: 3 }} />
 
       <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-        BMad Board
+        BMad Studio
       </Typography>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>

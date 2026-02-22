@@ -43,6 +43,7 @@ export default function BranchSwitcher() {
   const baseBranch = useStore((state) => state.baseBranch)
   const allowDirectEpicMerge = useStore((state) => state.allowDirectEpicMerge)
   const enableEpicBranches = useStore((state) => state.enableEpicBranches)
+  const disableGitBranching = useStore((state) => state.disableGitBranching)
   const { loadProjectData } = useProjectData()
 
   // Whether current branch is the base branch
@@ -481,8 +482,8 @@ export default function BranchSwitcher() {
     }
   }
 
-  // Don't render if not in a git repo
-  if (!projectPath || !currentBranch) {
+  // Don't render if not in a git repo or if git branching is disabled
+  if (!projectPath || !currentBranch || disableGitBranching) {
     return null
   }
 

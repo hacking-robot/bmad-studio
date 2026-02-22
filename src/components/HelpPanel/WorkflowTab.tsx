@@ -15,7 +15,7 @@ export default function WorkflowTab() {
     <Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         Stories progress through these statuses as they move from idea to completion.
-        Each status indicates where a story is in the development lifecycle and which teammate can help.
+        Each status indicates where a story is in the development lifecycle and which agent can help.
       </Typography>
 
       <Paper

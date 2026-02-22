@@ -10,17 +10,22 @@ import {
   Divider
 } from '@mui/material'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
-import DashboardIcon from '@mui/icons-material/Dashboard'
+import AddIcon from '@mui/icons-material/Add'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { useProjectData } from '../../hooks/useProjectData'
 import { useStore } from '../../store'
+import logoDark from '../../assets/logo-dark.svg'
+import logoLight from '../../assets/logo-light.svg'
+import { NewProjectForm } from '../NewProjectDialog'
 
 export default function WelcomeDialog() {
   const { selectProject } = useProjectData()
   const error = useStore((state) => state.error)
+  const themeMode = useStore((state) => state.themeMode)
   const [showInfo, setShowInfo] = useState(false)
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
 
   const handleSelectProject = async () => {
     await selectProject()
@@ -33,9 +38,12 @@ export default function WelcomeDialog() {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        p: 3
+        p: 3,
+        position: 'relative'
       }}
     >
+      {/* Drag region at top for window movement */}
+      <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 40, WebkitAppRegion: 'drag' }} />
       <Paper
         elevation={0}
         sx={{
@@ -49,25 +57,21 @@ export default function WelcomeDialog() {
       >
         <Stack spacing={3} alignItems="center">
           <Box
+            component="img"
+            src={themeMode === 'dark' ? logoDark : logoLight}
+            alt="BMad Studio"
             sx={{
               width: 80,
               height: 80,
-              borderRadius: 3,
-              bgcolor: 'primary.main',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              borderRadius: 3
             }}
-          >
-            <DashboardIcon sx={{ fontSize: 40, color: 'white' }} />
-          </Box>
+          />
 
           <Box>
             <Typography variant="h4" fontWeight={700} gutterBottom>
-              BMad Board
+              BMad Studio
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              A beautiful story board for your BMAD projects.
               Select a project folder to get started.
             </Typography>
           </Box>
@@ -78,19 +82,30 @@ export default function WelcomeDialog() {
             </Typography>
           )}
 
-          <Button
-            variant="contained"
-            size="large"
-            startIcon={<FolderOpenIcon />}
-            onClick={handleSelectProject}
-            sx={{ mt: 2 }}
-          >
-            Select Project Folder
-          </Button>
+          <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<FolderOpenIcon />}
+              onClick={handleSelectProject}
+            >
+              Open Project
+            </Button>
+            <Button
+              variant="outlined"
+              size="large"
+              startIcon={<AddIcon />}
+              onClick={() => setNewProjectOpen(true)}
+            >
+              New Project
+            </Button>
+          </Stack>
 
           <Typography variant="caption" color="text.secondary">
-            Choose a folder containing a <code>_bmad-output</code> directory
+            Open an existing BMAD project or create a new one
           </Typography>
+
+          <NewProjectForm open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
 
           <Divider sx={{ width: '100%', my: 1 }} />
 
@@ -122,16 +137,16 @@ export default function WelcomeDialog() {
               >
                 <Typography variant="body2" sx={{ mb: 1.5 }}>
                   <strong>BMAD</strong> (Breakthrough Method of Agile AI-Driven Development) is an AI-powered
-                  framework that uses specialized teammates to guide you through software development.
+                  framework that uses specialized agents to guide you through software development.
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  Each teammate has a specific role: <strong>Analyst</strong> (Mary) handles research,{' '}
+                  Each agent has a specific role: <strong>Analyst</strong> (Mary) handles research,{' '}
                   <strong>PM</strong> (John) creates requirements, <strong>Architect</strong> (Winston)
                   designs systems, <strong>SM</strong> (Bob) manages stories, and <strong>DEV</strong> (Amelia)
                   implements features.
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  BMad Board visualizes your project's progress as stories move through the development
+                  BMad Studio visualizes your project's progress as stories move through the development
                   lifecycle—from backlog to done.
                 </Typography>
                 <Link

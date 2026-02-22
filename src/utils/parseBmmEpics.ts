@@ -27,6 +27,8 @@ export function parseBmmEpics(
   let currentEpic: ParsedEpic | null = null
   let currentStory: ParsedStory | null = null
   let storyDescriptionLines: string[] = []
+  let inStoriesSection = false
+  let numberedStoryCount = 0
 
   const finishCurrentStory = () => {
     if (currentStory && currentEpic) {
@@ -88,8 +90,8 @@ export function parseBmmEpics(
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // Match Epic header: ## Epic 1: Orchestrator Core & REST Workflow Execution
-    const epicMatch = line.match(/^## Epic (\d+): (.+)$/)
+    // Match Epic header: ## Epic 1: Name or # Epic 1: Name (sharded)
+    const epicMatch = line.match(/^#{1,2} Epic (\d+): (.+)$/)
     if (epicMatch) {
       finishCurrentStory()
       if (currentEpic) {
@@ -101,12 +103,37 @@ export function parseBmmEpics(
         goal: '',
         stories: []
       }
+      inStoriesSection = false
+      numberedStoryCount = 0
       continue
     }
 
-    // Match BMM Goal format: **Goal:** text here
+    // Match BMM Goal format: **Goal:** text here or ### Goal section
     if (currentEpic && line.startsWith('**Goal:**')) {
       currentEpic.goal = line.replace('**Goal:**', '').trim()
+      continue
+    }
+    if (currentEpic && !currentStory && line.startsWith('### Goal')) {
+      let goalLines: string[] = []
+      for (let j = i + 1; j < lines.length && !lines[j].startsWith('#'); j++) {
+        if (lines[j].trim()) {
+          goalLines.push(lines[j].trim())
+        }
+        if (goalLines.length >= 2) break
+      }
+      currentEpic.goal = goalLines.join(' ')
+      continue
+    }
+    // Sharded format: **Epic Goal:** text on same line
+    if (currentEpic && !currentStory && line.match(/^\*\*Epic Goal:\*\*/)) {
+      currentEpic.goal = line.replace(/^\*\*Epic Goal:\*\*\s*/, '').trim()
+      continue
+    }
+
+    // Match Stories section header (for numbered list format)
+    if (currentEpic && (line.startsWith('### Stories') || line.startsWith('## Stories'))) {
+      finishCurrentStory()
+      inStoriesSection = true
       continue
     }
 
@@ -114,15 +141,35 @@ export function parseBmmEpics(
     const storyMatch = line.match(/^### Story (\d+)\.(\d+): (.+)$/)
     if (storyMatch && currentEpic) {
       finishCurrentStory()
+      inStoriesSection = true
       const epicNumber = parseInt(storyMatch[1])
       const storyNumber = parseInt(storyMatch[2])
-      const title = storyMatch[3].trim()
+      const title = stripMarkdown(storyMatch[3].trim())
 
       // Only add if this story belongs to the current epic
       if (epicNumber === currentEpic.id) {
         currentStory = { title, storyNumber, description: '' }
       }
       continue
+    }
+
+    // Match numbered story lines (inside ### Stories section)
+    if (currentEpic && inStoriesSection && !currentStory) {
+      const numberedMatch = line.match(/^\d+\.\s+(.+)$/)
+      if (numberedMatch) {
+        numberedStoryCount++
+        const fullText = stripMarkdown(numberedMatch[1].trim())
+        const title = extractStoryTitle(fullText)
+        currentEpic.stories.push({ title, storyNumber: numberedStoryCount, description: fullText })
+        continue
+      }
+    }
+
+    // Stop stories section on a new ## heading
+    if (currentEpic && inStoriesSection && line.match(/^## /) && !line.match(/^## Stories/)) {
+      finishCurrentStory()
+      inStoriesSection = false
+      numberedStoryCount = 0
     }
 
     // Collect story description lines
@@ -167,6 +214,27 @@ export function parseBmmEpics(
       stories
     }
   })
+}
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    .replace(/`(.+?)`/g, '$1')
+}
+
+function extractStoryTitle(text: string): string {
+  const clean = stripMarkdown(text)
+  const userStoryMatch = clean.match(/^As a .+?, I (?:can |want to |see |use |have |am able to |no longer |clearly )?(.+?)(?:,| so that|$)/)
+  if (userStoryMatch) {
+    let title = userStoryMatch[1].trim()
+    title = title.replace(/^to\s+/, '')
+    title = title.charAt(0).toUpperCase() + title.slice(1)
+    return title
+  }
+  return clean.length > 80 ? clean.substring(0, 77) + '...' : clean
 }
 
 function generateSlug(title: string): string {

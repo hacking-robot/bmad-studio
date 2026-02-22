@@ -58,6 +58,7 @@ export function getArtifactTypeColor(type: PlanningArtifact['type']): string {
 export function usePlanningArtifacts() {
   const projectPath = useStore((state) => state.projectPath)
   const projectType = useStore((state) => state.projectType)
+  const outputFolder = useStore((state) => state.outputFolder)
   const [artifacts, setArtifacts] = useState<PlanningArtifact[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -76,8 +77,8 @@ export function usePlanningArtifacts() {
       // Order matters - first found wins for duplicate filenames
       const possiblePaths = [
         // Primary BMAD output locations
-        `${projectPath}/_bmad-output/planning-artifacts`,
-        `${projectPath}/_bmad-output`,
+        `${projectPath}/${outputFolder}/planning-artifacts`,
+        `${projectPath}/${outputFolder}`,
         // Alternative docs locations
         `${projectPath}/docs/planning-artifacts`,
         `${projectPath}/docs/planning`,
@@ -91,40 +92,70 @@ export function usePlanningArtifacts() {
 
       for (const dirPath of possiblePaths) {
         const result = await window.fileAPI.listDirectory(dirPath)
-        if (result.files && result.files.length > 0) {
-          // Filter for markdown files
-          const mdFiles = result.files.filter(f => f.endsWith('.md'))
+        if (!result.files || result.files.length === 0) continue
 
-          for (const file of mdFiles) {
-            const filePath = `${dirPath}/${file}`
+        // Process markdown files and discover subdirectories
+        const mdFiles = result.files.filter(f => f.endsWith('.md'))
+        const subDirs = result.dirs || []
 
-            // Skip if we've already found this file in a higher priority location
-            if (seenPaths.has(file)) continue
+        for (const file of mdFiles) {
+          const filePath = `${dirPath}/${file}`
 
-            // Skip story files and certain non-planning files
-            if (file.startsWith('story-')) continue
-            if (file === 'README.md' || file === 'CHANGELOG.md' || file === 'CONTRIBUTING.md') continue
-            if (file === 'CLAUDE.md' || file === 'LICENSE.md') continue
+          // Skip if we've already found this file in a higher priority location
+          if (seenPaths.has(file)) continue
 
-            // Skip files in implementation-artifacts (those are story files)
-            if (dirPath.includes('implementation-artifacts')) continue
+          // Skip story files and certain non-planning files
+          if (file.startsWith('story-')) continue
+          if (file === 'README.md' || file === 'CHANGELOG.md' || file === 'CONTRIBUTING.md') continue
+          if (file === 'CLAUDE.md' || file === 'LICENSE.md') continue
 
-            // Only include files that look like planning documents
-            const type = inferArtifactType(file)
-            // For 'other' type at root/docs level, be more selective
-            if (type === 'other' && (dirPath === projectPath || dirPath === `${projectPath}/docs`)) {
-              // Only include if it has planning-related keywords
-              const lower = file.toLowerCase()
-              if (!lower.includes('spec') && !lower.includes('plan') && !lower.includes('doc')) continue
+          // Skip files in implementation-artifacts (those are story files)
+          if (dirPath.includes('implementation-artifacts')) continue
+
+          // Only include files that look like planning documents
+          const type = inferArtifactType(file)
+          // For 'other' type at root/docs level, be more selective
+          if (type === 'other' && (dirPath === projectPath || dirPath === `${projectPath}/docs`)) {
+            // Only include if it has planning-related keywords
+            const lower = file.toLowerCase()
+            if (!lower.includes('spec') && !lower.includes('plan') && !lower.includes('doc')) continue
+          }
+
+          seenPaths.add(file)
+          foundArtifacts.push({
+            name: file,
+            path: filePath,
+            type,
+            displayName: generateDisplayName(file)
+          })
+        }
+
+        // Scan subdirectories for planning artifacts.
+        // BMAD places brainstorming/ and research/ as siblings to planning-artifacts/
+        // (i.e. directly under the output folder), so scan subdirs for both
+        // the planning-artifacts dir and the output folder itself.
+        const isOutputFolder = dirPath === `${projectPath}/${outputFolder}`
+        if (dirPath.includes('planning-artifacts') || isOutputFolder) {
+          for (const subDir of subDirs) {
+            if (subDir === 'implementation-artifacts') continue
+            if (subDir === 'planning-artifacts') continue
+            // Skip hidden dirs and node_modules
+            if (subDir.startsWith('.') || subDir === 'node_modules') continue
+            const subResult = await window.fileAPI.listDirectory(`${dirPath}/${subDir}`)
+            if (!subResult.files) continue
+            const subMdFiles = subResult.files.filter(f => f.endsWith('.md') && f !== 'CLAUDE.md' && f !== 'README.md')
+            for (const file of subMdFiles) {
+              const filePath = `${dirPath}/${subDir}/${file}`
+              const qualifiedName = `${subDir}/${file}`
+              if (seenPaths.has(qualifiedName)) continue
+              seenPaths.add(qualifiedName)
+              foundArtifacts.push({
+                name: file,
+                path: filePath,
+                type: inferArtifactType(file),
+                displayName: `${generateDisplayName(subDir)}: ${generateDisplayName(file)}`
+              })
             }
-
-            seenPaths.add(file)
-            foundArtifacts.push({
-              name: file,
-              path: filePath,
-              type,
-              displayName: generateDisplayName(file)
-            })
           }
         }
       }
@@ -152,7 +183,7 @@ export function usePlanningArtifacts() {
     } finally {
       setLoading(false)
     }
-  }, [projectPath, projectType])
+  }, [projectPath, projectType, outputFolder])
 
   // Load artifacts when project changes
   useEffect(() => {

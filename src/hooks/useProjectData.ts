@@ -4,14 +4,19 @@ import { parseSprintStatus } from '../utils/parseSprintStatus'
 import { parseEpicsUnified, getAllStories } from '../utils/parseEpicsUnified'
 import { parseStoryContent } from '../utils/parseStory'
 import { getEpicsFullPath, getSprintStatusFullPath } from '../utils/projectTypes'
+import { mergeWorkflowConfig } from '../utils/workflowMerge'
+import { flushPendingThreadSave } from '../utils/chatUtils'
+import type { BmadScanResult } from '../types/bmadScan'
 
 export function useProjectData() {
   const {
     _hasHydrated,
     projectPath,
     projectType,
+    outputFolder,
     setProjectPath,
     setProjectType,
+    setOutputFolder,
     addRecentProject,
     setEpics,
     setStories,
@@ -23,8 +28,14 @@ export function useProjectData() {
     selectedStory,
     setNewProjectDialogOpen,
     setPendingNewProject,
-    setBmadInGitignore
+    setBmadInGitignore,
+    setBmadScanResult,
+    setScannedWorkflowConfig,
+    setBmadVersionError,
+    projectWizard
   } = useStore()
+
+  const wizardIsActive = projectWizard.isActive
 
   const selectProject = useCallback(async () => {
     const result = await window.fileAPI.selectDirectory()
@@ -41,42 +52,88 @@ export function useProjectData() {
     if (result.path && result.projectType) {
       // Check if this is a new/empty project
       if (result.isNewProject) {
+        // Check if there's a saved wizard state (interrupted install with possibly custom output folder)
+        const dirOutputFolder = result.outputFolder || '_bmad-output'
+        const savedWizard = await window.wizardAPI.loadState(result.path, dirOutputFolder)
+        if (savedWizard && typeof savedWizard === 'object' && 'isActive' in (savedWizard as Record<string, unknown>)) {
+          const ws = savedWizard as import('../types/projectWizard').ProjectWizardState & { outputFolder?: string }
+          if (ws.isActive) {
+            // Resume the wizard with its stored output folder
+            const { resumeWizard } = useStore.getState()
+            resumeWizard(ws)
+            return true
+          }
+        }
         setPendingNewProject({
           path: result.path,
-          projectType: result.projectType
+          projectType: result.projectType,
+          outputFolder: dirOutputFolder
         })
         setNewProjectDialogOpen(true)
         return false // Don't set project yet - let dialog handle it
       }
 
       const projectName = result.path.split('/').pop() || 'Unknown'
+      const resolvedOutputFolder = result.outputFolder || '_bmad-output'
       setProjectPath(result.path)
       setProjectType(result.projectType)
+      setOutputFolder(resolvedOutputFolder)
       addRecentProject({
         path: result.path,
         projectType: result.projectType,
-        name: projectName
+        name: projectName,
+        outputFolder: resolvedOutputFolder
       })
       return true
     }
 
     return false
-  }, [setProjectPath, setProjectType, setError, addRecentProject, setNewProjectDialogOpen, setPendingNewProject])
+  }, [setProjectPath, setProjectType, setOutputFolder, setError, addRecentProject, setNewProjectDialogOpen, setPendingNewProject])
 
-  const switchToProject = useCallback((path: string, type: typeof projectType) => {
-    if (!type) return
-    const projectName = path.split('/').pop() || 'Unknown'
-    setProjectPath(path)
-    setProjectType(type)
-    addRecentProject({
-      path,
-      projectType: type,
-      name: projectName
+  const setDeveloperMode = useStore((state) => state.setDeveloperMode)
+
+  const switchToProject = useCallback((project: import('../store').RecentProject) => {
+    if (!project.projectType) return
+
+    // Flush any pending debounced thread save and persist all in-memory threads
+    // before clearing state, so switching back restores them from disk
+    const state = useStore.getState()
+    flushPendingThreadSave()
+    if (state.projectPath) {
+      for (const [agentId, thread] of Object.entries(state.chatThreads)) {
+        if (thread && thread.messages.length > 0) {
+          window.chatAPI.saveThread(state.projectPath, agentId, thread)
+        }
+      }
+    }
+
+    // Batch all state updates into a single set() to avoid 9 separate persist cycles
+    // Each persist cycle reads/writes the 645KB settings file via IPC
+    const filtered = state.recentProjects.filter((p) => p.path !== project.path)
+    const updatedRecent = [project, ...filtered].slice(0, 10)
+    useStore.setState({
+      projectPath: project.path,
+      projectType: project.projectType,
+      outputFolder: project.outputFolder || '_bmad-output',
+      developerMode: project.developerMode || 'ai',
+      baseBranch: project.baseBranch || 'main',
+      enableEpicBranches: project.enableEpicBranches ?? false,
+      allowDirectEpicMerge: project.allowDirectEpicMerge ?? false,
+      disableGitBranching: project.disableGitBranching ?? true,
+      selectedEpicId: null,
+      recentProjects: updatedRecent,
+      chatThreads: {},
+      selectedChatAgent: null,
+      gitDiffPanelOpen: false,
+      gitDiffPanelBranch: null
     })
-  }, [setProjectPath, setProjectType, addRecentProject])
+  }, [])
 
   const loadProjectData = useCallback(async () => {
     if (!projectPath || !projectType) return
+
+    // Skip loading if wizard is active (project artifacts don't exist yet)
+    if (wizardIsActive) return
 
     // Get current state values (don't use reactive values to avoid infinite loops)
     const { stories: currentStories, notificationsEnabled, isUserDragging, setIsUserDragging } = useStore.getState()
@@ -89,29 +146,73 @@ export function useProjectData() {
 
     try {
       // Load sprint-status.yaml
-      const sprintStatusPath = getSprintStatusFullPath(projectPath, projectType)
+      const currentOutputFolder = useStore.getState().outputFolder
+      const sprintStatusPath = getSprintStatusFullPath(projectPath, projectType, currentOutputFolder)
       const statusResult = await window.fileAPI.readFile(sprintStatusPath)
 
       if (statusResult.error || !statusResult.content) {
-        throw new Error(statusResult.error || 'Failed to read sprint-status.yaml')
+        throw new Error('Failed to read sprint-status.yaml')
       }
 
       const sprintStatus = parseSprintStatus(statusResult.content)
 
-      // Load epics.md from correct location based on project type
-      const epicsPath = getEpicsFullPath(projectPath, projectType)
+      // Load epics from correct location based on project type
+      // Supports both single epics.md and sharded epic-N.md files
+      const epicsPath = getEpicsFullPath(projectPath, projectType, currentOutputFolder)
+      let epicsContent: string
       const epicsResult = await window.fileAPI.readFile(epicsPath)
 
       if (epicsResult.error || !epicsResult.content) {
-        throw new Error(epicsResult.error || 'Failed to read epics.md')
+        // Try output root (GDS puts epics.md directly in _bmad-output/)
+        const outputRootEpics = await window.fileAPI.readFile(`${projectPath}/${currentOutputFolder}/epics.md`)
+        if (outputRootEpics.content) {
+          epicsContent = outputRootEpics.content
+        } else {
+          // Try sharded epic files (epic-1.md, epic-2.md, etc.) in both locations
+          const searchDirs = [
+            `${projectPath}/${currentOutputFolder}/planning-artifacts`,
+            `${projectPath}/${currentOutputFolder}`
+          ]
+          let epicFiles: string[] = []
+          let epicDir = ''
+          for (const dir of searchDirs) {
+            const dirFiles = await window.fileAPI.listDirectory(dir)
+            const found = (dirFiles.files || [])
+              .filter((f: string) => /^epic-\d+\.md$/.test(f))
+              .sort((a: string, b: string) => {
+                const numA = parseInt(a.match(/\d+/)?.[0] || '0')
+                const numB = parseInt(b.match(/\d+/)?.[0] || '0')
+                return numA - numB
+              })
+            if (found.length > 0) {
+              epicFiles = found
+              epicDir = dir
+              break
+            }
+          }
+
+          if (epicFiles.length === 0) {
+            throw new Error('Failed to read epics.md or epic-*.md files')
+          }
+
+          // Concatenate sharded files
+          const parts: string[] = []
+          for (const file of epicFiles) {
+            const result = await window.fileAPI.readFile(`${epicDir}/${file}`)
+            if (result.content) parts.push(result.content)
+          }
+          epicsContent = parts.join('\n\n')
+        }
+      } else {
+        epicsContent = epicsResult.content
       }
 
       // Use unified parser with project type
-      const epics = parseEpicsUnified(epicsResult.content, sprintStatus, projectType)
+      const epics = parseEpicsUnified(epicsContent, sprintStatus, projectType)
       const stories = getAllStories(epics)
 
       // Update file paths for stories that have files
-      const implementationPath = `${projectPath}/_bmad-output/implementation-artifacts`
+      const implementationPath = `${projectPath}/${currentOutputFolder}/implementation-artifacts`
       const filesResult = await window.fileAPI.listDirectory(implementationPath)
 
       if (filesResult.files) {
@@ -140,6 +241,12 @@ export function useProjectData() {
       setEpics(epics)
       setStories(stories)
       setLastRefreshed(new Date())
+
+      // Auto-select first epic on initial load to avoid rendering all stories at once
+      const { selectedEpicId } = useStore.getState()
+      if (selectedEpicId === null && epics.length > 0) {
+        useStore.getState().setSelectedEpicId(epics[0].id)
+      }
 
       // Get human review settings and status change recording
       const { enableHumanReviewColumn, humanReviewStories, addToHumanReview, isInHumanReview, recordStatusChange } = useStore.getState()
@@ -185,7 +292,28 @@ export function useProjectData() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load project data')
+      const msg = err instanceof Error ? err.message : 'Failed to load project data'
+      // If essential artifacts are missing, redirect to wizard instead of showing error
+      const isMissingArtifacts = msg.includes('Failed to read sprint-status') || msg.includes('Failed to read epics')
+      if (isMissingArtifacts) {
+        console.log('[useProjectData] Missing project artifacts — redirecting to wizard')
+        const { outputFolder: currentOutput, developerMode: currentDevMode } = useStore.getState()
+        // Scan _bmad/ to detect the correct module type (don't trust store — it may be stale)
+        try {
+          const scanResult = await window.fileAPI.scanBmad(projectPath!) as BmadScanResult | null
+          const detectedType = scanResult?.modules.includes('gds') ? 'gds' : 'bmm'
+          const modules = [detectedType]
+          console.log(`[useProjectData] Detected modules from scan: [${detectedType}]`)
+          useStore.getState().startProjectWizard(projectPath!, currentOutput, currentDevMode as 'ai' | 'human', modules)
+        } catch {
+          // Fallback to store value if scan fails
+          const { projectType: currentType } = useStore.getState()
+          const modules = currentType === 'gds' ? ['gds'] : ['bmm']
+          useStore.getState().startProjectWizard(projectPath!, currentOutput, currentDevMode as 'ai' | 'human', modules)
+        }
+        return
+      }
+      setError(msg)
     } finally {
       setLoading(false)
       // Delay resetting user dragging flag to allow file watcher events to be ignored
@@ -194,7 +322,7 @@ export function useProjectData() {
         setIsUserDragging(false)
       }, 2000)
     }
-  }, [projectPath, projectType, setEpics, setStories, setLoading, setError, setLastRefreshed])
+  }, [projectPath, projectType, wizardIsActive, setEpics, setStories, setLoading, setError, setLastRefreshed])
 
   const loadStoryContent = useCallback(async (story: typeof selectedStory) => {
     if (!story?.filePath) {
@@ -228,16 +356,139 @@ export function useProjectData() {
   }, [loadProjectData, loadStoryContent])
 
   // Load project data when path changes or after hydration
+  // Also re-runs when wizard deactivates (wizardIsActive flips false → triggers scan + load)
   useEffect(() => {
+    console.log('[useProjectData] Effect triggered:', { _hasHydrated, projectPath: !!projectPath, projectType, wizardIsActive })
     if (_hasHydrated && projectPath && projectType) {
-      loadProjectData()
+      // Skip if wizard is active (project artifacts don't exist yet)
+      if (wizardIsActive) {
+        console.log('[useProjectData] Skipping — wizard is active')
+        return
+      }
+
+      // Check if this is an incomplete project with a saved wizard state
+      // This happens when the app restarts mid-wizard (projectPath persisted but wizard state isn't)
+      window.wizardAPI.loadState(projectPath, outputFolder).then(async (savedState) => {
+        if (savedState && typeof savedState === 'object' && 'isActive' in (savedState as Record<string, unknown>)) {
+          const ws = savedState as import('../types/projectWizard').ProjectWizardState
+          if (ws.isActive) {
+            // Before resuming, check if the project is actually ready (wizard may have completed
+            // but the state file wasn't cleaned up due to a race condition)
+            const wsOutputFolder = ws.outputFolder || outputFolder
+            const sprintPath = `${projectPath}/${wsOutputFolder}/implementation-artifacts/sprint-status.yaml`
+            const epicsPlanningPath = `${projectPath}/${wsOutputFolder}/planning-artifacts/epics.md`
+            const epicsRootPath = `${projectPath}/${wsOutputFolder}/epics.md`
+            try {
+              const [sprintExists, epicsPlanningExists, epicsRootExists] = await Promise.all([
+                window.wizardAPI.checkFileExists(sprintPath),
+                window.wizardAPI.checkFileExists(epicsPlanningPath),
+                window.wizardAPI.checkFileExists(epicsRootPath)
+              ])
+              if (sprintExists && (epicsPlanningExists || epicsRootExists)) {
+                // Project has all required artifacts — wizard is done, clean up stale state
+                console.log('[useProjectData] Wizard state file is stale — artifacts exist, loading project normally')
+                window.wizardAPI.deleteState(projectPath, wsOutputFolder)
+                loadProjectData()
+                return
+              }
+            } catch { /* check failed, resume wizard as fallback */ }
+
+            // Auto-correct selectedModules from scan (fixes stale wizard state with wrong module)
+            try {
+              const scanResult = await window.fileAPI.scanBmad(projectPath) as BmadScanResult | null
+              if (scanResult) {
+                const detectedModule = scanResult.modules.includes('gds') ? 'gds' : 'bmm'
+                const currentModule = ws.selectedModules?.includes('gds') ? 'gds' : 'bmm'
+                if (detectedModule !== currentModule) {
+                  console.log(`[useProjectData] Correcting wizard modules: [${currentModule}] → [${detectedModule}]`)
+                  ws.selectedModules = [detectedModule]
+                }
+              }
+            } catch { /* scan failed, resume with existing modules */ }
+            // Resume the wizard with its stored output folder (prefer wizard state over store)
+            const { resumeWizard } = useStore.getState()
+            resumeWizard(ws)
+            return
+          }
+        }
+        // No wizard state — load project data normally
+        loadProjectData()
+      }).catch(() => {
+        // No wizard state file — load normally
+        loadProjectData()
+      })
+
+      // Scan BMAD project files for agents, workflows, and version info
+      console.log('[useProjectData] Scanning BMAD:', projectPath)
+      window.fileAPI.scanBmad(projectPath).then((scanResult) => {
+        const result = scanResult as BmadScanResult | null
+        console.log('[useProjectData] Scan result:', result ? `${result.agents.length} agents` : 'null')
+        setBmadScanResult(result)
+        if (result) {
+          // Auto-detect developer mode if not already set for this project
+          const { recentProjects } = useStore.getState()
+          const currentProject = recentProjects.find(p => p.path === projectPath)
+          if (!currentProject?.developerMode) {
+            const detected = result.detectedDeveloperMode || 'ai'
+            console.log(`[useProjectData] Auto-detected developer mode: ${detected}`)
+            setDeveloperMode(detected)
+          }
+          // Version compatibility check: require BMAD v6+ stable (reject alpha builds)
+          const version = result.version
+          if (version) {
+            const major = parseInt(version.split('.')[0], 10)
+            const isAlpha = /alpha/i.test(version)
+            if (!isNaN(major) && (major < 6 || isAlpha)) {
+              console.warn(`[useProjectData] Incompatible BMAD version: ${version}`)
+              setBmadVersionError(`Detected BMAD v${version}. BMad Studio requires BMAD v6.0.0 or later (stable format).`)
+              setScannedWorkflowConfig(null)
+              return
+            }
+          } else {
+            // No version in manifest = pre-6.0 alpha project
+            console.warn('[useProjectData] No BMAD version detected — treating as incompatible')
+            setBmadVersionError('No BMAD version detected. BMad Studio requires BMAD v6.0.0 or later (stable format). This project may be using an older alpha installation.')
+            setScannedWorkflowConfig(null)
+            return
+          }
+          setBmadVersionError(null)
+          // Auto-correct project type from scan data (fixes stale recent project entries)
+          const scanDetectedType = result.modules.includes('gds') ? 'gds' as const : 'bmm' as const
+          const { projectType: currentProjectType } = useStore.getState()
+          if (currentProjectType !== scanDetectedType) {
+            console.log(`[useProjectData] Correcting project type: ${currentProjectType} → ${scanDetectedType}`)
+            setProjectType(scanDetectedType)
+          }
+          const merged = mergeWorkflowConfig(result, scanDetectedType)
+          console.log('[useProjectData] Merged config agents:', merged.agents.length)
+          setScannedWorkflowConfig(merged)
+        } else {
+          // No _bmad/ directory at all — not a BMAD project, new project flow handles this
+          setBmadVersionError(null)
+          setScannedWorkflowConfig(null)
+        }
+      }).catch((err) => {
+        console.error('[useProjectData] Scan failed:', err)
+        setBmadScanResult(null)
+        setScannedWorkflowConfig(null)
+      })
+
+      // Load project cost total from ledger
+      window.costAPI.loadCosts(projectPath, outputFolder).then((entries) => {
+        const total = entries.reduce((sum: number, e: { totalCostUsd?: number }) => sum + (e.totalCostUsd || 0), 0)
+        const { setProjectCostTotal } = useStore.getState()
+        setProjectCostTotal(total)
+      }).catch(() => {
+        const { setProjectCostTotal } = useStore.getState()
+        setProjectCostTotal(0)
+      })
 
       // Check if bmad folders are in .gitignore (affects branch restrictions)
       // Defer this check so it doesn't compete with initial project load
       setTimeout(() => {
         const { bmadInGitignoreUserSet } = useStore.getState()
         if (!bmadInGitignoreUserSet) {
-          window.fileAPI.checkBmadInGitignore(projectPath).then((result) => {
+          window.fileAPI.checkBmadInGitignore(projectPath, outputFolder).then((result) => {
             setBmadInGitignore(result.inGitignore)
           })
         }
@@ -245,14 +496,17 @@ export function useProjectData() {
     }
   // Note: setBmadInGitignore is stable (Zustand setter) and intentionally omitted from deps
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [_hasHydrated, projectPath, projectType, loadProjectData])
+  }, [_hasHydrated, projectPath, projectType, outputFolder, wizardIsActive, loadProjectData])
 
   // File watcher setup - separate effect with minimal deps to avoid repeated start/stop
   useEffect(() => {
     if (!_hasHydrated || !projectPath || !projectType) return
 
+    // Skip file watching if wizard is active (wizard has its own watcher)
+    if (wizardIsActive) return
+
     // Start watching for file changes
-    window.fileAPI.startWatching(projectPath, projectType)
+    window.fileAPI.startWatching(projectPath, projectType, outputFolder)
     setIsWatching(true)
 
     // Listen for file changes - use refs to get latest callbacks without triggering effect
@@ -276,8 +530,8 @@ export function useProjectData() {
       window.fileAPI.stopWatching()
       setIsWatching(false)
     }
-  // Only re-run when project path/type actually changes, not on callback recreation
-  }, [_hasHydrated, projectPath, projectType, setIsWatching])
+  // Only re-run when project path/type/outputFolder actually changes, not on callback recreation
+  }, [_hasHydrated, projectPath, projectType, outputFolder, wizardIsActive, setIsWatching])
 
   // Load story content when selected story changes
   useEffect(() => {

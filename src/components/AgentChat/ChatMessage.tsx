@@ -1,7 +1,10 @@
-import { Box, Typography, Paper, IconButton, Tooltip, Link } from '@mui/material'
+import { useState } from 'react'
+import { Box, Typography, Paper, IconButton, Tooltip, Link, Chip, Collapse } from '@mui/material'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
-import { ChatMessage as ChatMessageType, LLMStats } from '../../types'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import { ChatMessage as ChatMessageType, LLMStats, ToolCall } from '../../types'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useStore } from '../../store'
@@ -276,8 +279,112 @@ function createMarkdownComponents(isDark: boolean): Components {
   }
 }
 
+// Extract a concise detail string per tool type
+function getToolDetail(tc: ToolCall): string {
+  const input = tc.input
+  if (!input) return tc.summary
+
+  switch (tc.name) {
+    case 'Read':
+    case 'Edit':
+    case 'Write':
+      return input.file_path
+        ? String(input.file_path).split('/').pop() || tc.summary
+        : tc.summary
+    case 'Bash':
+      if (input.command) {
+        const cmd = String(input.command)
+        return `$ ${cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd}`
+      }
+      return tc.summary
+    case 'Grep':
+      if (input.pattern) {
+        const path = input.path ? ` in ${String(input.path).split('/').pop()}` : ''
+        return `"${input.pattern}"${path}`
+      }
+      return tc.summary
+    case 'Glob':
+      return input.pattern ? String(input.pattern) : tc.summary
+    case 'WebSearch':
+      return input.query ? String(input.query) : tc.summary
+    default:
+      return tc.summary
+  }
+}
+
+function ToolCallsSummary({ toolCalls }: { toolCalls: ToolCall[] }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <Box sx={{ mt: 0.5 }}>
+      <Chip
+        icon={expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+        label={`${toolCalls.length} tool call${toolCalls.length !== 1 ? 's' : ''}`}
+        size="small"
+        variant="outlined"
+        onClick={() => setExpanded(!expanded)}
+        sx={{
+          cursor: 'pointer',
+          height: 24,
+          fontSize: '0.7rem',
+          '& .MuiChip-icon': { fontSize: '0.9rem' }
+        }}
+      />
+      <Collapse in={expanded}>
+        <Box
+          sx={{
+            mt: 0.5,
+            pl: 1.5,
+            borderLeft: 2,
+            borderColor: 'divider'
+          }}
+        >
+          {toolCalls.map((tc, i) => (
+            <Box
+              key={i}
+              sx={{
+                display: 'flex',
+                gap: 1,
+                alignItems: 'baseline',
+                py: 0.25
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  fontFamily: 'monospace',
+                  fontWeight: 600,
+                  minWidth: 40,
+                  color: 'text.secondary',
+                  fontSize: '0.7rem'
+                }}
+              >
+                {tc.name}
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  fontFamily: 'monospace',
+                  color: 'text.disabled',
+                  fontSize: '0.7rem',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {getToolDetail(tc)}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      </Collapse>
+    </Box>
+  )
+}
+
 export default function ChatMessage({ message, agentName, agentAvatar }: ChatMessageProps) {
   const themeMode = useStore((state) => state.themeMode)
+  const verboseMode = useStore((state) => state.verboseMode)
   const isDark = themeMode === 'dark'
   const isUser = message.role === 'user'
   const isError = message.status === 'error'
@@ -385,6 +492,11 @@ export default function ChatMessage({ message, agentName, agentAvatar }: ChatMes
             </ReactMarkdown>
           )}
         </Paper>
+
+        {/* Tool Calls (verbose mode) */}
+        {verboseMode && !isUser && message.toolCalls && message.toolCalls.length > 0 && (
+          <ToolCallsSummary toolCalls={message.toolCalls} />
+        )}
 
         {/* LLM Stats */}
         {!isUser && message.stats && message.status === 'complete' && (

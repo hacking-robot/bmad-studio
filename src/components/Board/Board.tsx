@@ -60,6 +60,7 @@ export default function Board() {
   const unmergedStoryBranches = useStore((state) => state.unmergedStoryBranches)
   const baseBranch = useStore((state) => state.baseBranch)
   const bmadInGitignore = useStore((state) => state.bmadInGitignore)
+  const disableGitBranching = useStore((state) => state.disableGitBranching)
 
   // Parse current branch to determine type and scope
   const branchInfo = useMemo(() => parseBranchInfo(currentBranch, baseBranch), [currentBranch, baseBranch])
@@ -106,8 +107,8 @@ export default function Board() {
 
   // Determine if a story is editable based on current branch
   const isStoryEditable = useCallback((story: Story): boolean => {
-    // When bmad is in .gitignore, data persists across branches so no restrictions needed
-    if (bmadInGitignore) return true
+    // When bmad is in .gitignore or git branching is disabled, no restrictions needed
+    if (bmadInGitignore || disableGitBranching) return true
 
     // If in epic read-only mode (unmerged branches), nothing is editable
     if (epicReadOnly) return false
@@ -125,12 +126,12 @@ export default function Board() {
       default:
         return true
     }
-  }, [branchInfo, epicReadOnly, bmadInGitignore])
+  }, [branchInfo, epicReadOnly, bmadInGitignore, disableGitBranching])
 
   // Get set of locked story IDs for efficient lookup
   const lockedStoryIds = useMemo(() => {
-    // When bmad is in .gitignore, no stories are locked
-    if (bmadInGitignore) return new Set<string>()
+    // When bmad is in .gitignore or git branching is disabled, no stories are locked
+    if (bmadInGitignore || disableGitBranching) return new Set<string>()
     if (branchInfo.type === 'main' && !epicReadOnly) return new Set<string>()
 
     const locked = new Set<string>()
@@ -140,7 +141,7 @@ export default function Board() {
       }
     }
     return locked
-  }, [allStories, branchInfo, epicReadOnly, isStoryEditable, bmadInGitignore])
+  }, [allStories, branchInfo, epicReadOnly, isStoryEditable, bmadInGitignore, disableGitBranching])
 
   // Compute working teammates map at Board level to avoid per-card subscriptions
   const workingTeammatesByBranch = useMemo(() => {
@@ -568,6 +569,7 @@ export default function Board() {
             </Typography>
           </Alert>
         )}
+
         <Box
           ref={scrollContainerRef}
           sx={{

@@ -11,9 +11,10 @@ interface ChatInputProps {
   onCancel?: () => void
   disabled?: boolean
   agentId: string
+  busyReason?: string
 }
 
-export default function ChatInput({ onSend, onCancel, disabled = false, agentId }: ChatInputProps) {
+export default function ChatInput({ onSend, onCancel, disabled = false, agentId, busyReason }: ChatInputProps) {
   const [message, setMessage] = useState('')
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -55,10 +56,23 @@ export default function ChatInput({ onSend, onCancel, disabled = false, agentId 
     inputRef.current?.focus()
   }
 
-  // Extract short label from command (e.g., "/bmad:bmm:agents:dev" -> "dev")
+  // Extract short label from command (e.g., "/bmad-agent-bmm-dev" -> "dev", "/bmad-bmm-dev-story" -> "dev-story")
   const getCommandLabel = (cmd: string): string => {
-    const parts = cmd.split(':')
-    return parts[parts.length - 1]
+    // Alpha format: /bmad:bmm:agents:dev
+    if (cmd.includes(':')) {
+      const parts = cmd.split(':')
+      return parts[parts.length - 1]
+    }
+    // Stable agent format: /bmad-agent-bmm-dev -> dev
+    const agentMatch = cmd.match(/^\/bmad-agent-[^-]+-(.+)$/)
+    if (agentMatch) return agentMatch[1]
+    // Stable workflow format: /bmad-bmm-dev-story -> dev-story
+    const workflowMatch = cmd.match(/^\/bmad-[^-]+-(.+)$/)
+    if (workflowMatch) return workflowMatch[1]
+    // Core format: /bmad-brainstorming -> brainstorming
+    const coreMatch = cmd.match(/^\/bmad-(.+)$/)
+    if (coreMatch) return coreMatch[1]
+    return cmd
   }
 
   return (
@@ -118,11 +132,10 @@ export default function ChatInput({ onSend, onCancel, disabled = false, agentId 
           multiline
           maxRows={6}
           fullWidth
-          placeholder="Type a message or select a command..."
+          placeholder={busyReason || "Type a message or select a command..."}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={disabled}
           variant="outlined"
           size="small"
           sx={{

@@ -1,4 +1,4 @@
-export type ProjectType = 'bmm' | 'bmgd'
+export type ProjectType = 'bmm' | 'gds'
 
 export interface ProjectConfig {
   epicsPath: string
@@ -10,16 +10,16 @@ export const PROJECT_CONFIGS: Record<ProjectType, ProjectConfig> = {
     epicsPath: 'planning-artifacts/epics.md',
     sprintStatusPath: 'implementation-artifacts/sprint-status.yaml'
   },
-  bmgd: {
-    epicsPath: 'epics.md',
+  gds: {
+    epicsPath: 'planning-artifacts/epics.md',
     sprintStatusPath: 'implementation-artifacts/sprint-status.yaml'
   }
 }
 
-export function getEpicsFullPath(projectPath: string, projectType: ProjectType): string {
-  return `${projectPath}/_bmad-output/${PROJECT_CONFIGS[projectType].epicsPath}`
+export function getEpicsFullPath(projectPath: string, projectType: ProjectType, outputFolder: string = '_bmad-output'): string {
+  return `${projectPath}/${outputFolder}/${PROJECT_CONFIGS[projectType].epicsPath}`
 }
 
-export function getSprintStatusFullPath(projectPath: string, projectType: ProjectType): string {
-  return `${projectPath}/_bmad-output/${PROJECT_CONFIGS[projectType].sprintStatusPath}`
+export function getSprintStatusFullPath(projectPath: string, projectType: ProjectType, outputFolder: string = '_bmad-output'): string {
+  return `${projectPath}/${outputFolder}/${PROJECT_CONFIGS[projectType].sprintStatusPath}`
 }

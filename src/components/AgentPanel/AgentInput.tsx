@@ -54,7 +54,7 @@ export default function AgentInput({ agentId }: AgentInputProps) {
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Send message to teammate..."
+        placeholder="Send message to agent..."
         size="small"
         fullWidth
         disabled={sending}

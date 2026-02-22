@@ -243,7 +243,7 @@ function Column({
         </Typography>
         {info.agent !== '-' && (
           <Typography variant="caption" color="primary.main" sx={{ display: 'block', mb: 1 }}>
-            Teammate: {info.agent}
+            Agent: {info.agent}
           </Typography>
         )}
         <Box

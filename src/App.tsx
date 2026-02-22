@@ -17,8 +17,13 @@ import HelpPanel from './components/HelpPanel'
 import StatusBar from './components/StatusBar'
 import { AgentChat } from './components/AgentChat'
 import StatusHistoryPanel from './components/StatusHistoryPanel/StatusHistoryPanel'
-import { FullCycleDialog, FullCycleOrchestrator } from './components/FullCycleDialog'
+import { GitDiffPanel } from './components/GitDiffDialog'
+import { FullCycleDialog, FullCycleOrchestrator, EpicCycleDialog, EpicCycleOrchestrator } from './components/FullCycleDialog'
 import GlobalChatHandler from './components/GlobalChatHandler'
+import { ProjectWizard } from './components/ProjectWizard'
+import ProjectWorkflowsDialog from './components/ProjectWorkflowsDialog/ProjectWorkflowsDialog'
+import IncompatibleVersionDialog from './components/IncompatibleVersionDialog'
+import { EnvCheckDialog } from './components/EnvCheckDialog'
 
 const AGENT_PANEL_WIDTH = 500
 
@@ -34,6 +39,28 @@ export default function App() {
   const viewMode = useStore((state) => state.viewMode)
   const toggleViewMode = useStore((state) => state.toggleViewMode)
   const aiTool = useStore((state) => state.aiTool)
+  const wizardActive = useStore((state) => state.projectWizard.isActive)
+  const envCheckResults = useStore((state) => state.envCheckResults)
+  const setEnvCheckDialogOpen = useStore((state) => state.setEnvCheckDialogOpen)
+  const setEnvCheckResults = useStore((state) => state.setEnvCheckResults)
+  const setEnvCheckLoading = useStore((state) => state.setEnvCheckLoading)
+  const disableEnvCheck = useStore((state) => state.disableEnvCheck)
+  const setUpdateStatus = useStore((state) => state.setUpdateStatus)
+  const setUpdateVersion = useStore((state) => state.setUpdateVersion)
+  const setUpdateDownloadPercent = useStore((state) => state.setUpdateDownloadPercent)
+  const hasConfiguredProfile = useStore((state) => state.hasConfiguredProfile)
+  const setProfileDialogOpen = useStore((state) => state.setProfileDialogOpen)
+
+  // Listen for auto-updater status (must be at app level so events aren't missed)
+  useEffect(() => {
+    const cleanup = window.updaterAPI.onUpdateStatus((event) => {
+      const status = event.status === 'dev-mode' ? 'idle' : event.status as 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date'
+      setUpdateStatus(status)
+      if (event.version) setUpdateVersion(event.version as string)
+      if (event.percent !== undefined) setUpdateDownloadPercent(event.percent)
+    })
+    return cleanup
+  }, [setUpdateStatus, setUpdateVersion, setUpdateDownloadPercent])
 
   // Agent features available for tools with headless CLI support
   const selectedToolInfo = AI_TOOLS.find(t => t.id === aiTool)
@@ -52,6 +79,30 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [toggleViewMode])
+
+  // Run environment check in background; only show dialog if something fails
+  useEffect(() => {
+    if (hasHydrated && projectPath && envCheckResults === null && !disableEnvCheck) {
+      setEnvCheckLoading(true)
+      window.cliAPI.checkEnvironment().then((result) => {
+        setEnvCheckResults(result.items)
+        setEnvCheckLoading(false)
+        const hasIssues = result.items.some((i: { status: string }) => i.status === 'error' || i.status === 'warning')
+        if (hasIssues) {
+          setEnvCheckDialogOpen(true)
+        }
+      }).catch(() => {
+        setEnvCheckLoading(false)
+      })
+    }
+  }, [hasHydrated, projectPath, envCheckResults, disableEnvCheck, setEnvCheckDialogOpen, setEnvCheckResults, setEnvCheckLoading])
+
+  // Open profile dialog on first launch once a project is loaded
+  useEffect(() => {
+    if (hasHydrated && projectPath && !wizardActive && !hasConfiguredProfile) {
+      setProfileDialogOpen(true)
+    }
+  }, [hasHydrated, projectPath, wizardActive, hasConfiguredProfile, setProfileDialogOpen])
 
   // Listen for custom event to open help panel
   useEffect(() => {
@@ -76,9 +127,11 @@ export default function App() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            bgcolor: 'background.default'
+            bgcolor: 'background.default',
+            position: 'relative'
           }}
         >
+          <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 40, WebkitAppRegion: 'drag' }} />
           <CircularProgress />
         </Box>
       </ThemeProvider>
@@ -91,6 +144,8 @@ export default function App() {
       <CommandPalette />
       <KeyboardShortcuts />
       <NewProjectDialog />
+      <IncompatibleVersionDialog />
+      <EnvCheckDialog />
       <HelpPanel
         open={helpPanelOpen}
         onClose={() => setHelpPanelOpen(false)}
@@ -105,7 +160,16 @@ export default function App() {
           overflow: 'hidden'
         }}
       >
-        {!projectPath ? (
+        {wizardActive ? (
+          <GlobalChatHandler>
+            <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              <ProjectWizard />
+              <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <AgentChat />
+              </Box>
+            </Box>
+          </GlobalChatHandler>
+        ) : !projectPath ? (
           <WelcomeDialog />
         ) : (
           <GlobalChatHandler>
@@ -198,7 +262,7 @@ export default function App() {
 
                 {/* Toggle button when chat is closed - only for Claude Code */}
                 {!showChatView && toolSupportsHeadless && (
-                  <Tooltip title="Open teammates chat (⌘⇧A)" placement="right">
+                  <Tooltip title="Open agents chat (⌘⇧A)" placement="right">
                     <IconButton
                       onClick={toggleViewMode}
                       sx={{
@@ -224,10 +288,14 @@ export default function App() {
               </Box>
             </Box>
             {enableAgents && !showChatView && toolSupportsHeadless && <AgentPanel />}
+            <GitDiffPanel />
             <StoryDialog />
             <StatusHistoryPanel />
             <FullCycleDialog />
             <FullCycleOrchestrator />
+            <EpicCycleDialog />
+            <EpicCycleOrchestrator />
+            <ProjectWorkflowsDialog />
           </GlobalChatHandler>
         )}
       </Box>

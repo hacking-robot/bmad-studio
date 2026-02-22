@@ -307,6 +307,7 @@ function ChatSession({ session, isDark }: { session: StoryChatSession; isDark: b
 
 export default function ChatHistorySection({ storyId }: ChatHistorySectionProps) {
   const projectPath = useStore((state) => state.projectPath)
+  const outputFolder = useStore((state) => state.outputFolder)
   const themeMode = useStore((state) => state.themeMode)
   const isDark = themeMode === 'dark'
 
@@ -323,7 +324,7 @@ export default function ChatHistorySection({ storyId }: ChatHistorySectionProps)
       }
 
       try {
-        const loaded = await window.chatAPI.loadStoryChatHistory(projectPath, storyId)
+        const loaded = await window.chatAPI.loadStoryChatHistory(projectPath, storyId, outputFolder)
         setHistory(loaded)
       } catch (error) {
         console.error('Failed to load story chat history:', error)
@@ -334,7 +335,7 @@ export default function ChatHistorySection({ storyId }: ChatHistorySectionProps)
     }
 
     loadHistory()
-  }, [projectPath, storyId])
+  }, [projectPath, outputFolder, storyId])
 
   // Don't render anything if no history
   if (loading) {

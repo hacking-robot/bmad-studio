@@ -23,9 +23,6 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
 import { EPIC_COLORS } from '../../types'
-import { usePlanningArtifacts, getArtifactTypeLabel, getArtifactTypeColor, PlanningArtifact } from '../../hooks/usePlanningArtifacts'
-import DescriptionIcon from '@mui/icons-material/Description'
-import ArtifactViewer from '../HelpPanel/ArtifactViewer'
 
 export default function EpicFilter() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
@@ -37,7 +34,6 @@ export default function EpicFilter() {
   const [actionInProgress, setActionInProgress] = useState(false)
   const [createMode, setCreateMode] = useState(false)
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState(false)
-  const [selectedArtifact, setSelectedArtifact] = useState<PlanningArtifact | null>(null)
   const open = Boolean(anchorEl)
 
   const epics = useStore((state) => state.epics)
@@ -46,7 +42,6 @@ export default function EpicFilter() {
   const projectPath = useStore((state) => state.projectPath)
   const enableEpicBranches = useStore((state) => state.enableEpicBranches)
   const { loadProjectData } = useProjectData()
-  const { artifacts } = usePlanningArtifacts()
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget)
@@ -472,49 +467,6 @@ export default function EpicFilter() {
             </Typography>
           </Box>
 
-          {/* Planning Artifacts */}
-          {artifacts.length > 0 && (
-            <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-              <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ mb: 1, display: 'block' }}>
-                Planning Documents
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                {artifacts.map((artifact) => (
-                  <Box
-                    key={artifact.path}
-                    onClick={() => setSelectedArtifact(artifact)}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      p: 0.5,
-                      borderRadius: 0.5,
-                      cursor: 'pointer',
-                      '&:hover': { bgcolor: 'action.selected' }
-                    }}
-                  >
-                    <DescriptionIcon sx={{ fontSize: 14, color: getArtifactTypeColor(artifact.type) }} />
-                    <Typography variant="caption" sx={{ flex: 1 }}>
-                      {artifact.displayName}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        fontSize: '0.65rem',
-                        px: 0.5,
-                        py: 0.125,
-                        borderRadius: 0.5,
-                        bgcolor: getArtifactTypeColor(artifact.type),
-                        color: 'white'
-                      }}
-                    >
-                      {getArtifactTypeLabel(artifact.type)}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
-            </Box>
-          )}
         </Popover>
       )}
 
@@ -584,11 +536,6 @@ export default function EpicFilter() {
         })}
       </Menu>
 
-      {/* Artifact Viewer Dialog */}
-      <ArtifactViewer
-        artifact={selectedArtifact}
-        onClose={() => setSelectedArtifact(null)}
-      />
     </>
   )
 }

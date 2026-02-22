@@ -203,7 +203,7 @@ export function clearDetectionCache(): void {
 /**
  * Build CLI arguments for a tool
  */
-export type ClaudeModel = 'sonnet' | 'opus' | 'haiku'
+export type ClaudeModel = 'sonnet' | 'opus'
 
 export interface BuildArgsOptions {
   prompt: string

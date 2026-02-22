@@ -70,9 +70,12 @@ export default function AgentChat() {
       }
     }
 
-    // Clear the thread
+    // Cancel any running process and clear the thread
+    window.chatAPI.cancelMessage(selectedChatAgent).catch(() => {})
     clearChatThread(selectedChatAgent)
-    window.chatAPI.clearThread(selectedChatAgent)
+    if (projectPath) {
+      window.chatAPI.clearThread(projectPath, selectedChatAgent)
+    }
   }, [selectedChatAgent, chatThreads, agents, projectPath, stories, clearChatThread])
 
   // Select first agent if none selected or current selection invalid for project type
@@ -88,8 +91,8 @@ export default function AgentChat() {
     if (selectedChatAgent) {
       // Load persisted thread if not already loaded
       const thread = chatThreads[selectedChatAgent]
-      if (!thread) {
-        window.chatAPI.loadThread(selectedChatAgent).then((loadedThread) => {
+      if (!thread && projectPath) {
+        window.chatAPI.loadThread(projectPath, selectedChatAgent).then((loadedThread) => {
           if (loadedThread && loadedThread.messages.length > 0) {
             // Restore thread from storage
             for (const msg of loadedThread.messages) {
@@ -99,7 +102,7 @@ export default function AgentChat() {
         })
       }
     }
-  }, [selectedChatAgent, chatThreads])
+  }, [selectedChatAgent, chatThreads, projectPath])
 
   const selectedAgent = agents.find((a) => a.id === selectedChatAgent)
 
@@ -126,7 +129,7 @@ export default function AgentChat() {
       >
         <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="subtitle2" color="text.secondary" fontWeight={600}>
-            TEAMMATES
+            AGENTS
           </Typography>
         </Box>
         <AgentSidebar />
@@ -176,7 +179,7 @@ export default function AgentChat() {
                   <Typography variant="subtitle1" fontWeight={600}>
                     {selectedAgent.name}
                   </Typography>
-                  <Tooltip title="View teammate guide">
+                  <Tooltip title="View agent guide">
                     <IconButton
                       onClick={() => setHelpPanelOpen(true, 1, selectedAgent.id)}
                       size="small"
@@ -214,7 +217,7 @@ export default function AgentChat() {
             }}
           >
             <Typography color="text.secondary">
-              Select a teammate to start chatting
+              Select an agent to start chatting
             </Typography>
           </Box>
         )}

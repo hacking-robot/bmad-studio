@@ -1,8 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Box, Typography, Tooltip, IconButton, Chip, CircularProgress } from '@mui/material'
 import CircleIcon from '@mui/icons-material/Circle'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
-import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
+import DownloadIcon from '@mui/icons-material/Download'
+import InstallDesktopIcon from '@mui/icons-material/InstallDesktop'
 import { useStore } from '../../store'
 import { STATUS_COLUMNS, StoryStatus } from '../../types'
 import BranchSwitcher from '../BranchSwitcher'
@@ -39,15 +41,33 @@ function formatRelativeTime(date: Date | null): string {
 }
 
 export default function StatusBar() {
+  const [appVersion, setAppVersion] = useState<string>('')
+
+  useEffect(() => {
+    window.updaterAPI.getAppVersion().then(setAppVersion)
+  }, [])
+
   const stories = useStore((state) => state.stories)
   const epics = useStore((state) => state.epics)
   const selectedEpicId = useStore((state) => state.selectedEpicId)
   const lastRefreshed = useStore((state) => state.lastRefreshed)
   const isWatching = useStore((state) => state.isWatching)
   const setHelpPanelOpen = useStore((state) => state.setHelpPanelOpen)
-  const fullCycle = useStore((state) => state.fullCycle)
-  const setFullCycleDialogOpen = useStore((state) => state.setFullCycleDialogOpen)
-  const setFullCycleMinimized = useStore((state) => state.setFullCycleMinimized)
+  const projectCostTotal = useStore((state) => state.projectCostTotal)
+  const developerMode = useStore((state) => state.developerMode)
+
+  // Auto-update state from global store
+  const updateStatus = useStore((state) => state.updateStatus)
+  const updateVersion = useStore((state) => state.updateVersion)
+  const updateDownloadPercent = useStore((state) => state.updateDownloadPercent)
+
+  const handleUpdateClick = () => {
+    if (updateStatus === 'available') {
+      window.updaterAPI.downloadUpdate()
+    } else if (updateStatus === 'ready') {
+      window.updaterAPI.installUpdate()
+    }
+  }
 
   // Count stories by status
   const statusCounts = useMemo(() => {
@@ -127,34 +147,12 @@ export default function StatusBar() {
           <UncommittedChanges />
         </Box>
 
-        {/* Full Cycle Progress Indicator (when minimized) */}
-        {fullCycle.isRunning && fullCycle.minimized && (
-          <Tooltip title={`Full Cycle: ${fullCycle.stepName} (${fullCycle.currentStep + 1}/${fullCycle.totalSteps})`}>
-            <Chip
-              size="small"
-              icon={<CircularProgress size={12} color="inherit" />}
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <RocketLaunchIcon sx={{ fontSize: 12 }} />
-                  <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                    {fullCycle.currentStep + 1}/{fullCycle.totalSteps}
-                  </Typography>
-                </Box>
-              }
-              onClick={() => {
-                setFullCycleMinimized(false)
-                setFullCycleDialogOpen(true)
-              }}
-              color="primary"
-              sx={{
-                cursor: 'pointer',
-                height: 20,
-                '& .MuiChip-icon': { ml: 0.5 },
-                '& .MuiChip-label': { px: 0.5 }
-              }}
-            />
-          </Tooltip>
-        )}
+        {/* Developer mode indicator */}
+        <Tooltip title={developerMode === 'human' ? 'Manual Development mode' : 'AI Driven Development mode'}>
+          <Typography variant="caption" color="text.secondary" sx={{ cursor: 'help' }}>
+            {developerMode === 'human' ? 'Manual Dev' : 'AI Driven'}
+          </Typography>
+        </Tooltip>
 
         {/* Story counts by status */}
         {statusDisplay.length > 0 && (
@@ -191,6 +189,76 @@ export default function StatusBar() {
 
       {/* Right section - Last refreshed & keyboard hint */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        {/* Update available / downloading / ready indicator */}
+        {updateStatus === 'available' && (
+          <Tooltip title={`Update v${updateVersion} available - click to download`}>
+            <Chip
+              size="small"
+              icon={<DownloadIcon sx={{ fontSize: 14 }} />}
+              label={`v${updateVersion}`}
+              onClick={handleUpdateClick}
+              color="info"
+              sx={{
+                cursor: 'pointer',
+                height: 20,
+                fontSize: '0.65rem',
+                '& .MuiChip-icon': { fontSize: 14 },
+                '& .MuiChip-label': { px: 0.5 }
+              }}
+            />
+          </Tooltip>
+        )}
+        {updateStatus === 'downloading' && (
+          <Tooltip title={`Downloading update... ${updateDownloadPercent}%`}>
+            <Chip
+              size="small"
+              icon={<CircularProgress size={12} variant="determinate" value={updateDownloadPercent} />}
+              label={`${updateDownloadPercent}%`}
+              color="info"
+              sx={{
+                height: 20,
+                fontSize: '0.65rem',
+                '& .MuiChip-icon': { ml: 0.5 },
+                '& .MuiChip-label': { px: 0.5 }
+              }}
+            />
+          </Tooltip>
+        )}
+        {updateStatus === 'ready' && (
+          <Tooltip title={`Update v${updateVersion} ready - click to install & restart`}>
+            <Chip
+              size="small"
+              icon={<InstallDesktopIcon sx={{ fontSize: 14 }} />}
+              label={`Install v${updateVersion}`}
+              onClick={handleUpdateClick}
+              color="success"
+              sx={{
+                cursor: 'pointer',
+                height: 20,
+                fontSize: '0.65rem',
+                '& .MuiChip-icon': { fontSize: 14 },
+                '& .MuiChip-label': { px: 0.5 }
+              }}
+            />
+          </Tooltip>
+        )}
+
+        {/* Project LLM cost total */}
+        {projectCostTotal > 0 && (
+          <Tooltip title={`Total LLM cost for this project: $${projectCostTotal.toFixed(4)}`}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'help' }}>
+              <AttachMoneyIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                {projectCostTotal < 0.01
+                  ? projectCostTotal.toFixed(4)
+                  : projectCostTotal < 1
+                    ? projectCostTotal.toFixed(3)
+                    : projectCostTotal.toFixed(2)}
+              </Typography>
+            </Box>
+          </Tooltip>
+        )}
+
         {/* Last refreshed */}
         <Tooltip title="Last data refresh">
           <Typography variant="caption" color="text.secondary">
@@ -226,6 +294,17 @@ export default function StatusBar() {
             <HelpOutlineIcon sx={{ fontSize: 16 }} />
           </IconButton>
         </Tooltip>
+
+        {/* App version */}
+        {appVersion && (
+          <Typography
+            variant="caption"
+            color="text.disabled"
+            sx={{ fontFamily: 'monospace', fontSize: '0.65rem' }}
+          >
+            v{appVersion}
+          </Typography>
+        )}
       </Box>
     </Box>
   )

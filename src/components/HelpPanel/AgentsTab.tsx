@@ -3,7 +3,7 @@ import { Box, Typography, Paper, Stack, Chip, Divider, Alert, IconButton, Toolti
 import PersonIcon from '@mui/icons-material/Person'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { useStore } from '../../store'
-import { AI_TOOLS, AITool, ProjectType } from '../../types'
+import { AI_TOOLS, AITool } from '../../types'
 import { useWorkflow } from '../../hooks/useWorkflow'
 import { transformCommand } from '../../utils/commandTransform'
 
@@ -12,21 +12,8 @@ function usesClaudeSyntax(aiTool: AITool): boolean {
   return aiTool === 'claude-code' || aiTool === 'custom-endpoint'
 }
 
-// Format agent invocation command based on AI tool
-// Claude Code/Custom Endpoint: /bmad:bmm:agents:pm
-// Others: @pm
-function formatAgentInvocation(agentId: string, aiTool: AITool, projectType: ProjectType | null): string {
-  if (usesClaudeSyntax(aiTool)) {
-    const pt = projectType || 'bmm'
-    return `/bmad:${pt}:agents:${agentId}`
-  }
-  const tool = AI_TOOLS.find(t => t.id === aiTool)
-  return `${tool?.agentPrefix || '@'}${agentId}`
-}
-
 export default function AgentsTab() {
   const aiTool = useStore((state) => state.aiTool)
-  const projectType = useStore((state) => state.projectType)
   const scrollToAgent = useStore((state) => state.helpPanelScrollToAgent)
   const clearHelpPanelScrollToAgent = useStore((state) => state.clearHelpPanelScrollToAgent)
   const chatThreads = useStore((state) => state.chatThreads)
@@ -58,13 +45,13 @@ export default function AgentsTab() {
     <Box>
       <Alert severity="info" sx={{ mb: 2 }}>
         Commands shown for <strong>{selectedTool.name}</strong>. Agent invocations use{' '}
-        <code style={{ fontWeight: 600 }}>{usesClaudeSyntax(aiTool) ? `/bmad:${projectType || 'bmm'}:agents:...` : `${selectedTool.agentPrefix}agent`}</code> syntax.
+        <code style={{ fontWeight: 600 }}>{usesClaudeSyntax(aiTool) ? `/bmad-agent-...` : `${selectedTool.agentPrefix}agent`}</code> syntax.
         Change your tool in Settings.
       </Alert>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        BMAD uses specialized teammates, each with a distinct role in the development process.
-        Work with these teammates in your AI coding assistant to guide your project.
+        BMAD uses specialized agents, each with a distinct role in the development process.
+        Work with these agents in your AI coding assistant to guide your project.
       </Typography>
 
       <Stack spacing={2}>
@@ -125,29 +112,31 @@ export default function AgentsTab() {
                   }}
                 />
               )}
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-                <Chip
-                  label={formatAgentInvocation(agent.id, aiTool, projectType)}
-                  size="small"
-                  variant="outlined"
-                  sx={{
-                    fontFamily: 'monospace',
-                    fontSize: '0.75rem',
-                    height: 22,
-                    borderColor: agent.color,
-                    color: agent.color
-                  }}
-                />
-                <Tooltip title="Copy">
-                  <IconButton
+              {agent.commands[0] && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                  <Chip
+                    label={transformCommand(agent.commands[0], aiTool)}
                     size="small"
-                    onClick={() => handleCopy(formatAgentInvocation(agent.id, aiTool, projectType))}
-                    sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: agent.color } }}
-                  >
-                    <ContentCopyIcon sx={{ fontSize: 14 }} />
-                  </IconButton>
-                </Tooltip>
-              </Box>
+                    variant="outlined"
+                    sx={{
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      height: 22,
+                      borderColor: agent.color,
+                      color: agent.color
+                    }}
+                  />
+                  <Tooltip title="Copy">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleCopy(transformCommand(agent.commands[0], aiTool))}
+                      sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: agent.color } }}
+                    >
+                      <ContentCopyIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
             </Box>
 
             <Typography variant="body2" sx={{ mb: 1.5 }}>

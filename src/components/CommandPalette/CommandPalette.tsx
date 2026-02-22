@@ -24,7 +24,6 @@ import DescriptionIcon from '@mui/icons-material/Description'
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows'
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
-import GitDiffDialog from '../GitDiffDialog'
 
 interface CommandItem {
   id: string
@@ -62,9 +61,7 @@ export default function CommandPalette() {
   const setSelectedStory = useStore((state) => state.setSelectedStory)
   const setHelpPanelOpen = useStore((state) => state.setHelpPanelOpen)
   const { selectProject, switchToProject } = useProjectData()
-
-  // State for diff dialog opened from command palette
-  const [diffDialogBranch, setDiffDialogBranch] = useState<string | null>(null)
+  const openGitDiffPanel = useStore((state) => state.openGitDiffPanel)
 
   // Track which stories have existing git branches
   const [storiesWithBranches, setStoriesWithBranches] = useState<Set<string>>(new Set())
@@ -110,7 +107,7 @@ export default function CommandPalette() {
             description: truncatePath(project.path),
             icon: <FolderIcon sx={{ color: project.path === projectPath ? 'primary.main' : 'text.secondary' }} />,
             action: () => {
-              switchToProject(project.path, project.projectType)
+              switchToProject(project)
               setOpen(false)
             }
           })
@@ -200,7 +197,7 @@ export default function CommandPalette() {
               description: `Branch: ${branchName}`,
               icon: <CompareArrowsIcon sx={{ color: 'text.secondary' }} />,
               action: () => {
-                setDiffDialogBranch(branchName)
+                openGitDiffPanel(branchName)
                 setOpen(false)
               }
             }
@@ -223,8 +220,8 @@ export default function CommandPalette() {
         },
         {
           id: 'command:help-agents',
-          label: 'Help: Meet the Teammates',
-          description: 'Learn about BMAD teammates and their roles',
+          label: 'Help: Meet the Agents',
+          description: 'Learn about BMAD agents and their roles',
           icon: <GroupIcon sx={{ color: 'text.secondary' }} />,
           action: () => {
             setOpen(false)
@@ -408,7 +405,6 @@ export default function CommandPalette() {
   }
 
   return (
-    <>
     <Dialog
       open={open}
       onClose={handleClose}
@@ -570,15 +566,5 @@ export default function CommandPalette() {
         </Box>
       </Box>
     </Dialog>
-
-    {/* Git Diff Dialog opened from command palette */}
-    {diffDialogBranch && (
-      <GitDiffDialog
-        open={!!diffDialogBranch}
-        onClose={() => setDiffDialogBranch(null)}
-        branchName={diffDialogBranch}
-      />
-    )}
-    </>
   )
 }

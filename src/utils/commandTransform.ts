@@ -32,18 +32,28 @@ export function transformCommand(command: string | null | undefined, aiTool: AIT
   // /bmad:bmm:workflows:dev-story -> *dev-story
   // /bmad:bmm:agents:pm -> @pm (agent invocation uses @ prefix)
 
-  // Check if it's an agent command
+  // Alpha agent: /bmad:bmm:agents:pm
   const agentMatch = command.match(/^\/bmad:[^:]+:agents:(.+)$/)
   if (agentMatch) {
-    // Agent invocation - use the tool's agent prefix
     return `${tool?.agentPrefix || '@'}${agentMatch[1]}`
   }
 
-  // Check if it's a workflow command
+  // Stable agent: /bmad-agent-bmm-pm
+  const stableAgentMatch = command.match(/^\/bmad-agent-([^-]+)-(.+)$/)
+  if (stableAgentMatch) {
+    return `${tool?.agentPrefix || '@'}${stableAgentMatch[2]}`
+  }
+
+  // Alpha workflow: /bmad:bmm:workflows:dev-story
   const workflowMatch = command.match(/^\/bmad:[^:]+:workflows:(.+)$/)
   if (workflowMatch) {
-    // Workflow command - use * prefix (universal)
     return `*${workflowMatch[1]}`
+  }
+
+  // Stable workflow: /bmad-bmm-dev-story
+  const stableWorkflowMatch = command.match(/^\/bmad-(?!agent-)([^-]+)-(.+)$/)
+  if (stableWorkflowMatch) {
+    return `*${stableWorkflowMatch[2]}`
   }
 
   // Fallback: just replace leading / with *

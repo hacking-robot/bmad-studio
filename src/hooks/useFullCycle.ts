@@ -1,6 +1,7 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useStore } from '../store'
-import { FULL_CYCLE_STEPS_BMM, FULL_CYCLE_STEPS_BMGD, FullCycleStep } from '../types/fullCycle'
+import { Story } from '../types'
+import { buildFullCycleSteps, FullCycleStep } from '../types/fullCycle'
 
 /**
  * useFullCycle - Hook for managing full cycle automation state
@@ -11,7 +12,9 @@ import { FULL_CYCLE_STEPS_BMM, FULL_CYCLE_STEPS_BMGD, FullCycleStep } from '../t
 export function useFullCycle() {
   const projectType = useStore((state) => state.projectType)
   const stories = useStore((state) => state.stories)
-
+  const fullCycleReviewCount = useStore((state) => state.fullCycleReviewCount)
+  const selectedEpicId = useStore((state) => state.selectedEpicId)
+  const storyOrder = useStore((state) => state.storyOrder)
   // Full cycle state
   const fullCycle = useStore((state) => state.fullCycle)
   const startFullCycle = useStore((state) => state.startFullCycle)
@@ -19,10 +22,10 @@ export function useFullCycle() {
   const cancelFullCycle = useStore((state) => state.cancelFullCycle)
   const retryFullCycleStore = useStore((state) => state.retryFullCycle)
 
-  // Get steps based on project type
+  // Get steps based on project type and review count
   const getSteps = useCallback((): FullCycleStep[] => {
-    return projectType === 'bmgd' ? FULL_CYCLE_STEPS_BMGD : FULL_CYCLE_STEPS_BMM
-  }, [projectType])
+    return buildFullCycleSteps(projectType || 'bmm', fullCycleReviewCount)
+  }, [projectType, fullCycleReviewCount])
 
   // Start the full cycle for a story
   const start = useCallback((storyId: string) => {
@@ -92,11 +95,39 @@ export function useFullCycle() {
     retryFullCycleStore()
   }, [fullCycle.storyId, fullCycle.stepStatuses, stories, getSteps, appendFullCycleLog, retryFullCycleStore])
 
+  // Get backlog stories for an epic in display order
+  const getBacklogStoriesForEpic = useCallback((epicId: number): Story[] => {
+    const epicStories = stories.filter((s) => s.epicId === epicId && s.status === 'backlog')
+    const epicKey = String(epicId)
+    const order = storyOrder[epicKey]?.['backlog']
+
+    if (!order || order.length === 0) {
+      return epicStories
+    }
+
+    return [...epicStories].sort((a, b) => {
+      const indexA = order.indexOf(a.id)
+      const indexB = order.indexOf(b.id)
+      if (indexA === -1 && indexB === -1) return 0
+      if (indexA === -1) return 1
+      if (indexB === -1) return -1
+      return indexA - indexB
+    })
+  }, [stories, storyOrder])
+
+  // Memoized backlog stories for the currently selected epic
+  const backlogStories = useMemo(() => {
+    if (selectedEpicId === null) return []
+    return getBacklogStoriesForEpic(selectedEpicId)
+  }, [selectedEpicId, getBacklogStoriesForEpic])
+
   return {
     fullCycle,
     steps: getSteps(),
     start,
     cancel,
-    retry
+    retry,
+    getBacklogStoriesForEpic,
+    backlogStories
   }
 }

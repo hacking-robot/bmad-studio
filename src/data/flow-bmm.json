@@ -234,7 +234,7 @@
       "description": "Business analysis and research specialist. Handles brainstorming, market research, and documenting existing projects.",
       "whenToUse": "At the start of a project to understand requirements, research competitors, or document an existing codebase.",
       "color": "#8B5CF6",
-      "commands": ["/bmad:bmm:agents:analyst", "/bmad:bmm:workflows:research"],
+      "commands": ["/bmad:bmm:agents:analyst", "/bmad:bmm:workflows:research", "/bmad:core:workflows:brainstorming", "/bmad:bmm:workflows:create-product-brief", "/bmad:bmm:workflows:document-project", "/bmad:bmm:workflows:generate-project-context"],
       "examplePrompts": [
         "Help me brainstorm features for a task management app",
         "Research the competitive landscape for project management tools",
@@ -249,7 +249,7 @@
       "description": "Product Manager for requirements and planning. Creates PRDs, breaks work into epics and stories, and validates alignment.",
       "whenToUse": "After analysis to define product requirements, create user stories, and plan the project structure.",
       "color": "#3B82F6",
-      "commands": ["/bmad:bmm:agents:pm", "/bmad:bmm:workflows:prd", "/bmad:bmm:workflows:create-epics-and-stories", "/bmad:bmm:workflows:check-implementation-readiness"],
+      "commands": ["/bmad:bmm:agents:pm", "/bmad:bmm:workflows:prd", "/bmad:bmm:workflows:create-epics-and-stories", "/bmad:bmm:workflows:check-implementation-readiness", "/bmad:bmm:workflows:correct-course"],
       "examplePrompts": [
         "Create a PRD for user authentication",
         "Break this feature into epics and stories",
@@ -264,7 +264,7 @@
       "description": "System architecture and technical design expert. Produces architecture documents and generates technical diagrams.",
       "whenToUse": "After planning to design the system architecture, choose technologies, and create technical specifications.",
       "color": "#10B981",
-      "commands": ["/bmad:bmm:agents:architect", "/bmad:bmm:workflows:create-architecture", "/bmad:bmm:workflows:create-excalidraw-diagram"],
+      "commands": ["/bmad:bmm:agents:architect", "/bmad:bmm:workflows:create-architecture", "/bmad:bmm:workflows:check-implementation-readiness"],
       "examplePrompts": [
         "Design the database schema for user management",
         "Create an architecture diagram for the microservices",
@@ -279,7 +279,7 @@
       "description": "Scrum Master for sprint planning and story preparation. Generates sprint status, creates individual stories, and facilitates retrospectives.",
       "whenToUse": "During sprints to plan work, track progress, prepare stories for development, and run retrospectives.",
       "color": "#F59E0B",
-      "commands": ["/bmad:bmm:agents:sm", "/bmad:bmm:workflows:create-story", "/bmad:bmm:workflows:sprint-status", "/bmad:bmm:workflows:sprint-planning", "/bmad:bmm:workflows:retrospective"],
+      "commands": ["/bmad:bmm:agents:sm", "/bmad:bmm:workflows:create-story", "/bmad:bmm:workflows:sprint-status", "/bmad:bmm:workflows:sprint-planning", "/bmad:bmm:workflows:retrospective", "/bmad:bmm:workflows:correct-course"],
       "examplePrompts": [
         "Generate the current sprint status",
         "Prepare story 2.3 for development",
@@ -309,7 +309,7 @@
       "description": "Fast solo developer for small features without handoffs. Combines architectural spec with end-to-end implementation in a streamlined workflow.",
       "whenToUse": "For bug fixes, small features, or quick enhancements that don't need full planning.",
       "color": "#EC4899",
-      "commands": ["/bmad:bmm:agents:quick-flow-solo-dev", "/bmad:bmm:workflows:quick-dev", "/bmad:bmm:workflows:quick-spec"],
+      "commands": ["/bmad:bmm:agents:quick-flow-solo-dev", "/bmad:bmm:workflows:quick-dev", "/bmad:bmm:workflows:quick-spec", "/bmad:bmm:workflows:code-review"],
       "examplePrompts": [
         "Fix the login button not responding on mobile",
         "Add a dark mode toggle to settings",
@@ -324,7 +324,7 @@
       "description": "Test Architect for quality strategy. Initializes test frameworks, generates E2E tests, automates testing, and validates non-functional requirements.",
       "whenToUse": "When setting up testing infrastructure, writing E2E tests, or validating performance requirements.",
       "color": "#06B6D4",
-      "commands": ["/bmad:bmm:agents:tea", "/bmad:bmm:workflows:testarch-framework", "/bmad:bmm:workflows:testarch-automate", "/bmad:bmm:workflows:testarch-nfr"],
+      "commands": ["/bmad:bmm:agents:tea", "/bmad:bmm:workflows:testarch-framework", "/bmad:bmm:workflows:testarch-automate", "/bmad:bmm:workflows:testarch-nfr", "/bmad:bmm:workflows:testarch-test-review", "/bmad:bmm:workflows:testarch-atdd", "/bmad:bmm:workflows:testarch-ci", "/bmad:bmm:workflows:testarch-test-design", "/bmad:bmm:workflows:testarch-trace"],
       "examplePrompts": [
         "Set up the E2E testing framework",
         "Generate E2E tests for the checkout flow",
@@ -354,7 +354,7 @@
       "description": "Documentation and diagrams specialist. Produces project documentation, flowcharts, and concept explanations.",
       "whenToUse": "When creating documentation, explaining complex concepts, or generating diagrams.",
       "color": "#64748B",
-      "commands": ["/bmad:bmm:agents:tech-writer", "/bmad:bmm:workflows:document-project", "/bmad:bmm:workflows:create-excalidraw-flowchart"],
+      "commands": ["/bmad:bmm:agents:tech-writer", "/bmad:bmm:workflows:document-project", "/bmad:bmm:workflows:create-excalidraw-flowchart", "/bmad:bmm:workflows:create-excalidraw-diagram", "/bmad:bmm:workflows:create-excalidraw-dataflow"],
       "examplePrompts": [
         "Write API documentation for the user endpoints",
         "Create a flowchart for the order process",

@@ -58,9 +58,9 @@ export default function AgentsTab() {
       >
         <TerminalIcon sx={{ fontSize: 48, opacity: 0.5 }} />
         <Typography textAlign="center">
-          No teammates working.
+          No agents working.
           <br />
-          Start a teammate from a story card.
+          Start an agent from a story card.
         </Typography>
       </Box>
     )
@@ -80,7 +80,7 @@ export default function AgentsTab() {
                   color="error"
                   size="small"
                   onClick={(e) => handleKillAgent(agent.id, e)}
-                  title="Stop teammate"
+                  title="Stop agent"
                 >
                   <StopIcon fontSize="small" />
                 </IconButton>

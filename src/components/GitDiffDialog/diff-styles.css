@@ -337,7 +337,6 @@
 /* Ensure proper overflow handling */
 .diff-view-wrapper {
   overflow: auto;
-  max-height: 500px;
 }
 
 /* File header in split view */
