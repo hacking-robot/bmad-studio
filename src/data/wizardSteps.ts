@@ -339,9 +339,25 @@ export const GDS_WIZARD_STEPS: WizardStep[] = [
   }
 ]
 
+export const DASHBOARD_WIZARD_STEPS: WizardStep[] = [
+  {
+    id: 'install',
+    name: 'Install BMAD',
+    phase: 'install',
+    type: 'system',
+    description: 'Install the bmad-method package with selected modules into this project via npx',
+    required: true,
+    outputDir: '_bmad',
+    tooltip: 'Runs npx to install the BMAD method framework with your selected modules. This creates the _bmad folder with agents, workflows, and configuration files.',
+    subSteps: ['Download BMAD package via npx', 'Create _bmad/ folder structure', 'Install selected module agents and workflows']
+  }
+]
+
 // Get the appropriate wizard steps for a primary module
-export function getWizardSteps(primaryModule: 'bmm' | 'gds'): WizardStep[] {
-  return primaryModule === 'gds' ? GDS_WIZARD_STEPS : BMM_WIZARD_STEPS
+export function getWizardSteps(primaryModule: 'bmm' | 'gds' | 'dashboard'): WizardStep[] {
+  if (primaryModule === 'gds') return GDS_WIZARD_STEPS
+  if (primaryModule === 'dashboard') return DASHBOARD_WIZARD_STEPS
+  return BMM_WIZARD_STEPS
 }
 
 // Get the indices of required steps for a given step list

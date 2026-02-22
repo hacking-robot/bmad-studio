@@ -37,7 +37,7 @@ import {
 import { getWizardSteps } from "./data/wizardSteps";
 import { flushPendingThreadSave } from "./utils/chatUtils";
 
-export type ViewMode = "board" | "chat";
+export type ViewMode = "board" | "chat" | "dashboard";
 
 export interface RecentProject {
   path: string;
@@ -130,6 +130,7 @@ const electronStorage = {
           bmadLanguage,
           hasConfiguredProfile,
           disableEnvCheck,
+          chatSidebarWidth,
           gitDiffPanelWidth,
         } = parsed.state;
 
@@ -204,6 +205,7 @@ const electronStorage = {
           bmadLanguage: bmadLanguage || 'en',
           hasConfiguredProfile: hasConfiguredProfile ?? false,
           disableEnvCheck: disableEnvCheck ?? false,
+          chatSidebarWidth: chatSidebarWidth ?? null,
           gitDiffPanelWidth: gitDiffPanelWidth ?? 600,
         });
       }
@@ -394,6 +396,7 @@ interface AppState {
     path: string;
     projectType: ProjectType;
     outputFolder?: string;
+    bmadInstalled?: boolean;
   } | null;
   setNewProjectDialogOpen: (open: boolean) => void;
   setPendingNewProject: (
@@ -401,6 +404,7 @@ interface AppState {
       path: string;
       projectType: ProjectType;
       outputFolder?: string;
+      bmadInstalled?: boolean;
     } | null,
   ) => void;
 
@@ -483,6 +487,10 @@ interface AppState {
     storyId: string | undefined,
     branchName: string | undefined,
   ) => void;
+
+  // Chat Sidebar
+  chatSidebarWidth: number | null;
+  setChatSidebarWidth: (width: number | null) => void;
 
   // Git Diff Panel (NOT persisted — transient UI state)
   gitDiffPanelOpen: boolean;
@@ -577,6 +585,7 @@ interface AppState {
     outputFolder?: string,
     developerMode?: "ai" | "human",
     selectedModules?: string[],
+    customContentPaths?: string[],
   ) => void;
   updateWizardStep: (stepIndex: number, status: WizardStepStatus) => void;
   advanceWizardStep: () => void;
@@ -1041,9 +1050,13 @@ export const useStore = create<AppState>()(
       viewMode: "board",
       setViewMode: (mode) => set({ viewMode: mode }),
       toggleViewMode: () =>
-        set((state) => ({
-          viewMode: state.viewMode === "board" ? "chat" : "board",
-        })),
+        set((state) => {
+          if (state.viewMode === "chat") {
+            // Return to the appropriate home view
+            return { viewMode: state.projectType === "dashboard" ? "dashboard" : "board" };
+          }
+          return { viewMode: "chat" };
+        }),
 
       // Chat Interface
       chatThreads: {},
@@ -1257,6 +1270,10 @@ export const useStore = create<AppState>()(
             },
           };
         }),
+
+      // Chat Sidebar
+      chatSidebarWidth: null,
+      setChatSidebarWidth: (width) => set({ chatSidebarWidth: width }),
 
       // Git Diff Panel (NOT persisted)
       gitDiffPanelOpen: false,
@@ -1602,10 +1619,17 @@ export const useStore = create<AppState>()(
         outputFolder,
         developerMode,
         selectedModules,
+        customContentPaths,
       ) => {
         const modules = selectedModules?.length ? selectedModules : ["bmm"];
-        const primary = modules.includes("gds") ? "gds" : "bmm";
-        const steps = getWizardSteps(primary as "bmm" | "gds");
+        const primary = modules.includes("gds")
+          ? "gds"
+          : modules.includes("bmm")
+            ? "bmm"
+            : "dashboard";
+        const steps = getWizardSteps(
+          primary as "bmm" | "gds" | "dashboard",
+        );
         set({
           projectWizard: {
             ...initialWizardState,
@@ -1614,6 +1638,7 @@ export const useStore = create<AppState>()(
             outputFolder: outputFolder || "_bmad-output",
             developerMode,
             selectedModules: modules,
+            customContentPaths: customContentPaths?.length ? customContentPaths : undefined,
             stepStatuses: new Array(steps.length).fill(
               "pending" as WizardStepStatus,
             ),
@@ -1801,6 +1826,7 @@ export const useStore = create<AppState>()(
         bmadUserName: state.bmadUserName,
         bmadLanguage: state.bmadLanguage,
         hasConfiguredProfile: state.hasConfiguredProfile,
+        chatSidebarWidth: state.chatSidebarWidth,
         gitDiffPanelWidth: state.gitDiffPanelWidth,
       }),
       onRehydrateStorage: () => (state) => {
@@ -1835,6 +1861,10 @@ export const useStore = create<AppState>()(
               if (current.developerMode)
                 state.developerMode = current.developerMode;
             }
+          }
+          // Set correct initial viewMode based on project type
+          if (state.projectType === 'dashboard') {
+            state.viewMode = 'dashboard';
           }
           state.setHasHydrated(true);
         }

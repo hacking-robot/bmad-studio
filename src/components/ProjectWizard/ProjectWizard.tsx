@@ -16,6 +16,7 @@ import { HUMAN_DEV_FILES_GDS } from '../../data/humanDevFilesGds'
 import { resolveCommand, mergeWorkflowConfig } from '../../utils/workflowMerge'
 import { useWorkflow } from '../../hooks/useWorkflow'
 import { transformCommand } from '../../utils/commandTransform'
+import { hasBoardModule } from '../../utils/projectTypes'
 import type { BmadScanResult } from '../../types/bmadScan'
 import type { WizardStep } from '../../types/projectWizard'
 import SettingsMenu from '../SettingsMenu/SettingsMenu'
@@ -126,8 +127,8 @@ export default function ProjectWizard() {
   const { getAgentName } = useWorkflow()
   const { isActive, projectPath, currentStep, stepStatuses, error } = projectWizard
   const modules = projectWizard.selectedModules || ['bmm']
-  const primaryModule = modules.includes('gds') ? 'gds' : 'bmm'
-  const ACTIVE_STEPS = useMemo(() => getWizardSteps(primaryModule as 'bmm' | 'gds'), [primaryModule])
+  const primaryModule = modules.includes('gds') ? 'gds' : modules.includes('bmm') ? 'bmm' : 'dashboard'
+  const ACTIVE_STEPS = useMemo(() => getWizardSteps(primaryModule as 'bmm' | 'gds' | 'dashboard'), [primaryModule])
   const persistRef = useRef(false)
   const finishingRef = useRef(false) // Guards against save effect re-creating file during finish
   const [docsAnchor, setDocsAnchor] = useState<null | HTMLElement>(null)
@@ -164,7 +165,7 @@ export default function ProjectWizard() {
       setBmadScanResult(result)
       if (result) {
         // Auto-correct project type from scan data (fixes stale recent project entries)
-        const scanDetectedType = result.modules.includes('gds') ? 'gds' as const : 'bmm' as const
+        const scanDetectedType = result.modules.includes('gds') ? 'gds' as const : hasBoardModule(result.modules) ? 'bmm' as const : 'dashboard' as const
         const { projectType: currentProjectType, setProjectType: setType } = useStore.getState()
         if (currentProjectType !== scanDetectedType) {
           console.log(`[ProjectWizard] Correcting project type: ${currentProjectType} → ${scanDetectedType}`)
@@ -178,7 +179,8 @@ export default function ProjectWizard() {
 
   // After mount, check if any pending/active steps already have their output file.
   // This handles: (1) resume where agent finished but user didn't click "Mark Complete",
-  // (2) resume where files were created externally (e.g., by CLI) while wizard was closed.
+  // (2) resume where files were created externally (e.g., by CLI) while wizard was closed,
+  // (3) existing BMAD projects where _bmad/ is already installed.
   // The file watcher only fires on changes, so pre-existing files need this initial scan.
   const initialFileCheckDone = useRef(false)
   useEffect(() => {
@@ -192,6 +194,38 @@ export default function ProjectWizard() {
         const status = wiz.stepStatuses[i]
         if (status !== 'pending' && status !== 'active') continue
         const step = ACTIVE_STEPS[i]
+
+        // Special handling for install step: check if _bmad/ directory already exists
+        // Also verify .claude/commands/ exists — if BMAD was installed without Claude Code
+        // as a tool, the command files won't exist and workflows will fail. In that case,
+        // don't skip install so it re-runs with --tools claude-code to add them.
+        if (step.id === 'install' && step.outputDir === '_bmad') {
+          const bmadDirExists = await window.wizardAPI.checkFileExists(joinPath(projectPath, '_bmad', '_config', 'manifest.yaml'))
+          const claudeCommandsExist = await window.wizardAPI.checkFileExists(joinPath(projectPath, '.claude', 'commands'))
+          if (bmadDirExists && claudeCommandsExist) {
+            const { updateWizardStep, advanceWizardStep, projectWizard: freshWiz } = useStore.getState()
+            updateWizardStep(i, 'completed')
+            if (i === freshWiz.currentStep) {
+              advanceWizardStep()
+            }
+            // Trigger a BMAD scan so agent commands resolve
+            window.fileAPI.scanBmad(projectPath).then((scanResult) => {
+              const result = scanResult as BmadScanResult | null
+              setBmadScanResult(result)
+              if (result) {
+                const scanDetectedType = result.modules.includes('gds') ? 'gds' as const : hasBoardModule(result.modules) ? 'bmm' as const : 'dashboard' as const
+                const { projectType: currentProjectType, setProjectType: setType } = useStore.getState()
+                if (currentProjectType !== scanDetectedType) {
+                  setType(scanDetectedType)
+                }
+                const merged = mergeWorkflowConfig(result, scanDetectedType)
+                setScannedWorkflowConfig(merged)
+              }
+            }).catch(() => {})
+            continue
+          }
+        }
+
         if (!step.outputFile && !step.outputFilePrefix && !(step.outputDir && step.outputDirPrefix)) continue
         const { exists } = await checkStepOutput(step, projectPath, outputFolder)
         if (exists) {
@@ -449,7 +483,7 @@ export default function ProjectWizard() {
         console.log('[Wizard] Scan result:', result ? `${result.agents.length} agents` : 'null')
         setBmadScanResult(result)
         if (result) {
-          const scanDetectedType = result.modules.includes('gds') ? 'gds' as const : 'bmm' as const
+          const scanDetectedType = result.modules.includes('gds') ? 'gds' as const : hasBoardModule(result.modules) ? 'bmm' as const : 'dashboard' as const
           const { projectType: currentProjectType, setProjectType: setType } = useStore.getState()
           if (currentProjectType !== scanDetectedType) {
             console.log(`[Wizard] Correcting project type: ${currentProjectType} → ${scanDetectedType}`)
@@ -579,34 +613,38 @@ export default function ProjectWizard() {
   const handleFinishSetup = useCallback(async () => {
     if (!projectPath) return
 
-    // Validate that essential project artifacts exist before finishing
-    const finalProjectType = modules.includes('gds') ? 'gds' : 'bmm'
-    const planningPath = joinPath(projectPath, outputFolder, 'planning-artifacts')
-    const implPath = joinPath(projectPath, outputFolder, 'implementation-artifacts')
+    // Determine final project type
+    const finalProjectType = modules.includes('gds') ? 'gds' : modules.includes('bmm') ? 'bmm' : 'dashboard'
 
-    const missing: string[] = []
-    const outputBase = joinPath(projectPath, outputFolder)
+    // Validate that essential project artifacts exist before finishing (board projects only)
+    if (finalProjectType !== 'dashboard') {
+      const planningPath = joinPath(projectPath, outputFolder, 'planning-artifacts')
+      const implPath = joinPath(projectPath, outputFolder, 'implementation-artifacts')
 
-    // Check epics.md or sharded epic-*.md files — check all possible locations
-    const epicsLocations = [planningPath, outputBase]
-    let epicsFound = false
-    for (const loc of epicsLocations) {
-      if (await window.wizardAPI.checkFileExists(joinPath(loc, 'epics.md'))) { epicsFound = true; break }
-      if (await window.wizardAPI.checkDirHasPrefix(loc, 'epic-')) { epicsFound = true; break }
-    }
-    if (!epicsFound) missing.push('epics.md (run the ' + (finalProjectType === 'gds' ? 'GDD' : 'Epics & Stories') + ' step)')
+      const missing: string[] = []
+      const outputBase = joinPath(projectPath, outputFolder)
 
-    // Check sprint-status.yaml — check both implementation-artifacts and output root
-    const statusLocations = [implPath, outputBase]
-    let statusFound = false
-    for (const loc of statusLocations) {
-      if (await window.wizardAPI.checkFileExists(joinPath(loc, 'sprint-status.yaml'))) { statusFound = true; break }
-    }
-    if (!statusFound) missing.push('sprint-status.yaml (run Sprint Planning)')
+      // Check epics.md or sharded epic-*.md files — check all possible locations
+      const epicsLocations = [planningPath, outputBase]
+      let epicsFound = false
+      for (const loc of epicsLocations) {
+        if (await window.wizardAPI.checkFileExists(joinPath(loc, 'epics.md'))) { epicsFound = true; break }
+        if (await window.wizardAPI.checkDirHasPrefix(loc, 'epic-')) { epicsFound = true; break }
+      }
+      if (!epicsFound) missing.push('epics.md (run the ' + (finalProjectType === 'gds' ? 'GDD' : 'Epics & Stories') + ' step)')
 
-    if (missing.length > 0) {
-      setWizardError('Missing required artifacts:\n' + missing.map(m => '• ' + m).join('\n'))
-      return
+      // Check sprint-status.yaml — check both implementation-artifacts and output root
+      const statusLocations = [implPath, outputBase]
+      let statusFound = false
+      for (const loc of statusLocations) {
+        if (await window.wizardAPI.checkFileExists(joinPath(loc, 'sprint-status.yaml'))) { statusFound = true; break }
+      }
+      if (!statusFound) missing.push('sprint-status.yaml (run Sprint Planning)')
+
+      if (missing.length > 0) {
+        setWizardError('Missing required artifacts:\n' + missing.map(m => '• ' + m).join('\n'))
+        return
+      }
     }
 
     // Clear any previous validation error
@@ -642,8 +680,8 @@ export default function ProjectWizard() {
       baseBranch: detectedBaseBranch
     })
 
-    // Switch to board view and reset epic filter so all stories are visible
-    setViewMode('board')
+    // Switch to appropriate view and reset epic filter
+    setViewMode(finalProjectType === 'dashboard' ? 'dashboard' : 'board')
     setSelectedEpicId(null)
 
     completeWizard()

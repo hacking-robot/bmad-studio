@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-export type ProjectType = 'bmm' | 'gds'
+export type ProjectType = 'bmm' | 'gds' | 'dashboard'
 
 export interface AgentHistoryEntry {
   id: string
@@ -107,7 +107,7 @@ export interface AppSettings {
 }
 
 export interface FileAPI {
-  selectDirectory: () => Promise<{ path?: string; projectType?: ProjectType; isNewProject?: boolean; outputFolder?: string; error?: string } | null>
+  selectDirectory: () => Promise<{ path?: string; projectType?: ProjectType; isNewProject?: boolean; outputFolder?: string; bmadInstalled?: boolean; error?: string } | null>
   readFile: (filePath: string) => Promise<{ content?: string; error?: string }>
   listDirectory: (dirPath: string) => Promise<{ files?: string[]; dirs?: string[]; error?: string }>
   getSettings: () => Promise<AppSettings>
@@ -405,7 +405,7 @@ export interface ChatAPI {
   loadAgent: (options: {
     agentId: string
     projectPath: string
-    projectType: 'bmm' | 'gds'
+    projectType: 'bmm' | 'gds' | 'dashboard'
     tool?: AITool // AI tool to use (defaults to claude-code)
     model?: ClaudeModel // Claude model to use (only for claude-code)
     customEndpoint?: CustomEndpointConfig | null // Custom endpoint config (for custom-endpoint tool)
@@ -524,7 +524,8 @@ export interface WizardFileChangedEvent {
 }
 
 export interface WizardAPI {
-  install: (projectPath: string, useAlpha?: boolean, outputFolder?: string, modules?: string[]) => Promise<{ success: boolean; error?: string }>
+  install: (projectPath: string, useAlpha?: boolean, outputFolder?: string, modules?: string[], customContentPaths?: string[]) => Promise<{ success: boolean; error?: string }>
+  validateCustomModule: (input: string) => Promise<{ valid: boolean; code?: string; name?: string; path?: string; source?: 'local' | 'github'; repo?: string; error?: string }>
   onInstallOutput: (callback: (event: WizardInstallOutputEvent) => void) => () => void
   onInstallComplete: (callback: (event: WizardInstallCompleteEvent) => void) => () => void
   startWatching: (projectPath: string, outputFolder?: string) => Promise<boolean>
@@ -542,7 +543,8 @@ export interface WizardAPI {
 }
 
 const wizardAPI: WizardAPI = {
-  install: (projectPath, useAlpha, outputFolder, modules) => ipcRenderer.invoke('bmad-install', projectPath, useAlpha, outputFolder, modules),
+  install: (projectPath, useAlpha, outputFolder, modules, customContentPaths) => ipcRenderer.invoke('bmad-install', projectPath, useAlpha, outputFolder, modules, customContentPaths),
+  validateCustomModule: (dirPath) => ipcRenderer.invoke('validate-custom-module', dirPath),
   onInstallOutput: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: WizardInstallOutputEvent) => callback(data)
     ipcRenderer.on('bmad:install-output', listener)

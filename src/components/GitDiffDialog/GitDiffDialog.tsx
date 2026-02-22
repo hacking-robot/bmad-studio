@@ -807,7 +807,7 @@ export default function GitDiffPanel() {
       sx={{
         position: 'fixed',
         top: viewMode === 'board' ? 82 : 44,
-        bottom: 0,
+        bottom: 28,
         right: showAgentPanel ? `${AGENT_PANEL_WIDTH}px` : 0,
         width: panelWidth,
         zIndex: 1199,

@@ -1,13 +1,98 @@
 import { Box, Typography, Paper, Stack, Chip } from '@mui/material'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
+import { useStore } from '../../store'
+import { hasBoardModule } from '../../utils/projectTypes'
 import { useWorkflow } from '../../hooks/useWorkflow'
 import type { StoryStatus } from '../../types'
 
 export default function WorkflowTab() {
-  const { statuses, getAgentName, getPrimaryNextStep } = useWorkflow()
+  const projectType = useStore((state) => state.projectType)
+  const bmadScanResult = useStore((state) => state.bmadScanResult)
+  const hasBrd = bmadScanResult?.modules ? hasBoardModule(bmadScanResult.modules) : projectType !== 'dashboard'
 
-  // Get visible statuses for the flow diagram
+  const { statuses, getAgentName, getPrimaryNextStep, getProjectWorkflows } = useWorkflow()
+
+  // Dashboard projects: show project workflows grouped by module/phase
+  if (!hasBrd) {
+    const projectWorkflows = getProjectWorkflows()
+    const phases = Object.entries(projectWorkflows)
+
+    return (
+      <Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Available workflows organized by module. Each workflow can be run by its assigned agent.
+        </Typography>
+
+        {phases.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No workflows available. Install BMAD modules to see available workflows.
+          </Typography>
+        ) : (
+          <Stack spacing={2}>
+            {phases.map(([phaseId, phase]) => {
+              const agentIds = [...new Set(phase.workflows.map((wf) => wf.agentId))]
+
+              return (
+                <Paper
+                  key={phaseId}
+                  variant="outlined"
+                  sx={{ p: 2, borderLeft: 4, borderLeftColor: 'primary.main' }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Typography fontSize="1.2rem">{phase.icon}</Typography>
+                    <Typography variant="subtitle1" fontWeight={600}>
+                      {phase.label}
+                    </Typography>
+                  </Box>
+                  {phase.description && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      {phase.description}
+                    </Typography>
+                  )}
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1.5 }}>
+                    {agentIds.map((id) => (
+                      <Chip
+                        key={id}
+                        label={getAgentName(id)}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        sx={{ height: 22, fontSize: '0.75rem' }}
+                      />
+                    ))}
+                  </Box>
+                  <Stack spacing={1}>
+                    {phase.workflows.map((wf) => (
+                      <Box
+                        key={wf.command}
+                        sx={{
+                          bgcolor: 'action.hover',
+                          p: 1,
+                          borderRadius: 1,
+                        }}
+                      >
+                        <Typography variant="body2" fontWeight={500}>
+                          {wf.label}
+                        </Typography>
+                        {wf.description && (
+                          <Typography variant="caption" color="text.secondary">
+                            {wf.description}
+                          </Typography>
+                        )}
+                      </Box>
+                    ))}
+                  </Stack>
+                </Paper>
+              )
+            })}
+          </Stack>
+        )}
+      </Box>
+    )
+  }
+
+  // Board projects: show story status lifecycle
   const visibleStatuses = statuses.filter((s) => s.visible).sort((a, b) => a.displayOrder - b.displayOrder)
   const optionalStatus = statuses.find((s) => s.id === 'optional')
 
