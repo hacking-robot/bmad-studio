@@ -20,20 +20,21 @@ export function parseStoryContent(markdown: string): StoryContent {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // Track current section
-    if (line.startsWith('## Story')) {
+    // Track current section (supports both ## headings and **bold:** markers)
+    const trimmed = line.trim()
+    if (line.startsWith('## Story') || line.startsWith('### Story')) {
       currentSection = 'story'
       continue
     }
-    if (line.startsWith('## Acceptance Criteria')) {
+    if (line.startsWith('## Acceptance Criteria') || trimmed.startsWith('**Acceptance Criteria')) {
       currentSection = 'ac'
       continue
     }
-    if (line.startsWith('## Tasks')) {
+    if (line.startsWith('## Tasks') || trimmed.startsWith('**Tasks')) {
       currentSection = 'tasks'
       continue
     }
-    if (line.startsWith('## Dev Notes')) {
+    if (line.startsWith('## Dev Notes') || trimmed.startsWith('**Technical Notes')) {
       currentSection = 'devnotes'
       continue
     }
