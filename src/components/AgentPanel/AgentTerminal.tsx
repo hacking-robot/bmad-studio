@@ -2,7 +2,7 @@ import { useEffect, useRef, useMemo, useCallback } from 'react'
 import { Box, Typography, Link } from '@mui/material'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { useThemedSyntax } from '../../hooks/useThemedSyntax'
 import anser from 'anser'
 import BuildIcon from '@mui/icons-material/Build'
 import EditIcon from '@mui/icons-material/Edit'
@@ -186,6 +186,7 @@ function getLanguageFromExtension(lang: string): string {
 
 // Code block component with copy button
 function CodeBlock({ code, language }: { code: string; language: string }) {
+  const { prismStyle } = useThemedSyntax()
   const handleCopy = () => {
     navigator.clipboard.writeText(code)
   }
@@ -237,7 +238,7 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
       </Box>
       <SyntaxHighlighter
         language={getLanguageFromExtension(language)}
-        style={vscDarkPlus}
+        style={prismStyle}
         customStyle={{
           margin: 0,
           borderRadius: 4,

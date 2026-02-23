@@ -1,9 +1,12 @@
 import { useMemo, useEffect, useCallback, useRef } from 'react'
+import createCache from '@emotion/cache'
+import { CacheProvider } from '@emotion/react'
 import { ThemeProvider, CssBaseline, Box, CircularProgress, IconButton, Tooltip } from '@mui/material'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import { useStore } from './store'
-import { lightTheme, darkTheme } from './theme'
+import { lightTheme, createBase24Theme } from './theme'
+import { useResolvedTheme } from './hooks/useResolvedTheme'
 import { AI_TOOLS } from './types'
 import Header from './components/Header/Header'
 import Board from './components/Board/Board'
@@ -28,6 +31,11 @@ import IncompatibleVersionDialog from './components/IncompatibleVersionDialog'
 import { EnvCheckDialog } from './components/EnvCheckDialog'
 
 const AGENT_PANEL_WIDTH = 500
+
+// Controlled Emotion cache — lets us flush accumulated style tags on theme change
+// to prevent progressive slowdown from CSS-in-JS style accumulation.
+const muiCache = createCache({ key: 'mui', prepend: true })
+let prevSchemeSlug: string | null = null
 
 export default function App() {
   const hasHydrated = useStore((state) => state._hasHydrated)
@@ -148,34 +156,57 @@ export default function App() {
     document.addEventListener('mouseup', onMouseUp)
   }, [chatSidebarWidth, setChatSidebarWidth])
 
+  const { scheme, slug } = useResolvedTheme()
+
+  // Flush Emotion style tags when switching themes to prevent accumulation.
+  // Each theme switch generates hundreds of new CSS rules; without cleanup
+  // the browser bogs down after cycling through many themes.
+  if (prevSchemeSlug !== null && prevSchemeSlug !== slug) {
+    muiCache.sheet.flush()
+    for (const key of Object.keys(muiCache.inserted)) delete muiCache.inserted[key]
+    for (const key of Object.keys(muiCache.registered)) delete muiCache.registered[key]
+  }
+  prevSchemeSlug = slug
+
   const theme = useMemo(
-    () => (themeMode === 'dark' ? darkTheme : lightTheme),
-    [themeMode]
+    () => createBase24Theme(scheme),
+    [scheme]
   )
+
+  // Keep themeMode in sync with the active scheme's variant
+  const setThemeMode = useStore((state) => state.setThemeMode)
+  useEffect(() => {
+    if (scheme.variant !== themeMode) {
+      setThemeMode(scheme.variant)
+    }
+  }, [scheme.variant, themeMode, setThemeMode])
 
   // Show loading while hydrating persisted state
   if (!hasHydrated) {
     return (
-      <ThemeProvider theme={lightTheme}>
-        <CssBaseline />
-        <Box
-          sx={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: 'background.default',
-            position: 'relative'
-          }}
-        >
-          <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 40, WebkitAppRegion: 'drag' }} />
-          <CircularProgress />
-        </Box>
-      </ThemeProvider>
+      <CacheProvider value={muiCache}>
+        <ThemeProvider theme={lightTheme}>
+          <CssBaseline />
+          <Box
+            sx={{
+              minHeight: '100vh',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: 'background.default',
+              position: 'relative'
+            }}
+          >
+            <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 40, WebkitAppRegion: 'drag' }} />
+            <CircularProgress />
+          </Box>
+        </ThemeProvider>
+      </CacheProvider>
     )
   }
 
   return (
+    <CacheProvider value={muiCache}>
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <CommandPalette />
@@ -363,5 +394,6 @@ export default function App() {
         )}
       </Box>
     </ThemeProvider>
+    </CacheProvider>
   )
 }

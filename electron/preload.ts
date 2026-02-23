@@ -70,6 +70,7 @@ export interface StatusChangeEntry {
 
 export interface AppSettings {
   themeMode: 'light' | 'dark'
+  colorTheme: string
   aiTool: AITool
   claudeModel: ClaudeModel
   customEndpoint: CustomEndpointConfig | null

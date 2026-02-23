@@ -56,6 +56,7 @@ export default function StatusBar() {
   const projectCostTotal = useStore((state) => state.projectCostTotal)
   const developerMode = useStore((state) => state.developerMode)
   const viewMode = useStore((state) => state.viewMode)
+  const bmadScanResult = useStore((state) => state.bmadScanResult)
 
   // Auto-update state from global store
   const updateStatus = useStore((state) => state.updateStatus)
@@ -157,8 +158,22 @@ export default function StatusBar() {
           </Tooltip>
         )}
 
-        {/* Story counts by status */}
-        {statusDisplay.length > 0 && (
+        {/* BMAD version and modules */}
+        {bmadScanResult?.version && (
+          <Tooltip title={`BMAD version: ${bmadScanResult.version}${bmadScanResult.modules.length > 0 ? `\nModules: ${bmadScanResult.modules.join(', ')}` : ''}`}>
+            <Typography variant="caption" color="text.secondary" sx={{ cursor: 'help', fontFamily: 'monospace', fontSize: '0.65rem' }}>
+              BMAD v{bmadScanResult.version}
+              {bmadScanResult.modules.length > 0 && (
+                <Typography component="span" variant="caption" color="text.disabled" sx={{ fontFamily: 'monospace', fontSize: '0.65rem', ml: 0.5 }}>
+                  ({bmadScanResult.modules.join(', ')})
+                </Typography>
+              )}
+            </Typography>
+          </Tooltip>
+        )}
+
+        {/* Story counts by status - only in board mode */}
+        {viewMode === 'board' && statusDisplay.length > 0 && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             {statusDisplay.map((col) => (
               <Tooltip
@@ -185,10 +200,12 @@ export default function StatusBar() {
         )}
       </Box>
 
-      {/* Center section - Current epic */}
-      <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-        {selectedEpicName}
-      </Typography>
+      {/* Center section - Current epic (only in board mode) */}
+      {viewMode === 'board' && (
+        <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+          {selectedEpicName}
+        </Typography>
+      )}
 
       {/* Right section - Last refreshed & keyboard hint */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>

@@ -81,6 +81,7 @@ interface StatusChangeEntry {
 
 interface AppSettings {
   themeMode: 'light' | 'dark'
+  colorTheme: string
   aiTool: AITool
   claudeModel: ClaudeModel
   projectPath: string | null
@@ -116,6 +117,7 @@ interface AppSettings {
 
 const defaultSettings: AppSettings = {
   themeMode: 'light',
+  colorTheme: 'gruvbox-dark',
   aiTool: 'claude-code',
   claudeModel: 'opus',
   projectPath: null,
@@ -700,18 +702,14 @@ ipcMain.handle('save-settings', async (_, settings: Partial<AppSettings>) => {
 // File watching for auto-refresh
 let fileWatchers: FSWatcher[] = []
 
-function startWatching(projectPath: string, projectType: ProjectType, outputFolder: string = '_bmad-output') {
+function startWatching(projectPath: string, _projectType: ProjectType, outputFolder: string = '_bmad-output') {
   // Stop any existing watchers
   stopWatching()
 
+  // Watch the entire output folder so documents refresh for all project types (including dashboard)
   const watchPaths: string[] = [
-    join(projectPath, outputFolder, 'implementation-artifacts')
+    join(projectPath, outputFolder)
   ]
-
-  // For BMM projects, also watch planning-artifacts (where epics.md lives)
-  if (projectType === 'bmm') {
-    watchPaths.push(join(projectPath, outputFolder, 'planning-artifacts'))
-  }
 
   for (const watchPath of watchPaths) {
     if (!existsSync(watchPath)) {

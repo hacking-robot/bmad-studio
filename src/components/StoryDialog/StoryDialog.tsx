@@ -33,9 +33,8 @@ import CompareArrowsIcon from '@mui/icons-material/CompareArrows'
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { gruvboxDark, gruvboxLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useStore } from '../../store'
-import { gruvbox } from '../../theme'
+import { useThemedSyntax } from '../../hooks/useThemedSyntax'
 import { EPIC_COLORS, STATUS_COLUMNS } from '../../types'
 import { useWorkflow } from '../../hooks/useWorkflow'
 import { parseStoryContent } from '../../utils/parseStory'
@@ -43,21 +42,22 @@ import ChatHistorySection from './ChatHistorySection'
 import StatusHistorySection from './StatusHistorySection'
 
 // Factory function to create code component with theme awareness
-const createCodeBlock = (isDark: boolean): Components['code'] => {
+const createCodeBlock = (
+  prismStyle: Record<string, React.CSSProperties>,
+  codeColors: { background: string; color: string }
+): Components['code'] => {
   return ({ className, children, ...props }) => {
     const match = /language-(\w+)/.exec(className || '')
     const language = match ? match[1] : ''
     const codeString = String(children).replace(/\n$/, '')
-
-    // Check if this is inline code (no language and short content without newlines)
     const isInline = !match && !codeString.includes('\n')
 
     if (isInline) {
       return (
         <code
           style={{
-            backgroundColor: isDark ? gruvbox.dark2 : gruvbox.light2,
-            color: isDark ? gruvbox.light1 : gruvbox.dark1,
+            backgroundColor: codeColors.background,
+            color: codeColors.color,
             padding: '2px 6px',
             borderRadius: 4,
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
@@ -72,7 +72,7 @@ const createCodeBlock = (isDark: boolean): Components['code'] => {
 
     return (
       <SyntaxHighlighter
-        style={isDark ? gruvboxDark : gruvboxLight}
+        style={prismStyle}
         language={language || 'text'}
         PreTag="div"
         customStyle={{
@@ -98,9 +98,9 @@ export default function StoryDialog() {
   const toggleReviewItem = useStore((state) => state.toggleReviewItem)
   const enableHumanReviewColumn = useStore((state) => state.enableHumanReviewColumn)
   const getEffectiveStatus = useStore((state) => state.getEffectiveStatus)
-  const themeMode = useStore((state) => state.themeMode)
   const projectPath = useStore((state) => state.projectPath)
   const chatThreads = useStore((state) => state.chatThreads)
+  const { prismStyle, inlineCodeColors } = useThemedSyntax()
 
   // Get agents from workflow
   const { agents } = useWorkflow()
@@ -129,7 +129,7 @@ export default function StoryDialog() {
   }, [projectPath, selectedStory])
 
   // Create theme-aware code block component (memoized to avoid recreation on every render)
-  const CodeBlock = React.useMemo(() => createCodeBlock(themeMode === 'dark'), [themeMode])
+  const CodeBlock = React.useMemo(() => createCodeBlock(prismStyle, inlineCodeColors), [prismStyle, inlineCodeColors])
 
   const handleClose = () => {
     setSelectedStory(null)

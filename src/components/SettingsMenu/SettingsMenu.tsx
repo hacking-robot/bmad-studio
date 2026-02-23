@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   IconButton,
   Menu,
@@ -24,8 +24,6 @@ import {
   Autocomplete
 } from '@mui/material'
 import SettingsIcon from '@mui/icons-material/Settings'
-import LightModeIcon from '@mui/icons-material/LightMode'
-import DarkModeIcon from '@mui/icons-material/DarkMode'
 import SyncIcon from '@mui/icons-material/Sync'
 import KeyboardIcon from '@mui/icons-material/Keyboard'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
@@ -46,9 +44,11 @@ import SystemUpdateIcon from '@mui/icons-material/SystemUpdate'
 import DownloadIcon from '@mui/icons-material/Download'
 import InstallDesktopIcon from '@mui/icons-material/InstallDesktop'
 import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest'
+import PaletteIcon from '@mui/icons-material/Palette'
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
 import { AI_TOOLS, AITool, CLIDetectionResult, CLAUDE_MODELS, CustomEndpointConfig } from '../../types'
+import { themeList, base24Schemes } from '../../data/themes'
 
 interface SettingsMenuProps {
   compact?: boolean
@@ -61,6 +61,9 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const profileDialogOpen = useStore((state) => state.profileDialogOpen)
   const setProfileDialogOpen = useStore((state) => state.setProfileDialogOpen)
   const setHasConfiguredProfile = useStore((state) => state.setHasConfiguredProfile)
+  const [themePickerDialogOpen, setThemePickerDialogOpen] = useState(false)
+  const [themeSearchQuery, setThemeSearchQuery] = useState('')
+  const themeBeforePreview = useRef<{ slug: string } | null>(null)
   const [branchDialogOpen, setBranchDialogOpen] = useState(false)
   const [cliStatus, setCliStatus] = useState<Record<string, CLIDetectionResult>>({})
   const [detectingCli, setDetectingCli] = useState(false)
@@ -115,9 +118,10 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const setFullCycleReviewCount = useStore((state) => state.setFullCycleReviewCount)
   const projectPath = useStore((state) => state.projectPath)
 
-  const themeMode = useStore((state) => state.themeMode)
-  const toggleTheme = useStore((state) => state.toggleTheme)
+  const colorTheme = useStore((state) => state.colorTheme)
+  const setColorTheme = useStore((state) => state.setColorTheme)
   const viewMode = useStore((state) => state.viewMode)
+
   const { loadProjectData } = useProjectData()
 
   // In non-board mode, auto-enable disableGitBranching
@@ -229,6 +233,22 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
     }
   }
 
+  const handleThemePickerClick = () => {
+    handleClose()
+    themeBeforePreview.current = { slug: colorTheme }
+    setThemeSearchQuery('')
+    setThemePickerDialogOpen(true)
+  }
+
+  const handleThemePickerClose = () => {
+    // Revert to the saved theme if the user didn't confirm
+    if (themeBeforePreview.current) {
+      setColorTheme(themeBeforePreview.current.slug)
+      themeBeforePreview.current = null
+    }
+    setThemePickerDialogOpen(false)
+  }
+
   const handleKeyboardShortcuts = () => {
     handleClose()
     window.dispatchEvent(new CustomEvent('open-keyboard-shortcuts'))
@@ -276,11 +296,15 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
           }
         }}
       >
-        <MenuItem onClick={() => { toggleTheme(); handleClose() }}>
+        <MenuItem onClick={handleThemePickerClick}>
           <ListItemIcon>
-            {themeMode === 'light' ? <DarkModeIcon fontSize="small" /> : <LightModeIcon fontSize="small" />}
+            <PaletteIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText primary={themeMode === 'light' ? 'Dark Mode' : 'Light Mode'} />
+          <ListItemText
+            primary="Color Theme"
+            secondary={base24Schemes[colorTheme]?.name || colorTheme}
+            secondaryTypographyProps={{ variant: 'caption' }}
+          />
         </MenuItem>
         {!compact && viewMode === 'board' && (
           <MenuItem onClick={() => { loadProjectData(); handleClose() }}>
@@ -857,6 +881,134 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
             </Typography>
           </Box>
         </DialogContent>
+      </Dialog>
+
+      {/* Theme Picker Dialog */}
+      <Dialog
+        open={themePickerDialogOpen}
+        onClose={handleThemePickerClose}
+        maxWidth="xs"
+        fullWidth
+        hideBackdrop
+        sx={{ pointerEvents: 'none', '& .MuiDialog-paper': { pointerEvents: 'auto' } }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          Color Theme
+          <IconButton size="small" onClick={handleThemePickerClose}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <TextField
+            placeholder="Search themes..."
+            size="small"
+            fullWidth
+            value={themeSearchQuery}
+            onChange={(e) => setThemeSearchQuery(e.target.value)}
+            sx={{ mb: 0.5 }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, px: 0.5 }}>
+            {themeSearchQuery
+              ? `${themeList.filter(t => t.name.toLowerCase().includes(themeSearchQuery.toLowerCase())).length} of ${themeList.length} themes`
+              : `${themeList.length} themes`
+            }
+          </Typography>
+          <Box
+            sx={{
+              maxHeight: 400,
+              overflow: 'auto',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 1
+            }}
+          >
+            {(['dark', 'light'] as const).map((variant) => {
+              const filtered = themeList.filter(
+                (t) => t.variant === variant &&
+                  t.name.toLowerCase().includes(themeSearchQuery.toLowerCase())
+              )
+              if (filtered.length === 0) return null
+              return (
+                <Box key={variant}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      px: 1.5,
+                      py: 0.5,
+                      display: 'block',
+                      fontWeight: 600,
+                      bgcolor: 'background.paper',
+                      borderBottom: 1,
+                      borderColor: 'divider',
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 1
+                    }}
+                  >
+                    {variant === 'dark' ? 'Dark Themes' : 'Light Themes'}
+                  </Typography>
+                  {filtered.map((option) => {
+                    const scheme = base24Schemes[option.slug]
+                    const p = scheme?.palette
+                    const swatchColors = p ? [
+                      `#${p.base08}`, `#${p.base0A}`, `#${p.base0B}`, `#${p.base0D}`, `#${p.base0E}`
+                    ] : []
+                    const isActive = option.slug === colorTheme
+                    return (
+                      <Box
+                        key={option.slug}
+                        onClick={() => {
+                          setColorTheme(option.slug)
+                        }}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          px: 1.5,
+                          py: 0.75,
+                          cursor: 'pointer',
+                          bgcolor: isActive ? 'action.selected' : 'transparent',
+                          '&:hover': { bgcolor: 'action.hover' }
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
+                          {swatchColors.map((color, i) => (
+                            <Box
+                              key={i}
+                              sx={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: '50%',
+                                bgcolor: color,
+                                border: 1,
+                                borderColor: 'divider'
+                              }}
+                            />
+                          ))}
+                        </Box>
+                        <Typography variant="body2" noWrap>
+                          {option.name}
+                        </Typography>
+                      </Box>
+                    )
+                  })}
+                </Box>
+              )
+            })}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleThemePickerClose}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              themeBeforePreview.current = null
+              setThemePickerDialogOpen(false)
+            }}
+          >
+            Save
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* Base Branch Selection Dialog */}
