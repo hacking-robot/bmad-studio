@@ -26,15 +26,15 @@ export function parseStoryContent(markdown: string): StoryContent {
       currentSection = 'story'
       continue
     }
-    if (line.startsWith('## Acceptance Criteria') || trimmed.startsWith('**Acceptance Criteria')) {
+    if (line.startsWith('## Acceptance Criteria') || /^\*\*Acceptance\s+Criteria/.test(trimmed)) {
       currentSection = 'ac'
       continue
     }
-    if (line.startsWith('## Tasks') || trimmed.startsWith('**Tasks')) {
+    if (line.startsWith('## Tasks') || /^\*\*Tasks/.test(trimmed)) {
       currentSection = 'tasks'
       continue
     }
-    if (line.startsWith('## Dev Notes') || trimmed.startsWith('**Technical Notes')) {
+    if (line.startsWith('## Dev Notes') || /^\*\*Technical\s+Notes/.test(trimmed)) {
       currentSection = 'devnotes'
       continue
     }
