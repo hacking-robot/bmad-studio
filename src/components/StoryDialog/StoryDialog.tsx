@@ -332,12 +332,14 @@ export default function StoryDialog() {
                   sx={{
                     bgcolor: 'action.hover',
                     borderRadius: 2,
-                    p: 2
+                    p: 2,
+                    '& p': { m: 0, mb: 1, '&:last-child': { mb: 0 } },
+                    '& ul, & ol': { pl: 3, mb: 1, '& li': { mb: 0.5 } }
                   }}
                 >
-                  <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
                     {selectedStory.epicDescription}
-                  </Typography>
+                  </ReactMarkdown>
                 </Box>
               </Box>
             )}
