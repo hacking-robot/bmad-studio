@@ -134,6 +134,7 @@ const electronStorage = {
           disableEnvCheck,
           chatSidebarWidth,
           gitDiffPanelWidth,
+          zoomLevel,
         } = parsed.state;
 
         // Migrate git settings from app-level to per-project in recentProjects
@@ -210,6 +211,7 @@ const electronStorage = {
           disableEnvCheck: disableEnvCheck ?? false,
           chatSidebarWidth: chatSidebarWidth ?? null,
           gitDiffPanelWidth: gitDiffPanelWidth ?? 600,
+          zoomLevel: zoomLevel ?? 100,
         });
       }
     } catch (error) {
@@ -495,6 +497,10 @@ interface AppState {
     storyId: string | undefined,
     branchName: string | undefined,
   ) => void;
+
+  // Zoom Level
+  zoomLevel: number;
+  setZoomLevel: (level: number) => void;
 
   // Chat Sidebar
   chatSidebarWidth: number | null;
@@ -1293,6 +1299,14 @@ export const useStore = create<AppState>()(
           };
         }),
 
+      // Zoom Level
+      zoomLevel: 100,
+      setZoomLevel: (level) => {
+        const clamped = Math.max(50, Math.min(200, level))
+        set({ zoomLevel: clamped })
+        window.fileAPI.setZoom(clamped)
+      },
+
       // Chat Sidebar
       chatSidebarWidth: null,
       setChatSidebarWidth: (width) => set({ chatSidebarWidth: width }),
@@ -1851,6 +1865,7 @@ export const useStore = create<AppState>()(
         hasConfiguredProfile: state.hasConfiguredProfile,
         chatSidebarWidth: state.chatSidebarWidth,
         gitDiffPanelWidth: state.gitDiffPanelWidth,
+        zoomLevel: state.zoomLevel,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
@@ -1890,6 +1905,10 @@ export const useStore = create<AppState>()(
           // Set correct initial viewMode based on project type
           if (state.projectType === 'dashboard') {
             state.viewMode = 'dashboard';
+          }
+          // Restore persisted zoom level
+          if (state.zoomLevel && state.zoomLevel !== 100) {
+            window.fileAPI.setZoom(state.zoomLevel)
           }
           state.setHasHydrated(true);
         }

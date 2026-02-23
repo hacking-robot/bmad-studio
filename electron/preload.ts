@@ -122,6 +122,8 @@ export interface FileAPI {
   scanBmad: (projectPath: string) => Promise<unknown | null>
   onFilesChanged: (callback: () => void) => () => void
   onShowKeyboardShortcuts: (callback: () => void) => () => void
+  setZoom: (level: number) => Promise<void>
+  onZoomChanged: (callback: (level: number) => void) => () => void
 }
 
 const fileAPI: FileAPI = {
@@ -147,6 +149,12 @@ const fileAPI: FileAPI = {
     const listener = () => callback()
     ipcRenderer.on('show-keyboard-shortcuts', listener)
     return () => ipcRenderer.removeListener('show-keyboard-shortcuts', listener)
+  },
+  setZoom: (level: number) => ipcRenderer.invoke('set-zoom', level),
+  onZoomChanged: (callback: (level: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, level: number) => callback(level)
+    ipcRenderer.on('zoom-changed', listener)
+    return () => ipcRenderer.removeListener('zoom-changed', listener)
   }
 }
 

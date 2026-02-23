@@ -410,9 +410,40 @@ function createMenu() {
         { role: 'forceReload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        {
+          label: 'Actual Size',
+          accelerator: 'CmdOrCtrl+0',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.setZoomFactor(1)
+              mainWindow.webContents.send('zoom-changed', 100)
+            }
+          }
+        },
+        {
+          label: 'Zoom In',
+          accelerator: 'CmdOrCtrl+=',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              const currentFactor = mainWindow.webContents.getZoomFactor()
+              const newLevel = Math.min(200, Math.round(currentFactor * 100) + 10)
+              mainWindow.webContents.setZoomFactor(newLevel / 100)
+              mainWindow.webContents.send('zoom-changed', newLevel)
+            }
+          }
+        },
+        {
+          label: 'Zoom Out',
+          accelerator: 'CmdOrCtrl+-',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              const currentFactor = mainWindow.webContents.getZoomFactor()
+              const newLevel = Math.max(50, Math.round(currentFactor * 100) - 10)
+              mainWindow.webContents.setZoomFactor(newLevel / 100)
+              mainWindow.webContents.send('zoom-changed', newLevel)
+            }
+          }
+        },
         { type: 'separator' },
         { role: 'togglefullscreen' }
       ]
@@ -704,6 +735,13 @@ ipcMain.handle('get-settings', async () => {
 
 ipcMain.handle('save-settings', async (_, settings: Partial<AppSettings>) => {
   return await saveSettings(settings)
+})
+
+ipcMain.handle('set-zoom', async (_, level: number) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const clamped = Math.max(50, Math.min(200, level))
+    mainWindow.webContents.setZoomFactor(clamped / 100)
+  }
 })
 
 // File watching for auto-refresh
@@ -1552,11 +1590,18 @@ ipcMain.handle('update-story-status', async (_, filePath: string, newStatus: str
     const content = await readFile(sprintStatusPath, 'utf-8')
     const sprintStatus = parseYaml(content)
 
+    // Validate and normalize the status before writing
+    const { normalizeStatus } = await import('../src/types')
+    const normalized = normalizeStatus(newStatus)
+    if (!normalized) {
+      return { success: false, error: `Unrecognized status: "${newStatus}"` }
+    }
+
     // Update the story status in development_status section
     if (!sprintStatus.development_status) {
       sprintStatus.development_status = {}
     }
-    sprintStatus.development_status[storyKey] = newStatus
+    sprintStatus.development_status[storyKey] = normalized
 
     // Write the file back with proper YAML formatting
     const updatedContent = stringifyYaml(sprintStatus, {
