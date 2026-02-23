@@ -6,8 +6,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import { ChatMessage as ChatMessageType, LLMStats, ToolCall } from '../../types'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useStore } from '../../store'
+import { useThemedSyntax } from '../../hooks/useThemedSyntax'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
@@ -84,7 +84,7 @@ function getLanguageFromExtension(lang: string): string {
 }
 
 // Create markdown components with proper styling
-function createMarkdownComponents(isDark: boolean): Components {
+function createMarkdownComponents(isDark: boolean, prismStyle: Record<string, React.CSSProperties>): Components {
   return {
     // Code blocks and inline code
     code({ className, children }) {
@@ -143,7 +143,7 @@ function createMarkdownComponents(isDark: boolean): Components {
             </Box>
             <SyntaxHighlighter
               language={getLanguageFromExtension(language)}
-              style={isDark ? vscDarkPlus : vs}
+              style={prismStyle}
               customStyle={{
                 margin: 0,
                 borderRadius: 4,
@@ -385,6 +385,7 @@ function ToolCallsSummary({ toolCalls }: { toolCalls: ToolCall[] }) {
 export default function ChatMessage({ message, agentName, agentAvatar }: ChatMessageProps) {
   const themeMode = useStore((state) => state.themeMode)
   const verboseMode = useStore((state) => state.verboseMode)
+  const { prismStyle: themedPrismStyle } = useThemedSyntax()
   const isDark = themeMode === 'dark'
   const isUser = message.role === 'user'
   const isError = message.status === 'error'
@@ -486,7 +487,7 @@ export default function ChatMessage({ message, agentName, agentAvatar }: ChatMes
           ) : (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              components={createMarkdownComponents(contentIsDark)}
+              components={createMarkdownComponents(contentIsDark, themedPrismStyle)}
             >
               {message.content}
             </ReactMarkdown>

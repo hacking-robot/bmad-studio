@@ -12,11 +12,12 @@ import CloseIcon from '@mui/icons-material/Close'
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { gruvboxDark, gruvboxLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { useStore } from '../../store'
-import { gruvbox } from '../../theme'
+import { useThemedSyntax } from '../../hooks/useThemedSyntax'
 
-const createCodeBlock = (isDark: boolean): Components['code'] => {
+const createCodeBlock = (
+  prismStyle: Record<string, React.CSSProperties>,
+  codeColors: { background: string; color: string }
+): Components['code'] => {
   return ({ className, children, ...props }) => {
     const match = /language-(\w+)/.exec(className || '')
     const language = match ? match[1] : ''
@@ -27,8 +28,8 @@ const createCodeBlock = (isDark: boolean): Components['code'] => {
       return (
         <code
           style={{
-            backgroundColor: isDark ? gruvbox.dark2 : gruvbox.light2,
-            color: isDark ? gruvbox.light1 : gruvbox.dark1,
+            backgroundColor: codeColors.background,
+            color: codeColors.color,
             padding: '2px 6px',
             borderRadius: 4,
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
@@ -43,7 +44,7 @@ const createCodeBlock = (isDark: boolean): Components['code'] => {
 
     return (
       <SyntaxHighlighter
-        style={isDark ? gruvboxDark : gruvboxLight}
+        style={prismStyle}
         language={language || 'text'}
         PreTag="div"
         customStyle={{ margin: '8px 0', borderRadius: 8, fontSize: '0.85rem' }}
@@ -62,7 +63,7 @@ interface WizardArtifactDialogProps {
 }
 
 export default function WizardArtifactDialog({ open, title, filePath, onClose }: WizardArtifactDialogProps) {
-  const themeMode = useStore((state) => state.themeMode)
+  const { prismStyle, inlineCodeColors } = useThemedSyntax()
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -93,7 +94,7 @@ export default function WizardArtifactDialog({ open, title, filePath, onClose }:
     load()
   }, [open, filePath])
 
-  const CodeBlock = createCodeBlock(themeMode === 'dark')
+  const CodeBlock = createCodeBlock(prismStyle, inlineCodeColors)
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth PaperProps={{ sx: { maxHeight: '85vh' } }}>

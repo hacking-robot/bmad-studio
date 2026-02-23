@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "typecheck": "tsc --noEmit",
+    "convert-themes": "tsx scripts/convert-themes.ts",
     "prepare": "husky",
     "release": "tsc && vite build && electron-builder --publish always"
   },

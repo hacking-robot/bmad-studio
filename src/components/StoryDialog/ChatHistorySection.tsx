@@ -17,9 +17,8 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { gruvboxDark, gruvboxLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useStore } from '../../store'
-import { gruvbox } from '../../theme'
+import { useThemedSyntax } from '../../hooks/useThemedSyntax'
 import type { StoryChatHistory, StoryChatSession, LLMStats } from '../../types'
 
 interface ChatHistorySectionProps {
@@ -91,52 +90,26 @@ function formatStats(stats: LLMStats): string {
 }
 
 // Session component
-function ChatSession({ session, isDark }: { session: StoryChatSession; isDark: boolean }) {
+function ChatSession({ session }: { session: StoryChatSession }) {
   const [expanded, setExpanded] = useState(false)
+  const { prismStyle, inlineCodeColors } = useThemedSyntax()
 
-  // Create theme-aware code block component
   const CodeBlock = useMemo(() => {
     return ({ className, children, ...props }: { className?: string; children?: React.ReactNode }) => {
       const match = /language-(\w+)/.exec(className || '')
       const language = match ? match[1] : ''
       const codeString = String(children).replace(/\n$/, '')
-
       const isInline = !match && !codeString.includes('\n')
-
       if (isInline) {
         return (
-          <code
-            style={{
-              backgroundColor: isDark ? gruvbox.dark2 : gruvbox.light2,
-              color: isDark ? gruvbox.light1 : gruvbox.dark1,
-              padding: '2px 6px',
-              borderRadius: 4,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              fontSize: '0.85em'
-            }}
-            {...props}
-          >
-            {children}
-          </code>
+          <code style={{ backgroundColor: inlineCodeColors.background, color: inlineCodeColors.color, padding: '2px 6px', borderRadius: 4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '0.85em' }} {...props}>{children}</code>
         )
       }
-
       return (
-        <SyntaxHighlighter
-          style={isDark ? gruvboxDark : gruvboxLight}
-          language={language || 'text'}
-          PreTag="div"
-          customStyle={{
-            margin: '8px 0',
-            borderRadius: 8,
-            fontSize: '0.75rem'
-          }}
-        >
-          {codeString}
-        </SyntaxHighlighter>
+        <SyntaxHighlighter style={prismStyle} language={language || 'text'} PreTag="div" customStyle={{ margin: '8px 0', borderRadius: 8, fontSize: '0.75rem' }}>{codeString}</SyntaxHighlighter>
       )
     }
-  }, [isDark])
+  }, [prismStyle, inlineCodeColors])
 
   const userMessageCount = session.messages.filter(m => m.role === 'user').length
   const duration = formatDuration(session.startTime, session.endTime)
@@ -308,8 +281,6 @@ function ChatSession({ session, isDark }: { session: StoryChatSession; isDark: b
 export default function ChatHistorySection({ storyId }: ChatHistorySectionProps) {
   const projectPath = useStore((state) => state.projectPath)
   const outputFolder = useStore((state) => state.outputFolder)
-  const themeMode = useStore((state) => state.themeMode)
-  const isDark = themeMode === 'dark'
 
   const [history, setHistory] = useState<StoryChatHistory | null>(null)
   const [loading, setLoading] = useState(true)
@@ -384,7 +355,7 @@ export default function ChatHistorySection({ storyId }: ChatHistorySectionProps)
       </AccordionSummary>
       <AccordionDetails sx={{ p: 3 }}>
         {sortedSessions.map((session) => (
-          <ChatSession key={session.sessionId} session={session} isDark={isDark} />
+          <ChatSession key={session.sessionId} session={session} />
         ))}
       </AccordionDetails>
     </Accordion>

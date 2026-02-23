@@ -41,4 +41,11 @@
 | #19643 | " | 🔵 | Store.ts Structure and State Management Foundation | ~333 |
 | #19642 | " | 🔵 | App.tsx Root Component Has No Update Notification System | ~355 |
 | #19633 | 3:52 PM | 🔵 | Application Store Has No Update State Management | ~276 |
+
+### Feb 22, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #20581 | 5:15 PM | 🔵 | Comprehensive BMAD Version and Module Detection System Analysis | ~440 |
+| #20570 | 5:13 PM | 🔵 | BMAD Scan Data in Application Store | ~267 |
 </claude-mem-context>

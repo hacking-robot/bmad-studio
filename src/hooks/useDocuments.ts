@@ -161,6 +161,7 @@ export function useDocuments() {
   const projectType = useStore((state) => state.projectType)
   const outputFolder = useStore((state) => state.outputFolder)
   const bmadScanResult = useStore((state) => state.bmadScanResult)
+  const documentsRevision = useStore((state) => state.documentsRevision)
   const [folders, setFolders] = useState<DocumentFolder[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -293,7 +294,7 @@ export function useDocuments() {
     } finally {
       setLoading(false)
     }
-  }, [projectPath, projectType, outputFolder, bmadScanResult])
+  }, [projectPath, projectType, outputFolder, bmadScanResult, documentsRevision])
 
   useEffect(() => {
     loadDocuments()

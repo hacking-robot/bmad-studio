@@ -37,6 +37,7 @@ import { generateDiffFile } from '@git-diff-view/file'
 import { useStore } from '../../store'
 import { AI_TOOLS } from '../../types'
 import { useWorkflow } from '../../hooks/useWorkflow'
+import { useThemedSyntax } from '../../hooks/useThemedSyntax'
 import '@git-diff-view/react/styles/diff-view.css'
 import './diff-styles.css'
 
@@ -475,6 +476,9 @@ export default function GitDiffPanel() {
   // Get agents from workflow
   const { agents } = useWorkflow()
 
+  // Themed diff view styles
+  const { diffViewCss } = useThemedSyntax()
+
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -798,6 +802,15 @@ export default function GitDiffPanel() {
       default: return 'Changed'
     }
   }
+
+  // Inject themed diff view CSS
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.setAttribute('data-diff-theme', 'true')
+    style.textContent = diffViewCss
+    document.head.appendChild(style)
+    return () => { document.head.removeChild(style) }
+  }, [diffViewCss])
 
   // Early return when panel is closed
   if (!gitDiffPanelOpen || !branchName) return null

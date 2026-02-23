@@ -97,6 +97,7 @@ const electronStorage = {
         // Only save the settings we care about
         const {
           themeMode,
+          colorTheme,
           aiTool,
           claudeModel,
           customEndpoint,
@@ -177,6 +178,7 @@ const electronStorage = {
         // Note: enableAgents is intentionally NOT persisted - must re-enable each session
         debouncedSave({
           themeMode,
+          colorTheme: colorTheme || "gruvbox-dark",
           aiTool: aiTool || "claude-code",
           claudeModel: claudeModel || "opus",
           customEndpoint: customEndpoint || null,
@@ -216,6 +218,7 @@ const electronStorage = {
   removeItem: async (_name: string): Promise<void> => {
     await window.fileAPI.saveSettings({
       themeMode: "dark",
+      colorTheme: "gruvbox-dark",
       aiTool: "claude-code",
       claudeModel: "opus",
       customEndpoint: null,
@@ -257,6 +260,8 @@ interface AppState {
   themeMode: "light" | "dark";
   setThemeMode: (mode: "light" | "dark") => void;
   toggleTheme: () => void;
+  colorTheme: string;
+  setColorTheme: (theme: string) => void;
 
   // AI Tool
   aiTool: AITool;
@@ -349,6 +354,8 @@ interface AppState {
   error: string | null;
   lastRefreshed: Date | null;
   isWatching: boolean;
+  documentsRevision: number;
+  bumpDocumentsRevision: () => void;
   setEpics: (epics: Epic[]) => void;
   setStories: (stories: Story[]) => void;
   setLoading: (loading: boolean) => void;
@@ -622,6 +629,8 @@ export const useStore = create<AppState>()(
         set((state) => ({
           themeMode: state.themeMode === "light" ? "dark" : "light",
         })),
+      colorTheme: "gruvbox-dark",
+      setColorTheme: (theme) => set({ colorTheme: theme }),
 
       // AI Tool
       aiTool: "claude-code",
@@ -822,6 +831,8 @@ export const useStore = create<AppState>()(
       setError: (error) => set({ error }),
       setLastRefreshed: (date) => set({ lastRefreshed: date }),
       setIsWatching: (watching) => set({ isWatching: watching }),
+      documentsRevision: 0,
+      bumpDocumentsRevision: () => set((state) => ({ documentsRevision: state.documentsRevision + 1 })),
 
       // Filters
       selectedEpicId: null,
@@ -1793,6 +1804,7 @@ export const useStore = create<AppState>()(
       storage: createJSONStorage(() => electronStorage),
       partialize: (state) => ({
         themeMode: state.themeMode,
+        colorTheme: state.colorTheme,
         aiTool: state.aiTool,
         claudeModel: state.claudeModel,
         customEndpoint: state.customEndpoint,

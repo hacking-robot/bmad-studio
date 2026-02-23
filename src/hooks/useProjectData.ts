@@ -81,9 +81,7 @@ export function useProjectData() {
       setProjectType(result.projectType)
       setOutputFolder(resolvedOutputFolder)
       // Set correct viewMode for the project type
-      if (result.projectType === 'dashboard') {
-        setViewMode('dashboard')
-      }
+      setViewMode(result.projectType === 'dashboard' ? 'dashboard' : 'board')
       addRecentProject({
         path: result.path,
         projectType: result.projectType,
@@ -543,15 +541,18 @@ export function useProjectData() {
     // Skip file watching if wizard is active (wizard has its own watcher)
     if (wizardIsActive) return
 
-    // Dashboard projects have no board files to watch
-    if (projectType === 'dashboard') return
-
-    // Start watching for file changes
+    // Start watching for file changes (all project types including dashboard)
     window.fileAPI.startWatching(projectPath, projectType, outputFolder)
     setIsWatching(true)
 
     // Listen for file changes - use refs to get latest callbacks without triggering effect
     const cleanup = window.fileAPI.onFilesChanged(() => {
+      // Always bump documents revision so useDocuments refreshes
+      useStore.getState().bumpDocumentsRevision()
+
+      // Dashboard projects have no board data to reload
+      if (projectType === 'dashboard') return
+
       // Skip reload if user is currently dragging (they already triggered a reload)
       const { isUserDragging, selectedStory } = useStore.getState()
       if (isUserDragging) {

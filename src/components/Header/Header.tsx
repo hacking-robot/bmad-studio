@@ -60,7 +60,7 @@ export default function Header() {
   const scannedWorkflowConfig = useStore((state) => state.scannedWorkflowConfig)
   const developerMode = useStore((state) => state.developerMode)
   const bmadScanResult = useStore((state) => state.bmadScanResult)
-  const { folders, getModuleLabel } = useDocuments()
+  const { folders, allFiles, getModuleLabel } = useDocuments()
   const [docsAnchor, setDocsAnchor] = useState<null | HTMLElement>(null)
   const [selectedArtifact, setSelectedArtifact] = useState<DocumentFile | null>(null)
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
@@ -177,6 +177,52 @@ export default function Header() {
         <ProjectSwitcher />
         <Box sx={{ flexGrow: 1 }} />
 
+        {scannedWorkflowConfig?.projectWorkflows && toolSupportsHeadless && (
+          <Tooltip title="Project Workflows">
+            <IconButton
+              onClick={() => setProjectWorkflowsDialogOpen(true)}
+              size="small"
+              sx={{ color: 'text.secondary' }}
+            >
+              <AccountTreeIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+        <Tooltip title="Documents">
+          <IconButton
+            onClick={(e) => setDocsAnchor(e.currentTarget)}
+            size="small"
+            sx={{ color: 'text.secondary' }}
+          >
+            <Badge badgeContent={allFiles.length} color="primary" invisible={allFiles.length === 0}>
+              <FolderOpenIcon fontSize="small" />
+            </Badge>
+          </IconButton>
+        </Tooltip>
+        {!hasBrd && enableAgents && (
+          <Tooltip title={agentPanelOpen ? 'Hide Agents' : 'Show Agents'}>
+            <IconButton
+              onClick={toggleAgentPanel}
+              size="small"
+              sx={{ color: agentPanelOpen ? 'primary.main' : 'text.secondary' }}
+            >
+              <Badge badgeContent={runningAgentsCount} color="success" invisible={runningAgentsCount === 0}>
+                <TerminalIcon fontSize="small" />
+              </Badge>
+            </IconButton>
+          </Tooltip>
+        )}
+        {!hasBrd && (
+          <Tooltip title="BMAD Guide (F1)">
+            <IconButton
+              onClick={() => setHelpPanelOpen(true)}
+              size="small"
+              sx={{ color: 'text.secondary' }}
+            >
+              <HelpOutlineIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
         <SettingsMenu />
       </Toolbar>
 
@@ -296,26 +342,6 @@ export default function Header() {
                 </IconButton>
               </Tooltip>
             )}
-            {scannedWorkflowConfig?.projectWorkflows && toolSupportsHeadless && (
-              <Tooltip title="Project Workflows">
-                <IconButton
-                  onClick={() => setProjectWorkflowsDialogOpen(true)}
-                  size="small"
-                  sx={{ color: 'text.secondary' }}
-                >
-                  <AccountTreeIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            )}
-            <Tooltip title="Documents">
-              <IconButton
-                onClick={(e) => setDocsAnchor(e.currentTarget)}
-                size="small"
-                sx={{ color: 'text.secondary' }}
-              >
-                <FolderOpenIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
             <Tooltip title="Status History">
               <IconButton
                 onClick={() => setStatusHistoryPanelOpen(!statusHistoryPanelOpen)}
@@ -345,54 +371,6 @@ export default function Header() {
         </Toolbar>
       )}
 
-      {/* Bottom bar - Dashboard Tools (dashboard projects only) */}
-      {!hasBrd && (viewMode === 'dashboard' || viewMode === 'chat') && (
-        <Toolbar
-          variant="dense"
-          sx={{
-            minHeight: 38,
-            gap: 1.5,
-            pl: { xs: 2, sm: 2 },
-            borderTop: 1,
-            borderColor: 'divider',
-          }}
-        >
-          <Box sx={{ flexGrow: 1 }} />
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {enableAgents && (
-              <Tooltip title={agentPanelOpen ? 'Hide Agents' : 'Show Agents'}>
-                <IconButton
-                  onClick={toggleAgentPanel}
-                  size="small"
-                  sx={{ color: agentPanelOpen ? 'primary.main' : 'text.secondary' }}
-                >
-                  <Badge badgeContent={runningAgentsCount} color="success" invisible={runningAgentsCount === 0}>
-                    <TerminalIcon fontSize="small" />
-                  </Badge>
-                </IconButton>
-              </Tooltip>
-            )}
-            <Tooltip title="Documents">
-              <IconButton
-                onClick={(e) => setDocsAnchor(e.currentTarget)}
-                size="small"
-                sx={{ color: 'text.secondary' }}
-              >
-                <FolderOpenIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="BMAD Guide (F1)">
-              <IconButton
-                onClick={() => setHelpPanelOpen(true)}
-                size="small"
-                sx={{ color: 'text.secondary' }}
-              >
-                <HelpOutlineIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </Toolbar>
-      )}
       {/* Documents Popover */}
       <Popover
         open={Boolean(docsAnchor)}
@@ -446,9 +424,6 @@ export default function Header() {
                   }
                   <Typography variant="caption" fontWeight={600} sx={{ flex: 1, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary' }}>
                     {folder.label}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'text.disabled', mr: 0.5 }}>
-                    {folder.files.length}
                   </Typography>
                   {moduleLabel && (
                     <Chip
