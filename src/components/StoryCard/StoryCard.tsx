@@ -15,6 +15,8 @@ import GroupsIcon from '@mui/icons-material/Groups'
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Story, EPIC_COLORS, AI_TOOLS } from '../../types'
 import type { AgentDefinition } from '../../types/flow'
 import { useStore } from '../../store'
@@ -451,8 +453,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
 
           {/* User story description */}
           {story.epicDescription && (
-            <Typography
-              variant="caption"
+            <Box
               sx={{
                 mt: 1,
                 color: 'text.secondary',
@@ -461,11 +462,15 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
                 WebkitLineClamp: 2,
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
-                lineHeight: 1.3
+                lineHeight: 1.3,
+                fontSize: '0.75rem',
+                '& p': { m: 0 },
+                '& ul, & ol': { m: 0, pl: 2 },
+                '& code': { fontSize: '0.7rem' }
               }}
             >
-              {story.epicDescription}
-            </Typography>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{story.epicDescription}</ReactMarkdown>
+            </Box>
           )}
 
           {/* Human Review Progress Badge - only shows for human-review status */}
