@@ -12,6 +12,7 @@ export function parseStoryContent(markdown: string): StoryContent {
   let currentSection = ''
   let currentTask: Task | null = null
   let descriptionLines: string[] = []
+  let acLines: string[] = []
   let devNotesLines: string[] = []
   let developmentRecordLines: string[] = []
   let inFileList = false
@@ -58,6 +59,7 @@ export function parseStoryContent(markdown: string): StoryContent {
         break
 
       case 'ac':
+        acLines.push(line)
         // Match: 1. **AC1: Title** - Description
         const acMatch = line.match(/^\d+\.\s+\*\*([^*]+)\*\*\s*[-–]?\s*(.*)/)
         if (acMatch) {
@@ -117,11 +119,13 @@ export function parseStoryContent(markdown: string): StoryContent {
   description = descriptionLines.join('\n').trim()
   devNotes = devNotesLines.join('\n').trim()
   const developmentRecord = developmentRecordLines.join('\n').trim() || undefined
+  const acceptanceCriteriaRaw = acceptanceCriteria.length === 0 ? acLines.join('\n').trim() || undefined : undefined
 
   return {
     rawMarkdown: markdown,
     description,
     acceptanceCriteria,
+    acceptanceCriteriaRaw,
     tasks,
     devNotes,
     fileChanges,
