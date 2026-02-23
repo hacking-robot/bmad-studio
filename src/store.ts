@@ -49,6 +49,7 @@ export interface RecentProject {
   enableEpicBranches?: boolean;
   allowDirectEpicMerge?: boolean;
   disableGitBranching?: boolean;
+  colorTheme?: string;
 }
 
 const MAX_HISTORY_ENTRIES = 50;
@@ -630,7 +631,17 @@ export const useStore = create<AppState>()(
           themeMode: state.themeMode === "light" ? "dark" : "light",
         })),
       colorTheme: "gruvbox-dark",
-      setColorTheme: (theme) => set({ colorTheme: theme }),
+      setColorTheme: (theme) =>
+        set((state) => ({
+          colorTheme: theme,
+          recentProjects: state.projectPath
+            ? state.recentProjects.map((p) =>
+                p.path === state.projectPath
+                  ? { ...p, colorTheme: theme }
+                  : p,
+              )
+            : state.recentProjects,
+        })),
 
       // AI Tool
       aiTool: "claude-code",
@@ -1872,6 +1883,8 @@ export const useStore = create<AppState>()(
                 state.disableGitBranching = current.disableGitBranching;
               if (current.developerMode)
                 state.developerMode = current.developerMode;
+              if (current.colorTheme)
+                state.colorTheme = current.colorTheme;
             }
           }
           // Set correct initial viewMode based on project type

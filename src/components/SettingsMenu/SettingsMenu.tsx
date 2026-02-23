@@ -301,7 +301,7 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
             <PaletteIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
-            primary="Color Theme"
+            primary="Project Color Theme"
             secondary={base24Schemes[colorTheme]?.name || colorTheme}
             secondaryTypographyProps={{ variant: 'caption' }}
           />
@@ -893,7 +893,7 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
         sx={{ pointerEvents: 'none', '& .MuiDialog-paper': { pointerEvents: 'auto' } }}
       >
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          Color Theme
+          Project Color Theme
           <IconButton size="small" onClick={handleThemePickerClose}>
             <CloseIcon />
           </IconButton>
