@@ -4,7 +4,7 @@ import { getStoryStatus, getEpicStatus } from './parseSprintStatus'
 
 interface ParsedStory {
   title: string
-  storyNumber: number
+  storyNumber: number | string
   description: string // Full user story text from epics.md
   acceptanceCriteriaPreview?: string[]  // First 3 AC items
   technicalNotes?: string               // Technical Notes section
@@ -138,13 +138,14 @@ export function parseEpics(
     // Match heading format: ### Story 1.3: Title
     // This works with or without a ### Stories section header
     if (currentEpic) {
-      const headingMatch = line.match(/^### Story \d+\.(\d+):\s*(.+)$/)
+      const headingMatch = line.match(/^### Story \d+\.([\w]+):\s*(.+)$/)
       if (headingMatch) {
         finishCurrentStory()
         inStoriesSection = true
-        storyNumber = parseInt(headingMatch[1])
+        const rawStoryNum = headingMatch[1]
+        const parsedStoryNum: number | string = /^\d+$/.test(rawStoryNum) ? parseInt(rawStoryNum) : rawStoryNum
         const title = stripMarkdown(headingMatch[2].trim())
-        currentStory = { title, storyNumber, description: title }
+        currentStory = { title, storyNumber: parsedStoryNum, description: title }
         continue
       }
     }

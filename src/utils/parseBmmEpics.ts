@@ -4,7 +4,7 @@ import { getStoryStatus, getEpicStatus } from './parseSprintStatus'
 
 interface ParsedStory {
   title: string
-  storyNumber: number
+  storyNumber: number | string
   description: string // User story from epics.md (As a... I want... So that...)
   acceptanceCriteriaPreview?: string[]  // First 3 AC items
   technicalNotes?: string               // Technical Notes section
@@ -137,13 +137,14 @@ export function parseBmmEpics(
       continue
     }
 
-    // Match BMM Story header: ### Story 1.1: Title Here
-    const storyMatch = line.match(/^### Story (\d+)\.(\d+): (.+)$/)
+    // Match BMM Story header: ### Story 1.1: Title Here or ### Story 1.F0: Title
+    const storyMatch = line.match(/^### Story (\d+)\.([\w]+): (.+)$/)
     if (storyMatch && currentEpic) {
       finishCurrentStory()
       inStoriesSection = true
       const epicNumber = parseInt(storyMatch[1])
-      const storyNumber = parseInt(storyMatch[2])
+      const rawStoryNum = storyMatch[2]
+      const storyNumber = /^\d+$/.test(rawStoryNum) ? parseInt(rawStoryNum) : rawStoryNum
       const title = stripMarkdown(storyMatch[3].trim())
 
       // Only add if this story belongs to the current epic
