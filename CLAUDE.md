@@ -7,7 +7,7 @@ Electron desktop application for visualizing and managing BMAD projects as a sto
 - **Frontend**: React 18, TypeScript, MUI 6, Zustand
 - **Desktop**: Electron 33
 - **Build**: Vite, electron-builder
-- **Styling**: Emotion (CSS-in-JS), Gruvbox theme
+- **Styling**: Emotion (CSS-in-JS), Base24 color themes (100+ schemes)
 
 ## Key Commands
 
@@ -30,6 +30,7 @@ src/
 │   ├── BranchSwitcher/  # Git branch switching with activity info
 │   ├── CommandPalette/  # Keyboard-driven command palette
 │   ├── common/          # Shared utility components (SearchableDropdown)
+│   ├── Dashboard/       # Workflow dashboard with module-grouped commands
 │   ├── EnvCheckDialog/  # Environment prerequisites check on project open
 │   ├── EpicFilter/      # Filter stories by epic
 │   ├── FullCycleDialog/ # Full cycle & epic cycle automation UI
@@ -47,16 +48,19 @@ src/
 │   ├── StatusHistoryPanel/ # Story status change history timeline
 │   ├── StoryCard/       # Story card display with epic badges
 │   ├── StoryDialog/     # Story detail modal with chat history
-│   ├── ThemeToggle/     # Light/dark mode toggle
+│   ├── ThemeToggle/     # Color theme selector
 │   ├── UncommittedChanges/ # Show uncommitted git changes
 │   ├── WelcomeDialog/   # Project folder selection on first launch
 │   ├── GlobalChatHandler.tsx      # Chat context provider for message handling
 │   └── IncompatibleVersionDialog.tsx # BMAD version compatibility gate
 ├── hooks/
 │   ├── useChatMessageHandler.ts  # Agent chat message processing
+│   ├── useDocuments.ts           # Document/artifact file discovery & loading
 │   ├── useFullCycle.ts           # Full cycle automation state
 │   ├── usePlanningArtifacts.ts   # Planning artifact file loading
 │   ├── useProjectData.ts         # Project data loading & refresh
+│   ├── useResolvedTheme.ts       # Resolve active Base24 color scheme from store
+│   ├── useThemedSyntax.ts        # Theme-aware syntax highlighting styles
 │   └── useWorkflow.ts            # Workflow config resolution
 ├── utils/
 │   ├── chatUtils.ts              # Chat history save/load per story
@@ -67,6 +71,7 @@ src/
 │   ├── parseSprintStatus.ts      # Sprint status YAML parser
 │   ├── parseStory.ts             # Story markdown parser
 │   ├── projectTypes.ts           # Project type detection
+│   ├── syntaxTheme.ts            # Base24-driven PrismJS syntax theme generator
 │   └── workflowMerge.ts          # Merge scanned & static workflows
 ├── data/
 │   ├── flow-bmm.json             # BMM alpha workflow config
@@ -76,6 +81,7 @@ src/
 │   ├── board-overlay-gds.json    # GDS board overlay config
 │   ├── humanDevFiles.ts          # BMM human-mode dev file templates
 │   ├── humanDevFilesGds.ts       # GDS human-mode dev file templates
+│   ├── themes/                   # Base24 color scheme definitions (100+ schemes)
 │   └── wizardSteps.ts            # Project wizard step definitions
 ├── types/
 │   ├── index.ts                  # Core types (Story, Epic, ClaudeModel, etc.)
@@ -84,7 +90,7 @@ src/
 │   ├── bmadScan.ts               # BMAD filesystem scan types
 │   └── projectWizard.ts          # Project wizard types
 ├── store.ts             # Zustand state management
-├── theme.ts             # MUI theme configuration (Gruvbox)
+├── theme.ts             # MUI theme configuration (Base24-driven)
 └── App.tsx              # Root component
 
 electron/
@@ -131,7 +137,7 @@ electron/
 - Per-project git settings (base branch, gitignore handling, epic branches)
 
 ### Developer Experience
-- Dark/Light mode with Gruvbox theme
+- 100+ Base24 color themes with dark/light variants
 - Command palette (`Cmd/Ctrl+K`) and comprehensive keyboard shortcuts
 - Auto-refresh via file watching for story file changes
 - Auto-update with GitHub Releases (check, download, install on quit)
@@ -147,7 +153,7 @@ electron/
 ### Settings
 - AI tool selection and model configuration
 - Custom endpoint support (Anthropic-compatible APIs)
-- Theme, verbose mode, notifications
+- Color theme selection (100+ Base24 schemes), verbose mode, notifications
 - Review count (0–5 rounds), developer mode (AI/Human)
 - BMAD profile (user name, language)
 - Max thread messages limit
