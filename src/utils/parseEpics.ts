@@ -35,10 +35,11 @@ export function parseEpics(
       const fullText = storyDescriptionLines.join('\n')
 
       // Extract the user story description (before any section headers)
+      // Use \s+ instead of literal space to handle non-breaking spaces from AI tools
       const description = fullText
-        .split(/\*\*Acceptance Criteria:?\*\*/i)[0]
-        .split(/\*\*Technical Notes:?\*\*/i)[0]
-        .split(/\*\*FRs addressed:?\*\*/i)[0]
+        .split(/\*\*Acceptance\s+Criteria:?\*\*/i)[0]
+        .split(/\*\*Technical\s+Notes:?\*\*/i)[0]
+        .split(/\*\*FRs\s+addressed:?\*\*/i)[0]
         .split(/\*\*Requirements:?\*\*/i)[0]
         .trim()
       if (description) {
@@ -46,7 +47,7 @@ export function parseEpics(
       }
 
       // Extract Acceptance Criteria section
-      const acMatch = fullText.match(/\*\*Acceptance Criteria:?\*\*\s*([\s\S]*?)(?=\*\*Technical Notes:?\*\*|\*\*FRs addressed:?\*\*|\*\*Requirements:?\*\*|---\s*$|$)/i)
+      const acMatch = fullText.match(/\*\*Acceptance\s+Criteria:?\*\*\s*([\s\S]*?)(?=\*\*Technical\s+Notes:?\*\*|\*\*FRs\s+addressed:?\*\*|\*\*Requirements:?\*\*|---\s*$|$)/i)
       if (acMatch) {
         const acItems = acMatch[1].trim()
           .split('\n')
@@ -60,7 +61,7 @@ export function parseEpics(
       }
 
       // Extract Technical Notes section
-      const techMatch = fullText.match(/\*\*Technical Notes:?\*\*\s*([\s\S]*?)(?=\*\*Acceptance Criteria:?\*\*|\*\*FRs addressed:?\*\*|\*\*Requirements:?\*\*|---\s*$|$)/i)
+      const techMatch = fullText.match(/\*\*Technical\s+Notes:?\*\*\s*([\s\S]*?)(?=\*\*Acceptance\s+Criteria:?\*\*|\*\*FRs\s+addressed:?\*\*|\*\*Requirements:?\*\*|---\s*$|$)/i)
       if (techMatch) {
         const techText = techMatch[1].trim()
         if (techText) {
@@ -69,7 +70,7 @@ export function parseEpics(
       }
 
       // Extract FRs addressed section
-      const frsMatch = fullText.match(/\*\*FRs addressed:?\*\*\s*([\s\S]*?)(?=\*\*Acceptance Criteria:?\*\*|\*\*Technical Notes:?\*\*|\*\*Requirements:?\*\*|---\s*$|$)/i)
+      const frsMatch = fullText.match(/\*\*FRs\s+addressed:?\*\*\s*([\s\S]*?)(?=\*\*Acceptance\s+Criteria:?\*\*|\*\*Technical\s+Notes:?\*\*|\*\*Requirements:?\*\*|---\s*$|$)/i)
       if (frsMatch) {
         const frsItems = frsMatch[1].trim()
           .split(/[,\n]/)
