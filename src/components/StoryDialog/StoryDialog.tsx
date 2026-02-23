@@ -23,14 +23,13 @@ import {
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import CheckCircleIcon from '@mui/icons-material/CheckCircle'
-import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn'
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -108,6 +107,19 @@ export default function StoryDialog() {
 
   const openGitDiffPanel = useStore((state) => state.openGitDiffPanel)
 
+  // Dev notes side panel state
+  const [showDevNotes, setShowDevNotes] = useState(false)
+
+  // Auto-open implementation notes for ready-for-dev and in-progress stories
+  useEffect(() => {
+    if (selectedStory && storyContent?.devNotes) {
+      const status = selectedStory.status
+      if (status === 'ready-for-dev' || status === 'in-progress') {
+        setShowDevNotes(true)
+      }
+    }
+  }, [selectedStory?.id, storyContent?.devNotes])
+
   // Git diff state
   const [branchExists, setBranchExists] = useState(false)
 
@@ -133,6 +145,7 @@ export default function StoryDialog() {
   const CodeBlock = React.useMemo(() => createCodeBlock(prismStyle, inlineCodeColors), [prismStyle, inlineCodeColors])
 
   const handleClose = () => {
+    setShowDevNotes(false)
     setSelectedStory(null)
   }
 
@@ -173,11 +186,13 @@ export default function StoryDialog() {
     <Dialog
       open={Boolean(selectedStory)}
       onClose={handleClose}
-      maxWidth="md"
+      maxWidth={false}
       fullWidth
       PaperProps={{
         sx: {
-          maxHeight: '90vh'
+          maxHeight: '90vh',
+          maxWidth: showDevNotes ? '95vw' : 960,
+          transition: 'max-width 0.3s ease'
         }
       }}
     >
@@ -229,9 +244,6 @@ export default function StoryDialog() {
               Story {selectedStory.epicId}.{selectedStory.storyNumber}
             </Typography>
           </Box>
-          <Typography variant="h5" fontWeight={600}>
-            {selectedStory.title}
-          </Typography>
         </Box>
 
         {/* Git Diff button - only shown if branch exists */}
@@ -263,10 +275,11 @@ export default function StoryDialog() {
         </IconButton>
       </DialogTitle>
 
-      <DialogContent dividers sx={{ p: 0 }}>
+      <DialogContent dividers sx={{ p: 0, display: 'flex', overflow: 'hidden' }}>
         {!storyContent && selectedStory.filePath ? (
           <Box
             sx={{
+              flex: 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -278,7 +291,7 @@ export default function StoryDialog() {
             <Typography color="text.secondary">Loading story content...</Typography>
           </Box>
         ) : !storyContent ? (
-          <Box>
+          <Box sx={{ flex: 1, overflowY: 'auto' }}>
             {/* Epic Context (Collapsible) - for stories without files */}
             {selectedEpic && selectedEpic.goal && (
               <Accordion elevation={0} disableGutters defaultExpanded={false}>
@@ -433,42 +446,28 @@ export default function StoryDialog() {
             )}
           </Box>
         ) : (
-          <Box>
-            {/* Epic Context (Collapsible) */}
-            {selectedEpic && selectedEpic.goal && (
-              <Accordion elevation={0} disableGutters defaultExpanded={false}>
-                <AccordionSummary
-                  expandIcon={<ExpandMoreIcon />}
-                  sx={{ px: 3, bgcolor: 'action.hover' }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Box
-                      sx={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: '50%',
-                        bgcolor: epicColor,
-                        flexShrink: 0
-                      }}
-                    />
-                    <Typography variant="subtitle2" fontWeight={600}>
-                      Epic {selectedEpic.id}: {selectedEpic.name}
-                    </Typography>
-                  </Box>
-                </AccordionSummary>
-                <AccordionDetails sx={{ px: 3, py: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    <strong>Goal:</strong> {selectedEpic.goal}
-                  </Typography>
-                </AccordionDetails>
-              </Accordion>
-            )}
+          <>
+          <Box sx={{ flex: 1, overflowY: 'auto', minWidth: 0, width: showDevNotes ? '50%' : '100%', display: 'flex', flexDirection: 'column' }}>
+            {/* Story Header */}
+            <Box sx={{ display: 'flex', alignItems: 'center', px: 3, minHeight: 48, bgcolor: 'action.hover' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box
+                  sx={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    bgcolor: epicColor,
+                    flexShrink: 0
+                  }}
+                />
+                <Typography variant="subtitle2" fontWeight={600}>
+                  Story {selectedStory.epicId}.{selectedStory.storyNumber}: {selectedStory.title}
+                </Typography>
+              </Box>
+            </Box>
 
             {/* Story Description */}
             <Box sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Story
-              </Typography>
               <Paper
                 variant="outlined"
                 sx={{
@@ -629,11 +628,14 @@ export default function StoryDialog() {
                           onClick={() => handleToggleTask(taskIdx)}
                         >
                           <ListItemIcon sx={{ minWidth: 32 }}>
-                            {task.completed ? (
-                              <CheckCircleIcon color="success" fontSize="small" />
-                            ) : (
-                              <RadioButtonUncheckedIcon color="disabled" fontSize="small" />
-                            )}
+                            <Checkbox
+                              checked={task.completed}
+                              size="small"
+                              color="success"
+                              sx={{ p: 0 }}
+                              tabIndex={-1}
+                              disableRipple
+                            />
                           </ListItemIcon>
                           <ListItemText
                             primary={
@@ -653,17 +655,14 @@ export default function StoryDialog() {
                                 onClick={() => handleToggleTask(taskIdx, subtaskIdx)}
                               >
                                 <ListItemIcon sx={{ minWidth: 28 }}>
-                                  {subtask.completed ? (
-                                    <CheckCircleIcon
-                                      color="success"
-                                      sx={{ fontSize: 16 }}
-                                    />
-                                  ) : (
-                                    <RadioButtonUncheckedIcon
-                                      color="disabled"
-                                      sx={{ fontSize: 16 }}
-                                    />
-                                  )}
+                                  <Checkbox
+                                    checked={subtask.completed}
+                                    size="small"
+                                    color="success"
+                                    sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: 18 } }}
+                                    tabIndex={-1}
+                                    disableRipple
+                                  />
                                 </ListItemIcon>
                                 <ListItemText
                                   primary={
@@ -687,54 +686,6 @@ export default function StoryDialog() {
                 </Box>
                 <Divider />
               </>
-            )}
-
-            {/* Dev Notes (Collapsible) */}
-            {storyContent.devNotes && (
-              <Accordion elevation={0} disableGutters>
-                <AccordionSummary
-                  expandIcon={<ExpandMoreIcon />}
-                  sx={{ px: 3, bgcolor: 'action.hover' }}
-                >
-                  <Typography variant="h6">Dev Notes</Typography>
-                </AccordionSummary>
-                <AccordionDetails sx={{ p: 3 }}>
-                  <Box
-                    sx={{
-                      '& h1, & h2, & h3, & h4': {
-                        mt: 2,
-                        mb: 1,
-                        '&:first-of-type': { mt: 0 }
-                      },
-                      '& p': { mb: 1 },
-                      '& ul, & ol': {
-                        pl: 3,
-                        mb: 1,
-                        '& li': {
-                          mb: 0.5
-                        }
-                      },
-                      '& table': {
-                        width: '100%',
-                        borderCollapse: 'collapse',
-                        '& th, & td': {
-                          border: 1,
-                          borderColor: 'divider',
-                          p: 1
-                        },
-                        '& th': {
-                          bgcolor: 'action.hover',
-                          fontWeight: 600
-                        }
-                      }
-                    }}
-                  >
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
-                      {storyContent.devNotes}
-                    </ReactMarkdown>
-                  </Box>
-                </AccordionDetails>
-              </Accordion>
             )}
 
             {/* File Changes (Collapsible) */}
@@ -829,6 +780,111 @@ export default function StoryDialog() {
             <StatusHistorySection storyId={selectedStory.id} />
 
           </Box>
+
+          {/* Dev Notes Edge Tab */}
+          {storyContent?.devNotes && !showDevNotes && (
+            <Box
+              onClick={() => setShowDevNotes(true)}
+              sx={{
+                writingMode: 'vertical-rl',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 0.5,
+                px: 0.5,
+                cursor: 'pointer',
+                bgcolor: 'text.primary',
+                borderLeft: 1,
+                borderColor: 'divider',
+                color: 'background.paper',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                letterSpacing: 2,
+                userSelect: 'none',
+                transition: 'background-color 0.2s',
+                '&:hover': {
+                  opacity: 0.85
+                }
+              }}
+            >
+              <ChevronRightIcon sx={{ fontSize: 18 }} />
+              Implementation Notes
+              <ChevronRightIcon sx={{ fontSize: 18 }} />
+            </Box>
+          )}
+
+          {/* Dev Notes Side Panel */}
+          {showDevNotes && storyContent?.devNotes && (
+            <>
+              <Divider orientation="vertical" flexItem />
+              <Box
+                sx={{
+                  width: '50%',
+                  flexShrink: 0,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3, minHeight: 48, bgcolor: 'action.hover' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box
+                      sx={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        bgcolor: epicColor,
+                        flexShrink: 0
+                      }}
+                    />
+                    <Typography variant="subtitle2" fontWeight={600}>
+                      Implementation Notes
+                    </Typography>
+                  </Box>
+                  <IconButton size="small" onClick={() => setShowDevNotes(false)}>
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+                <Box sx={{ p: 3, flex: 1, overflowY: 'auto' }}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      '& h1, & h2, & h3, & h4': {
+                        mt: 2,
+                        mb: 1,
+                        '&:first-of-type': { mt: 0 }
+                      },
+                      '& p': { mb: 1 },
+                      '& ul, & ol': {
+                        pl: 3,
+                        mb: 1,
+                        '& li': { mb: 0.5 }
+                      },
+                      '& table': {
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        '& th, & td': {
+                          border: 1,
+                          borderColor: 'divider',
+                          p: 1
+                        },
+                        '& th': {
+                          bgcolor: 'action.hover',
+                          fontWeight: 600
+                        }
+                      }
+                    }}
+                  >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+                      {storyContent.devNotes}
+                    </ReactMarkdown>
+                  </Paper>
+                </Box>
+              </Box>
+            </>
+          )}
+          </>
         )}
       </DialogContent>
     </Dialog>
