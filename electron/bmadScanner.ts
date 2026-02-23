@@ -560,7 +560,6 @@ export async function scanBmadProject(projectPath: string): Promise<BmadScanResu
     const common = ['core', 'bmm', 'gds']
     modules = common.filter(m => existsSync(join(bmadPath, m)))
   }
-  console.log(`[Scanner] Discovered modules: ${JSON.stringify(modules)}`)
 
   // Scan agents from all modules
   const allAgents: ScannedAgent[] = []
@@ -581,7 +580,6 @@ export async function scanBmadProject(projectPath: string): Promise<BmadScanResu
       allAgents.push(...moduleAgents)
     }
   }
-  console.log(`[Scanner] Total agents found: ${allAgents.length}`)
 
   // Clean module list: replace __custom:{code}:{path} entries with just the code
   const cleanModules = modules.map(m => m.startsWith('__custom:') ? m.split(':')[1] : m)

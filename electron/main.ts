@@ -502,6 +502,13 @@ function setupAutoUpdater() {
       console.error('[AutoUpdater] Initial check failed:', err.message)
     })
   }, 5000)
+
+  // Re-check every hour
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error('[AutoUpdater] Periodic check failed:', err.message)
+    })
+  }, 60 * 60 * 1000)
 }
 
 // Auto-updater IPC handlers
