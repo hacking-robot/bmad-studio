@@ -541,6 +541,9 @@ export default function StoryDialog() {
 
                 {/* Story Description */}
                 <Box sx={{ p: 3 }}>
+                  <Typography variant="h6" gutterBottom>
+                    User Story
+                  </Typography>
                   <Paper
                     variant="outlined"
                     sx={{
