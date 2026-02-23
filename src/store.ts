@@ -134,6 +134,7 @@ const electronStorage = {
           disableEnvCheck,
           chatSidebarWidth,
           gitDiffPanelWidth,
+          gitDiffMode,
           zoomLevel,
         } = parsed.state;
 
@@ -211,6 +212,7 @@ const electronStorage = {
           disableEnvCheck: disableEnvCheck ?? false,
           chatSidebarWidth: chatSidebarWidth ?? null,
           gitDiffPanelWidth: gitDiffPanelWidth ?? 600,
+          gitDiffMode: gitDiffMode || 'split',
           zoomLevel: zoomLevel ?? 100,
         });
       }
@@ -510,9 +512,11 @@ interface AppState {
   gitDiffPanelOpen: boolean;
   gitDiffPanelBranch: string | null;
   gitDiffPanelWidth: number;
+  gitDiffMode: 'split' | 'unified';
   openGitDiffPanel: (branchName: string) => void;
   closeGitDiffPanel: () => void;
   setGitDiffPanelWidth: (width: number) => void;
+  setGitDiffMode: (mode: 'split' | 'unified') => void;
 
   // Status History
   statusHistoryByStory: Record<string, StatusChangeEntry[]>;
@@ -1315,12 +1319,14 @@ export const useStore = create<AppState>()(
       gitDiffPanelOpen: false,
       gitDiffPanelBranch: null,
       gitDiffPanelWidth: 600,
+      gitDiffMode: 'split',
       openGitDiffPanel: (branchName) =>
         set({ gitDiffPanelOpen: true, gitDiffPanelBranch: branchName }),
       closeGitDiffPanel: () =>
         set({ gitDiffPanelOpen: false, gitDiffPanelBranch: null }),
       setGitDiffPanelWidth: (width) =>
         set({ gitDiffPanelWidth: Math.max(400, Math.min(1500, width)) }),
+      setGitDiffMode: (mode) => set({ gitDiffMode: mode }),
 
       // Status History
       statusHistoryByStory: {},
@@ -1865,6 +1871,7 @@ export const useStore = create<AppState>()(
         hasConfiguredProfile: state.hasConfiguredProfile,
         chatSidebarWidth: state.chatSidebarWidth,
         gitDiffPanelWidth: state.gitDiffPanelWidth,
+        gitDiffMode: state.gitDiffMode,
         zoomLevel: state.zoomLevel,
       }),
       onRehydrateStorage: () => (state) => {
