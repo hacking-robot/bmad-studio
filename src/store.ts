@@ -527,7 +527,7 @@ interface AppState {
     storyId: string,
     storyTitle: string,
     epicId: number,
-    storyNumber: number,
+    storyNumber: number | string,
     oldStatus: StoryStatus,
     newStatus: StoryStatus,
     source: StatusChangeSource,

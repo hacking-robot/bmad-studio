@@ -54,7 +54,7 @@ export interface Epic {
 export interface Story {
   id: string // e.g., "1-1-place-nand-gates"
   epicId: number
-  storyNumber: number
+  storyNumber: number | string
   title: string
   slug: string
   status: StoryStatus
@@ -337,7 +337,7 @@ export interface StatusChangeEntry {
   storyId: string               // e.g., "1-1-place-nand-gates"
   storyTitle: string            // Human-readable title
   epicId: number                // Epic number
-  storyNumber: number           // Story number within epic
+  storyNumber: number | string   // Story number within epic
   oldStatus: StoryStatus
   newStatus: StoryStatus
   timestamp: number             // Unix timestamp
