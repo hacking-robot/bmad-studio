@@ -72,6 +72,15 @@ export default function App() {
   // Determine if this project has a board module (bmm or gds)
   const hasBrd = bmadScanResult?.modules ? hasBoardModule(bmadScanResult.modules) : projectType !== 'dashboard'
 
+  // Listen for zoom changes from Electron menu (Cmd+=/Cmd+-/Cmd+0)
+  useEffect(() => {
+    const cleanup = window.fileAPI.onZoomChanged((level: number) => {
+      // Update store directly without calling setZoom again (already applied in main process)
+      useStore.setState({ zoomLevel: Math.max(50, Math.min(200, level)) })
+    })
+    return cleanup
+  }, [])
+
   // Listen for auto-updater status (must be at app level so events aren't missed)
   useEffect(() => {
     const cleanup = window.updaterAPI.onUpdateStatus((event) => {

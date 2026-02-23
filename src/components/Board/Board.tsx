@@ -597,7 +597,15 @@ export default function Board() {
           }}
         >
           {displayColumns.map((column) => {
-            const columnStories = stories.filter((s) => getEffectiveStatus(s) === column.status)
+            let columnStories = stories.filter((s) => getEffectiveStatus(s) === column.status)
+
+            // Append orphaned stories (unrecognized status) to the Backlog column
+            if (column.status === 'backlog') {
+              const displayStatuses = new Set(displayColumns.map((c) => c.status))
+              const orphaned = stories.filter((s) => !displayStatuses.has(getEffectiveStatus(s)))
+              columnStories = [...columnStories, ...orphaned]
+            }
+
             const sortedStories = sortStoriesByOrder(columnStories, column.status)
 
             return (
