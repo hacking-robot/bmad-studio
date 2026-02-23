@@ -363,35 +363,27 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
         <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
           {/* Header: Epic Badge + Story ID + Quick Actions Menu */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <Tooltip title="Epics group related stories into a theme" arrow placement="top">
-              <Chip
-                label={`Epic ${story.epicId}`}
-                size="small"
-                onPointerDown={preventDragOnInteractive}
-                sx={{
-                  height: 20,
-                  fontSize: '0.7rem',
-                  fontWeight: 600,
-                  bgcolor: epicColor,
-                  color: 'white',
-                  '& .MuiChip-label': {
-                    px: 1
-                  }
-                }}
-              />
-            </Tooltip>
-            <Tooltip title={isLocked ? 'Switch to this story\'s branch to edit' : `Story ${story.epicId}.${story.storyNumber} - Click card for details`} arrow placement="top">
+            <Chip
+              label={`Story ${story.epicId}.${story.storyNumber}`}
+              size="small"
+              icon={isLocked ? <LockOutlinedIcon sx={{ fontSize: '12px !important' }} /> : undefined}
+              onPointerDown={preventDragOnInteractive}
+              sx={{
+                height: 20,
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                bgcolor: epicColor,
+                color: 'white',
+                '& .MuiChip-label': { px: 1 },
+                '& .MuiChip-icon': { color: 'rgba(255,255,255,0.5)', ml: 0.5 }
+              }}
+            />
+            {story.filePath && (
+              <Tooltip title="Tasks and Implementation notes available" arrow placement="top">
+                <DescriptionIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+              </Tooltip>
+            )}
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
-                {isLocked && (
-                  <LockOutlinedIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
-                )}
-                <Typography
-                  variant="caption"
-                  color={isLocked ? 'text.disabled' : 'text.secondary'}
-                  sx={{ fontWeight: 500, cursor: 'help' }}
-                >
-                  {story.epicId}.{story.storyNumber}
-                </Typography>
                 {/* Spinning icon: shows when teammate working OR for in-progress/review with git activity */}
                 {(workingTeammate || ((effectiveStatus === 'in-progress' || effectiveStatus === 'review') && (runningAgent || isActivelyWorking))) && (
                   <Tooltip
@@ -420,7 +412,6 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
                   </Tooltip>
                 )}
               </Box>
-            </Tooltip>
 
             {/* Quick Actions Menu Button - Three-dot menu */}
             {nextSteps.length > 0 && (
@@ -458,44 +449,23 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
             {story.title}
           </Typography>
 
-          {/* User story from epics.md - shown for stories without a story file */}
-          {!story.filePath && story.epicDescription && (
-            <Tooltip title={story.epicDescription} arrow placement="bottom">
-              <Typography
-                variant="caption"
-                sx={{
-                  mt: 1,
-                  color: 'text.secondary',
-                  fontStyle: 'italic',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  lineHeight: 1.3
-                }}
-              >
-                {story.epicDescription}
-              </Typography>
-            </Tooltip>
-          )}
-
-          {/* File indicator */}
-          {story.filePath && (
-            <Tooltip title="This story has a markdown file with full requirements and acceptance criteria" arrow placement="bottom">
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 0.5,
-                  mt: 1.5,
-                  color: 'text.secondary',
-                  cursor: 'help'
-                }}
-              >
-                <DescriptionIcon sx={{ fontSize: 14 }} />
-                <Typography variant="caption">Story file available</Typography>
-              </Box>
-            </Tooltip>
+          {/* User story description */}
+          {story.epicDescription && (
+            <Typography
+              variant="caption"
+              sx={{
+                mt: 1,
+                color: 'text.secondary',
+                fontStyle: 'italic',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                lineHeight: 1.3
+              }}
+            >
+              {story.epicDescription}
+            </Typography>
           )}
 
           {/* Human Review Progress Badge - only shows for human-review status */}
