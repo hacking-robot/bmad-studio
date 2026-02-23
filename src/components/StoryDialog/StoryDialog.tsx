@@ -107,15 +107,15 @@ export default function StoryDialog() {
 
   const openGitDiffPanel = useStore((state) => state.openGitDiffPanel)
 
-  // Dev notes side panel state
-  const [showDevNotes, setShowDevNotes] = useState(false)
+  // Right side panel state: only one can be open at a time
+  const [sidePanel, setSidePanel] = useState<'none' | 'devNotes' | 'devRecord'>('none')
 
   // Auto-open implementation notes for ready-for-dev and in-progress stories
   useEffect(() => {
     if (selectedStory && storyContent?.devNotes) {
       const status = selectedStory.status
       if (status === 'ready-for-dev' || status === 'in-progress') {
-        setShowDevNotes(true)
+        setSidePanel('devNotes')
       }
     }
   }, [selectedStory?.id, storyContent?.devNotes])
@@ -145,7 +145,7 @@ export default function StoryDialog() {
   const CodeBlock = React.useMemo(() => createCodeBlock(prismStyle, inlineCodeColors), [prismStyle, inlineCodeColors])
 
   const handleClose = () => {
-    setShowDevNotes(false)
+    setSidePanel('none')
     setSelectedStory(null)
   }
 
@@ -191,7 +191,7 @@ export default function StoryDialog() {
       PaperProps={{
         sx: {
           maxHeight: '90vh',
-          maxWidth: showDevNotes ? '95vw' : 960,
+          maxWidth: sidePanel !== 'none' ? '95vw' : 960,
           transition: 'max-width 0.3s ease'
         }
       }}
@@ -290,9 +290,13 @@ export default function StoryDialog() {
             <CircularProgress size={24} />
             <Typography color="text.secondary">Loading story content...</Typography>
           </Box>
-        ) : !storyContent ? (
-          <Box sx={{ flex: 1, overflowY: 'auto' }}>
-            {/* Epic Context (Collapsible) - for stories without files */}
+        ) : (
+          <>
+          <Box sx={{ flex: 1, overflowY: 'auto', minWidth: 0, width: sidePanel !== 'none' ? '50%' : '100%', display: 'flex', flexDirection: 'column' }}>
+
+            {/* === Epic Metadata (always shown when available) === */}
+
+            {/* Epic Context (Collapsible) */}
             {selectedEpic && selectedEpic.goal && (
               <Accordion elevation={0} disableGutters defaultExpanded={false}>
                 <AccordionSummary
@@ -322,8 +326,8 @@ export default function StoryDialog() {
               </Accordion>
             )}
 
-            {/* User Story from epics.md */}
-            {selectedStory.epicDescription && (
+            {/* User Story from epics.md - skip when story file exists (duplicated in story description) */}
+            {selectedStory.epicDescription && !storyContent && (
               <Box sx={{ p: 3 }}>
                 <Typography variant="h6" gutterBottom>
                   User Story
@@ -344,8 +348,8 @@ export default function StoryDialog() {
               </Box>
             )}
 
-            {/* Acceptance Criteria Preview */}
-            {selectedStory.acceptanceCriteriaPreview && selectedStory.acceptanceCriteriaPreview.length > 0 && (
+            {/* Acceptance Criteria Preview from epics.md - skip when story file exists (duplicated in story AC) */}
+            {selectedStory.acceptanceCriteriaPreview && selectedStory.acceptanceCriteriaPreview.length > 0 && !storyContent && (
               <>
                 <Divider />
                 <Box sx={{ p: 3 }}>
@@ -438,8 +442,346 @@ export default function StoryDialog() {
               </>
             )}
 
-            {/* No content message - only show if no metadata at all */}
-            {!selectedStory.epicDescription && !selectedStory.acceptanceCriteriaPreview && !selectedStory.technicalNotes && !selectedStory.frsAddressed && (
+            {/* === Story File Content (only when storyContent exists) === */}
+            {storyContent && (
+              <>
+                <Divider />
+
+                {/* Story Header */}
+                <Box sx={{ display: 'flex', alignItems: 'center', px: 3, minHeight: 48, bgcolor: 'action.hover' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box
+                      sx={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        bgcolor: epicColor,
+                        flexShrink: 0
+                      }}
+                    />
+                    <Typography variant="subtitle2" fontWeight={600}>
+                      Story {selectedStory.epicId}.{selectedStory.storyNumber}: {selectedStory.title}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                {/* Story Description */}
+                <Box sx={{ p: 3 }}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      '& p': { m: 0, mb: 1, '&:last-child': { mb: 0 } },
+                      '& ul, & ol': {
+                        pl: 3,
+                        mb: 1,
+                        '& li': { mb: 0.5 }
+                      }
+                    }}
+                  >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+                      {storyContent.description}
+                    </ReactMarkdown>
+                  </Paper>
+                </Box>
+
+                {/* Human Review Checklist - shows for human-review status OR done status when human review is enabled */}
+                {(effectiveStatus === 'human-review' || (enableHumanReviewColumn && selectedStory.status === 'done')) && humanReviewChecklist.length > 0 && (
+                  <>
+                    <Divider />
+                    <Box sx={{ p: 3, bgcolor: 'action.hover' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                        <AssignmentTurnedInIcon color="primary" />
+                        <Typography variant="h6">
+                          Human Review Checklist ({(humanReviewStates[selectedStory.id]?.checkedItems.length || 0)}/{humanReviewChecklist.length})
+                        </Typography>
+                        <Tooltip title="Check to approve this story" arrow>
+                          <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
+                        </Tooltip>
+                      </Box>
+                      <List dense disablePadding>
+                        {humanReviewChecklist.map((item) => {
+                          const isChecked = humanReviewStates[selectedStory.id]?.checkedItems.includes(item.id) || false
+                          return (
+                            <ListItem key={item.id} sx={{ px: 0, py: 0.5 }}>
+                              <FormControlLabel
+                                control={
+                                  <Checkbox
+                                    checked={isChecked}
+                                    onChange={() => toggleReviewItem(selectedStory.id, item.id)}
+                                    color="success"
+                                  />
+                                }
+                                label={
+                                  <Box>
+                                    <Typography fontWeight={500} sx={{ color: isChecked ? 'text.secondary' : 'text.primary' }}>
+                                      {item.label}
+                                    </Typography>
+                                    {item.description && (
+                                      <Typography variant="caption" color="text.secondary" display="block">
+                                        {item.description}
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                }
+                                sx={{ alignItems: 'flex-start', '& .MuiFormControlLabel-label': { pt: 0.5 } }}
+                              />
+                            </ListItem>
+                          )
+                        })}
+                      </List>
+
+                      {/* Progress indicator */}
+                      <Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: 1, borderColor: 'divider' }}>
+                        <Typography
+                          variant="body2"
+                          color={(humanReviewStates[selectedStory.id]?.checkedItems.length || 0) === humanReviewChecklist.length ? 'success.main' : 'text.secondary'}
+                          fontWeight={500}
+                        >
+                          {(humanReviewStates[selectedStory.id]?.checkedItems.length || 0) === humanReviewChecklist.length
+                            ? 'All items approved. Story review complete.'
+                            : `${humanReviewChecklist.length - (humanReviewStates[selectedStory.id]?.checkedItems.length || 0)} item(s) remaining to review.`
+                          }
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </>
+                )}
+
+                <Divider />
+
+                {/* Acceptance Criteria */}
+                <Box sx={{ p: 3 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Typography variant="h6">
+                      Acceptance Criteria ({storyContent.acceptanceCriteria.length})
+                    </Typography>
+                    <Tooltip title="Criteria that must be met for the story to be considered complete. Written by PM (John)." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
+                    </Tooltip>
+                  </Box>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                  <List dense disablePadding>
+                    {storyContent.acceptanceCriteria.map((ac, index) => (
+                      <ListItem key={ac.id} sx={{ px: 0, py: 0.5 }}>
+                        <ListItemIcon sx={{ minWidth: 32 }}>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              bgcolor: 'primary.main',
+                              color: 'white',
+                              width: 20,
+                              height: 20,
+                              borderRadius: '50%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 600
+                            }}
+                          >
+                            {index + 1}
+                          </Typography>
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={
+                            <Box sx={{ '& p': { m: 0 } }}>
+                              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{ac.title}</ReactMarkdown>
+                            </Box>
+                          }
+                          secondary={
+                            ac.description ? (
+                              <Box sx={{ '& p': { m: 0 } }}>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{ac.description}</ReactMarkdown>
+                              </Box>
+                            ) : null
+                          }
+                          primaryTypographyProps={{ fontWeight: 500, component: 'div' }}
+                          secondaryTypographyProps={{ component: 'div' }}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                  </Paper>
+                </Box>
+
+                <Divider />
+
+                {/* Tasks */}
+                {storyContent.tasks.length > 0 && (
+                  <>
+                    <Box sx={{ p: 3 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <Typography variant="h6">
+                          Tasks ({storyContent.tasks.filter((t) => t.completed).length}/{storyContent.tasks.length})
+                        </Typography>
+                        <Tooltip title="Implementation tasks. Click to toggle completion." arrow>
+                          <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
+                        </Tooltip>
+                      </Box>
+                      <Paper variant="outlined" sx={{ p: 2 }}>
+                      <List dense disablePadding>
+                        {storyContent.tasks.map((task, taskIdx) => (
+                          <Box key={task.id}>
+                            <ListItem
+                              sx={{ px: 0, py: 0.5, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' } }}
+                              onClick={() => handleToggleTask(taskIdx)}
+                            >
+                              <ListItemIcon sx={{ minWidth: 32 }}>
+                                <Checkbox
+                                  checked={task.completed}
+                                  size="small"
+                                  color="success"
+                                  sx={{ p: 0 }}
+                                  tabIndex={-1}
+                                  disableRipple
+                                />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={
+                                  <Box sx={{ '& p': { m: 0 } }}>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{task.title}</ReactMarkdown>
+                                  </Box>
+                                }
+                                primaryTypographyProps={{ fontWeight: 500, component: 'div' }}
+                              />
+                            </ListItem>
+                            {task.subtasks.length > 0 && (
+                              <List dense disablePadding sx={{ pl: 4 }}>
+                                {task.subtasks.map((subtask, subtaskIdx) => (
+                                  <ListItem
+                                    key={subtask.id}
+                                    sx={{ px: 0, py: 0.25, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' } }}
+                                    onClick={() => handleToggleTask(taskIdx, subtaskIdx)}
+                                  >
+                                    <ListItemIcon sx={{ minWidth: 28 }}>
+                                      <Checkbox
+                                        checked={subtask.completed}
+                                        size="small"
+                                        color="success"
+                                        sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: 18 } }}
+                                        tabIndex={-1}
+                                        disableRipple
+                                      />
+                                    </ListItemIcon>
+                                    <ListItemText
+                                      primary={
+                                        <Box sx={{
+                                          '& p': { m: 0 },
+                                          fontSize: '0.875rem',
+                                        }}>
+                                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{subtask.title}</ReactMarkdown>
+                                        </Box>
+                                      }
+                                      primaryTypographyProps={{ component: 'div' }}
+                                    />
+                                  </ListItem>
+                                ))}
+                              </List>
+                            )}
+                          </Box>
+                        ))}
+                      </List>
+                      </Paper>
+                    </Box>
+                    <Divider />
+                  </>
+                )}
+
+                {/* File Changes (Collapsible) */}
+                {storyContent.fileChanges && (
+                  <Accordion elevation={0} disableGutters>
+                    <AccordionSummary
+                      expandIcon={<ExpandMoreIcon />}
+                      sx={{ px: 3, bgcolor: 'action.hover' }}
+                    >
+                      <Typography variant="h6">File Changes</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ p: 3 }}>
+                      {storyContent.fileChanges.created.length > 0 && (
+                        <Box sx={{ mb: 2 }}>
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}
+                          >
+                            <AddIcon fontSize="small" color="success" />
+                            Created ({storyContent.fileChanges.created.length})
+                          </Typography>
+                          <Box
+                            component="ul"
+                            sx={{
+                              m: 0,
+                              pl: 3,
+                              '& li': { fontFamily: 'monospace', fontSize: '0.875rem' }
+                            }}
+                          >
+                            {storyContent.fileChanges.created.map((file, i) => (
+                              <li key={i}>{file}</li>
+                            ))}
+                          </Box>
+                        </Box>
+                      )}
+
+                      {storyContent.fileChanges.modified.length > 0 && (
+                        <Box sx={{ mb: 2 }}>
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}
+                          >
+                            <EditIcon fontSize="small" color="warning" />
+                            Modified ({storyContent.fileChanges.modified.length})
+                          </Typography>
+                          <Box
+                            component="ul"
+                            sx={{
+                              m: 0,
+                              pl: 3,
+                              '& li': { fontFamily: 'monospace', fontSize: '0.875rem' }
+                            }}
+                          >
+                            {storyContent.fileChanges.modified.map((file, i) => (
+                              <li key={i}>{file}</li>
+                            ))}
+                          </Box>
+                        </Box>
+                      )}
+
+                      {storyContent.fileChanges.verified.length > 0 && (
+                        <Box>
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}
+                          >
+                            <VerifiedIcon fontSize="small" color="info" />
+                            Verified ({storyContent.fileChanges.verified.length})
+                          </Typography>
+                          <Box
+                            component="ul"
+                            sx={{
+                              m: 0,
+                              pl: 3,
+                              '& li': { fontFamily: 'monospace', fontSize: '0.875rem' }
+                            }}
+                          >
+                            {storyContent.fileChanges.verified.map((file, i) => (
+                              <li key={i}>{file}</li>
+                            ))}
+                          </Box>
+                        </Box>
+                      )}
+                    </AccordionDetails>
+                  </Accordion>
+                )}
+
+                {/* Chat History (Collapsible) */}
+                <ChatHistorySection storyId={selectedStory.id} />
+
+                {/* Status History (Collapsible) */}
+                <StatusHistorySection storyId={selectedStory.id} />
+              </>
+            )}
+
+            {/* No content message - only show when both epic metadata and storyContent are absent */}
+            {!storyContent && !selectedStory.epicDescription && !selectedStory.acceptanceCriteriaPreview && !selectedStory.technicalNotes && !selectedStory.frsAddressed && (
               <Box sx={{ p: 3 }}>
                 <Typography color="text.secondary">
                   No story file available. This story is still in backlog.
@@ -447,376 +789,78 @@ export default function StoryDialog() {
               </Box>
             )}
           </Box>
-        ) : (
-          <>
-          <Box sx={{ flex: 1, overflowY: 'auto', minWidth: 0, width: showDevNotes ? '50%' : '100%', display: 'flex', flexDirection: 'column' }}>
-            {/* Story Header */}
-            <Box sx={{ display: 'flex', alignItems: 'center', px: 3, minHeight: 48, bgcolor: 'action.hover' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Box
-                  sx={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    bgcolor: epicColor,
-                    flexShrink: 0
-                  }}
-                />
-                <Typography variant="subtitle2" fontWeight={600}>
-                  Story {selectedStory.epicId}.{selectedStory.storyNumber}: {selectedStory.title}
-                </Typography>
-              </Box>
-            </Box>
 
-            {/* Story Description */}
-            <Box sx={{ p: 3 }}>
-              <Paper
-                variant="outlined"
-                sx={{
-                  p: 2,
-                  '& p': { m: 0, mb: 1, '&:last-child': { mb: 0 } },
-                  '& ul, & ol': {
-                    pl: 3,
-                    mb: 1,
-                    '& li': { mb: 0.5 }
-                  }
-                }}
-              >
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
-                  {storyContent.description}
-                </ReactMarkdown>
-              </Paper>
-            </Box>
-
-            {/* Human Review Checklist - shows for human-review status OR done status when human review is enabled */}
-            {(effectiveStatus === 'human-review' || (enableHumanReviewColumn && selectedStory.status === 'done')) && humanReviewChecklist.length > 0 && (
-              <>
-                <Divider />
-                <Box sx={{ p: 3, bgcolor: 'action.hover' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                    <AssignmentTurnedInIcon color="primary" />
-                    <Typography variant="h6">
-                      Human Review Checklist ({(humanReviewStates[selectedStory.id]?.checkedItems.length || 0)}/{humanReviewChecklist.length})
-                    </Typography>
-                    <Tooltip title="Check to approve this story" arrow>
-                      <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
-                    </Tooltip>
-                  </Box>
-                  <List dense disablePadding>
-                    {humanReviewChecklist.map((item) => {
-                      const isChecked = humanReviewStates[selectedStory.id]?.checkedItems.includes(item.id) || false
-                      return (
-                        <ListItem key={item.id} sx={{ px: 0, py: 0.5 }}>
-                          <FormControlLabel
-                            control={
-                              <Checkbox
-                                checked={isChecked}
-                                onChange={() => toggleReviewItem(selectedStory.id, item.id)}
-                                color="success"
-                              />
-                            }
-                            label={
-                              <Box>
-                                <Typography fontWeight={500} sx={{ color: isChecked ? 'text.secondary' : 'text.primary' }}>
-                                  {item.label}
-                                </Typography>
-                                {item.description && (
-                                  <Typography variant="caption" color="text.secondary" display="block">
-                                    {item.description}
-                                  </Typography>
-                                )}
-                              </Box>
-                            }
-                            sx={{ alignItems: 'flex-start', '& .MuiFormControlLabel-label': { pt: 0.5 } }}
-                          />
-                        </ListItem>
-                      )
-                    })}
-                  </List>
-
-                  {/* Progress indicator */}
-                  <Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: 1, borderColor: 'divider' }}>
-                    <Typography
-                      variant="body2"
-                      color={(humanReviewStates[selectedStory.id]?.checkedItems.length || 0) === humanReviewChecklist.length ? 'success.main' : 'text.secondary'}
-                      fontWeight={500}
-                    >
-                      {(humanReviewStates[selectedStory.id]?.checkedItems.length || 0) === humanReviewChecklist.length
-                        ? 'All items approved. Story review complete.'
-                        : `${humanReviewChecklist.length - (humanReviewStates[selectedStory.id]?.checkedItems.length || 0)} item(s) remaining to review.`
-                      }
-                    </Typography>
-                  </Box>
-                </Box>
-              </>
-            )}
-
-            <Divider />
-
-            {/* Acceptance Criteria */}
-            <Box sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <Typography variant="h6">
-                  Acceptance Criteria ({storyContent.acceptanceCriteria.length})
-                </Typography>
-                <Tooltip title="Criteria that must be met for the story to be considered complete. Written by PM (John)." arrow>
-                  <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
-                </Tooltip>
-              </Box>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-              <List dense disablePadding>
-                {storyContent.acceptanceCriteria.map((ac, index) => (
-                  <ListItem key={ac.id} sx={{ px: 0, py: 0.5 }}>
-                    <ListItemIcon sx={{ minWidth: 32 }}>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          bgcolor: 'primary.main',
-                          color: 'white',
-                          width: 20,
-                          height: 20,
-                          borderRadius: '50%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 600
-                        }}
-                      >
-                        {index + 1}
-                      </Typography>
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={
-                        <Box sx={{ '& p': { m: 0 } }}>
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{ac.title}</ReactMarkdown>
-                        </Box>
-                      }
-                      secondary={
-                        ac.description ? (
-                          <Box sx={{ '& p': { m: 0 } }}>
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{ac.description}</ReactMarkdown>
-                          </Box>
-                        ) : null
-                      }
-                      primaryTypographyProps={{ fontWeight: 500, component: 'div' }}
-                      secondaryTypographyProps={{ component: 'div' }}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-              </Paper>
-            </Box>
-
-            <Divider />
-
-            {/* Tasks */}
-            {storyContent.tasks.length > 0 && (
-              <>
-                <Box sx={{ p: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <Typography variant="h6">
-                      Tasks ({storyContent.tasks.filter((t) => t.completed).length}/{storyContent.tasks.length})
-                    </Typography>
-                    <Tooltip title="Implementation tasks. Click to toggle completion." arrow>
-                      <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
-                    </Tooltip>
-                  </Box>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                  <List dense disablePadding>
-                    {storyContent.tasks.map((task, taskIdx) => (
-                      <Box key={task.id}>
-                        <ListItem
-                          sx={{ px: 0, py: 0.5, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' } }}
-                          onClick={() => handleToggleTask(taskIdx)}
-                        >
-                          <ListItemIcon sx={{ minWidth: 32 }}>
-                            <Checkbox
-                              checked={task.completed}
-                              size="small"
-                              color="success"
-                              sx={{ p: 0 }}
-                              tabIndex={-1}
-                              disableRipple
-                            />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={
-                              <Box sx={{ '& p': { m: 0 } }}>
-                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{task.title}</ReactMarkdown>
-                              </Box>
-                            }
-                            primaryTypographyProps={{ fontWeight: 500, component: 'div' }}
-                          />
-                        </ListItem>
-                        {task.subtasks.length > 0 && (
-                          <List dense disablePadding sx={{ pl: 4 }}>
-                            {task.subtasks.map((subtask, subtaskIdx) => (
-                              <ListItem
-                                key={subtask.id}
-                                sx={{ px: 0, py: 0.25, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' } }}
-                                onClick={() => handleToggleTask(taskIdx, subtaskIdx)}
-                              >
-                                <ListItemIcon sx={{ minWidth: 28 }}>
-                                  <Checkbox
-                                    checked={subtask.completed}
-                                    size="small"
-                                    color="success"
-                                    sx={{ p: 0, '& .MuiSvgIcon-root': { fontSize: 18 } }}
-                                    tabIndex={-1}
-                                    disableRipple
-                                  />
-                                </ListItemIcon>
-                                <ListItemText
-                                  primary={
-                                    <Box sx={{
-                                      '& p': { m: 0 },
-                                      fontSize: '0.875rem',
-                                    }}>
-                                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{subtask.title}</ReactMarkdown>
-                                    </Box>
-                                  }
-                                  primaryTypographyProps={{ component: 'div' }}
-                                />
-                              </ListItem>
-                            ))}
-                          </List>
-                        )}
-                      </Box>
-                    ))}
-                  </List>
-                  </Paper>
-                </Box>
-                <Divider />
-              </>
-            )}
-
-            {/* File Changes (Collapsible) */}
-            {storyContent.fileChanges && (
-              <Accordion elevation={0} disableGutters>
-                <AccordionSummary
-                  expandIcon={<ExpandMoreIcon />}
-                  sx={{ px: 3, bgcolor: 'action.hover' }}
-                >
-                  <Typography variant="h6">File Changes</Typography>
-                </AccordionSummary>
-                <AccordionDetails sx={{ p: 3 }}>
-                  {storyContent.fileChanges.created.length > 0 && (
-                    <Box sx={{ mb: 2 }}>
-                      <Typography
-                        variant="subtitle2"
-                        sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}
-                      >
-                        <AddIcon fontSize="small" color="success" />
-                        Created ({storyContent.fileChanges.created.length})
-                      </Typography>
-                      <Box
-                        component="ul"
-                        sx={{
-                          m: 0,
-                          pl: 3,
-                          '& li': { fontFamily: 'monospace', fontSize: '0.875rem' }
-                        }}
-                      >
-                        {storyContent.fileChanges.created.map((file, i) => (
-                          <li key={i}>{file}</li>
-                        ))}
-                      </Box>
-                    </Box>
-                  )}
-
-                  {storyContent.fileChanges.modified.length > 0 && (
-                    <Box sx={{ mb: 2 }}>
-                      <Typography
-                        variant="subtitle2"
-                        sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}
-                      >
-                        <EditIcon fontSize="small" color="warning" />
-                        Modified ({storyContent.fileChanges.modified.length})
-                      </Typography>
-                      <Box
-                        component="ul"
-                        sx={{
-                          m: 0,
-                          pl: 3,
-                          '& li': { fontFamily: 'monospace', fontSize: '0.875rem' }
-                        }}
-                      >
-                        {storyContent.fileChanges.modified.map((file, i) => (
-                          <li key={i}>{file}</li>
-                        ))}
-                      </Box>
-                    </Box>
-                  )}
-
-                  {storyContent.fileChanges.verified.length > 0 && (
-                    <Box>
-                      <Typography
-                        variant="subtitle2"
-                        sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}
-                      >
-                        <VerifiedIcon fontSize="small" color="info" />
-                        Verified ({storyContent.fileChanges.verified.length})
-                      </Typography>
-                      <Box
-                        component="ul"
-                        sx={{
-                          m: 0,
-                          pl: 3,
-                          '& li': { fontFamily: 'monospace', fontSize: '0.875rem' }
-                        }}
-                      >
-                        {storyContent.fileChanges.verified.map((file, i) => (
-                          <li key={i}>{file}</li>
-                        ))}
-                      </Box>
-                    </Box>
-                  )}
-                </AccordionDetails>
-              </Accordion>
-            )}
-
-            {/* Chat History (Collapsible) */}
-            <ChatHistorySection storyId={selectedStory.id} />
-
-            {/* Status History (Collapsible) */}
-            <StatusHistorySection storyId={selectedStory.id} />
-
-          </Box>
-
-          {/* Dev Notes Edge Tab */}
-          {storyContent?.devNotes && !showDevNotes && (
+          {/* Side Panel Edge Tabs */}
+          {(storyContent?.devNotes || storyContent?.developmentRecord) && sidePanel === 'none' && (
             <Box
-              onClick={() => setShowDevNotes(true)}
               sx={{
-                writingMode: 'vertical-rl',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 0.5,
-                px: 0.5,
-                cursor: 'pointer',
-                bgcolor: 'text.primary',
+                flexDirection: 'column',
                 borderLeft: 1,
-                borderColor: 'divider',
-                color: 'background.paper',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                letterSpacing: 2,
-                userSelect: 'none',
-                transition: 'background-color 0.2s',
-                '&:hover': {
-                  opacity: 0.85
-                }
+                borderColor: 'divider'
               }}
             >
-              <ChevronRightIcon sx={{ fontSize: 18 }} />
-              Implementation Notes
-              <ChevronRightIcon sx={{ fontSize: 18 }} />
+              {storyContent?.devNotes && (
+                <Box
+                  onClick={() => setSidePanel('devNotes')}
+                  sx={{
+                    writingMode: 'vertical-rl',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 0.5,
+                    px: 0.5,
+                    flex: 1,
+                    cursor: 'pointer',
+                    bgcolor: 'text.primary',
+                    color: 'background.paper',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    letterSpacing: 2,
+                    userSelect: 'none',
+                    transition: 'opacity 0.2s',
+                    '&:hover': { opacity: 0.85 }
+                  }}
+                >
+                  <ChevronRightIcon sx={{ fontSize: 18 }} />
+                  Implementation Notes
+                  <ChevronRightIcon sx={{ fontSize: 18 }} />
+                </Box>
+              )}
+              {storyContent?.developmentRecord && (
+                <Box
+                  onClick={() => setSidePanel('devRecord')}
+                  sx={{
+                    writingMode: 'vertical-rl',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 0.5,
+                    px: 0.5,
+                    flex: 1,
+                    cursor: 'pointer',
+                    bgcolor: 'primary.main',
+                    color: 'primary.contrastText',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    letterSpacing: 2,
+                    userSelect: 'none',
+                    transition: 'opacity 0.2s',
+                    borderTop: storyContent?.devNotes ? 1 : 0,
+                    borderColor: 'divider',
+                    '&:hover': { opacity: 0.85 }
+                  }}
+                >
+                  <ChevronRightIcon sx={{ fontSize: 18 }} />
+                  Dev Record
+                  <ChevronRightIcon sx={{ fontSize: 18 }} />
+                </Box>
+              )}
             </Box>
           )}
 
-          {/* Dev Notes Side Panel */}
-          {showDevNotes && storyContent?.devNotes && (
+          {/* Side Panel */}
+          {sidePanel !== 'none' && (sidePanel === 'devNotes' ? storyContent?.devNotes : storyContent?.developmentRecord) && (
             <>
               <Divider orientation="vertical" flexItem />
               <Box
@@ -840,12 +884,25 @@ export default function StoryDialog() {
                       }}
                     />
                     <Typography variant="subtitle2" fontWeight={600}>
-                      Implementation Notes
+                      {sidePanel === 'devNotes' ? 'Implementation Notes' : 'Development Record'}
                     </Typography>
                   </Box>
-                  <IconButton size="small" onClick={() => setShowDevNotes(false)}>
-                    <CloseIcon fontSize="small" />
-                  </IconButton>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {/* Toggle to the other panel if both are available */}
+                    {storyContent?.devNotes && storyContent?.developmentRecord && (
+                      <Tooltip title={sidePanel === 'devNotes' ? 'Switch to Development Record' : 'Switch to Implementation Notes'}>
+                        <Chip
+                          label={sidePanel === 'devNotes' ? 'Dev Record' : 'Impl Notes'}
+                          size="small"
+                          onClick={() => setSidePanel(sidePanel === 'devNotes' ? 'devRecord' : 'devNotes')}
+                          sx={{ cursor: 'pointer', fontWeight: 500 }}
+                        />
+                      </Tooltip>
+                    )}
+                    <IconButton size="small" onClick={() => setSidePanel('none')}>
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
                 </Box>
                 <Box sx={{ p: 3, flex: 1, overflowY: 'auto' }}>
                   <Paper
@@ -879,7 +936,7 @@ export default function StoryDialog() {
                     }}
                   >
                     <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
-                      {storyContent.devNotes}
+                      {sidePanel === 'devNotes' ? storyContent!.devNotes : storyContent!.developmentRecord!}
                     </ReactMarkdown>
                   </Paper>
                 </Box>

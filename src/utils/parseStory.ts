@@ -13,6 +13,8 @@ export function parseStoryContent(markdown: string): StoryContent {
   let currentTask: Task | null = null
   let descriptionLines: string[] = []
   let devNotesLines: string[] = []
+  let developmentRecordLines: string[] = []
+  let inFileList = false
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -95,11 +97,26 @@ export function parseStoryContent(markdown: string): StoryContent {
       case 'devnotes':
         devNotesLines.push(line)
         break
+
+      case 'agent':
+        // Skip lines inside ### File List (already parsed into fileChanges)
+        if (line.startsWith('### File List')) {
+          inFileList = true
+          continue
+        }
+        if (inFileList && (line.startsWith('### ') || line.startsWith('## '))) {
+          inFileList = false
+        }
+        if (!inFileList) {
+          developmentRecordLines.push(line)
+        }
+        break
     }
   }
 
   description = descriptionLines.join('\n').trim()
   devNotes = devNotesLines.join('\n').trim()
+  const developmentRecord = developmentRecordLines.join('\n').trim() || undefined
 
   return {
     rawMarkdown: markdown,
@@ -107,7 +124,8 @@ export function parseStoryContent(markdown: string): StoryContent {
     acceptanceCriteria,
     tasks,
     devNotes,
-    fileChanges
+    fileChanges,
+    developmentRecord
   }
 }
 
