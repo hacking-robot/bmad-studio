@@ -153,9 +153,16 @@ export function getInlineCodeColors(
   palette: Base24Palette,
   isDark: boolean
 ): { background: string; color: string } {
+  // Use alpha-based colors derived from foreground for universal theme compatibility.
+  // Specific base slots (base02, base03) vary wildly between themes and can blend
+  // into the paper surface, making inline code invisible.
+  const fg = palette.base05
+  const r = parseInt(fg.slice(0, 2), 16)
+  const g = parseInt(fg.slice(2, 4), 16)
+  const b = parseInt(fg.slice(4, 6), 16)
   return {
-    background: '#' + (isDark ? palette.base02 : palette.base02),
-    color: '#' + (isDark ? palette.base05 : palette.base05),
+    background: `rgba(${r}, ${g}, ${b}, ${isDark ? 0.15 : 0.08})`,
+    color: '#' + (isDark ? palette.base06 : palette.base00),
   }
 }
 
