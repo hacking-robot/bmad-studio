@@ -8,6 +8,7 @@ import { useStore } from './store'
 import { lightTheme, createBase24Theme } from './theme'
 import { useResolvedTheme } from './hooks/useResolvedTheme'
 import { AI_TOOLS } from './types'
+import { useProjectDataEffects } from './hooks/useProjectData'
 import Header from './components/Header/Header'
 import Board from './components/Board/Board'
 import { Dashboard } from './components/Dashboard'
@@ -65,6 +66,9 @@ export default function App() {
   const chatSidebarWidth = useStore((state) => state.chatSidebarWidth)
   const setChatSidebarWidth = useStore((state) => state.setChatSidebarWidth)
 
+  // Project data effects — runs once here, not per-component
+  useProjectDataEffects()
+
   // Determine if this project has a board module (bmm or gds)
   const hasBrd = bmadScanResult?.modules ? hasBoardModule(bmadScanResult.modules) : projectType !== 'dashboard'
 
@@ -98,19 +102,18 @@ export default function App() {
 
   // Run environment check in background; only show dialog if something fails
   useEffect(() => {
-    if (hasHydrated && projectPath && envCheckResults === null && !disableEnvCheck) {
-      setEnvCheckLoading(true)
-      window.cliAPI.checkEnvironment().then((result) => {
-        setEnvCheckResults(result.items)
-        setEnvCheckLoading(false)
-        const hasIssues = result.items.some((i: { status: string }) => i.status === 'error' || i.status === 'warning')
-        if (hasIssues) {
-          setEnvCheckDialogOpen(true)
-        }
-      }).catch(() => {
-        setEnvCheckLoading(false)
-      })
-    }
+    if (!hasHydrated || !projectPath || envCheckResults !== null || disableEnvCheck) return
+    setEnvCheckLoading(true)
+    window.cliAPI.checkEnvironment().then((result) => {
+      setEnvCheckResults(result.items)
+      setEnvCheckLoading(false)
+      const hasIssues = result.items.some((i: { status: string }) => i.status === 'error' || i.status === 'warning')
+      if (hasIssues) {
+        setEnvCheckDialogOpen(true)
+      }
+    }).catch(() => {
+      setEnvCheckLoading(false)
+    })
   }, [hasHydrated, projectPath, envCheckResults, disableEnvCheck, setEnvCheckDialogOpen, setEnvCheckResults, setEnvCheckLoading])
 
   // Open profile dialog on first launch once a project is loaded
