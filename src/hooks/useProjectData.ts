@@ -124,6 +124,7 @@ export function useProjectData() {
       enableEpicBranches: project.enableEpicBranches ?? false,
       allowDirectEpicMerge: project.allowDirectEpicMerge ?? false,
       disableGitBranching: project.disableGitBranching ?? true,
+      colorTheme: project.colorTheme || 'gruvbox-dark',
       selectedEpicId: null,
       recentProjects: updatedRecent,
       chatThreads: {},
