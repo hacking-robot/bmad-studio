@@ -22,7 +22,7 @@ export function parseStoryContent(markdown: string): StoryContent {
 
     // Track current section (supports both ## headings and **bold:** markers)
     const trimmed = line.trim()
-    if (line.startsWith('## Story') || line.startsWith('### Story')) {
+    if (line.startsWith('## Story') || /^### Story\s+\d/.test(line)) {
       currentSection = 'story'
       continue
     }
