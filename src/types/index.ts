@@ -76,6 +76,7 @@ export interface StoryContent {
   tasks: Task[]
   devNotes: string
   fileChanges?: FileChanges
+  developmentRecord?: string
 }
 
 export interface AcceptanceCriterion {
