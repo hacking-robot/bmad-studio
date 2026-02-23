@@ -135,7 +135,7 @@ const commonOptions: ThemeOptions = {
           WebkitAppRegion: 'no-drag'
         }
       }
-    }
+    },
   }
 }
 
@@ -245,7 +245,7 @@ export function createBase24Theme(scheme: Base24Scheme) {
           color: h(p.base05)
         }
       }
-    }
+    },
   }
 
   // For each accent slot, pick whichever of the "standard" (base08-0F) or
@@ -322,6 +322,19 @@ export function createBase24Theme(scheme: Base24Scheme) {
     action
   }
 
+  // Add link styling using resolved accent colors
+  themedComponents.MuiCssBaseline = {
+    styleOverrides: {
+      a: {
+        color: blue.main,
+        textDecorationColor: blue.main,
+        '&:hover': {
+          color: isDark ? adjustLightness(blue.main, 15) : adjustLightness(blue.main, -15)
+        }
+      }
+    }
+  }
+
   const themeResult = createTheme({
     ...commonOptions,
     palette: {
@@ -382,6 +395,18 @@ export const lightTheme = createTheme({
     background: { default: gruvbox.light0, paper: gruvbox.light0_hard },
     text: { primary: gruvbox.dark1, secondary: gruvbox.dark4 },
     divider: gruvbox.light2
+  },
+  components: {
+    ...commonOptions.components,
+    MuiCssBaseline: {
+      styleOverrides: {
+        a: {
+          color: gruvbox.blue.faded,
+          textDecorationColor: gruvbox.blue.faded,
+          '&:hover': { color: '#045566' }
+        }
+      }
+    }
   }
 })
 
@@ -406,6 +431,15 @@ export const darkTheme = createTheme({
         root: {
           boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)',
           backgroundImage: 'none'
+        }
+      }
+    },
+    MuiCssBaseline: {
+      styleOverrides: {
+        a: {
+          color: gruvbox.blue.bright,
+          textDecorationColor: gruvbox.blue.bright,
+          '&:hover': { color: '#a9c4b8' }
         }
       }
     }
