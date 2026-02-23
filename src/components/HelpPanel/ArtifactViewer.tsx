@@ -7,7 +7,8 @@ import {
   Typography,
   Box,
   Chip,
-  CircularProgress
+  CircularProgress,
+  Paper
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import ReactMarkdown, { Components } from 'react-markdown'
@@ -174,8 +175,10 @@ export default function ArtifactViewer({ artifact, onClose }: ArtifactViewerProp
                 <Typography color="error">{error}</Typography>
               </Box>
             ) : content ? (
-              <Box
+              <Paper
+                variant="outlined"
                 sx={{
+                  p: 2,
                   '& h1, & h2, & h3, & h4': {
                     mt: 3,
                     mb: 1.5,
@@ -227,7 +230,7 @@ export default function ArtifactViewer({ artifact, onClose }: ArtifactViewerProp
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
                   {content}
                 </ReactMarkdown>
-              </Box>
+              </Paper>
             ) : null}
           </DialogContent>
         </>

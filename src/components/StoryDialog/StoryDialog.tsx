@@ -18,7 +18,8 @@ import {
   CircularProgress,
   Tooltip,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
+  Paper
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
@@ -468,10 +469,9 @@ export default function StoryDialog() {
               <Typography variant="h6" gutterBottom>
                 Story
               </Typography>
-              <Box
+              <Paper
+                variant="outlined"
                 sx={{
-                  bgcolor: 'action.hover',
-                  borderRadius: 2,
                   p: 2,
                   '& p': { m: 0, mb: 1, '&:last-child': { mb: 0 } },
                   '& ul, & ol': {
@@ -484,7 +484,7 @@ export default function StoryDialog() {
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
                   {storyContent.description}
                 </ReactMarkdown>
-              </Box>
+              </Paper>
             </Box>
 
             {/* Human Review Checklist - shows for human-review status OR done status when human review is enabled */}
@@ -562,6 +562,7 @@ export default function StoryDialog() {
                   <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
                 </Tooltip>
               </Box>
+              <Paper variant="outlined" sx={{ p: 2 }}>
               <List dense disablePadding>
                 {storyContent.acceptanceCriteria.map((ac, index) => (
                   <ListItem key={ac.id} sx={{ px: 0, py: 0.5 }}>
@@ -602,6 +603,7 @@ export default function StoryDialog() {
                   </ListItem>
                 ))}
               </List>
+              </Paper>
             </Box>
 
             <Divider />
@@ -618,6 +620,7 @@ export default function StoryDialog() {
                       <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
                     </Tooltip>
                   </Box>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
                   <List dense disablePadding>
                     {storyContent.tasks.map((task, taskIdx) => (
                       <Box key={task.id}>
@@ -634,10 +637,7 @@ export default function StoryDialog() {
                           </ListItemIcon>
                           <ListItemText
                             primary={
-                              <Box sx={{
-                                '& p': { m: 0 },
-                                ...(task.completed ? { textDecoration: 'line-through', color: 'text.secondary' } : {})
-                              }}>
+                              <Box sx={{ '& p': { m: 0 } }}>
                                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{task.title}</ReactMarkdown>
                               </Box>
                             }
@@ -670,7 +670,6 @@ export default function StoryDialog() {
                                     <Box sx={{
                                       '& p': { m: 0 },
                                       fontSize: '0.875rem',
-                                      ...(subtask.completed ? { textDecoration: 'line-through', color: 'text.secondary' } : {})
                                     }}>
                                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{subtask.title}</ReactMarkdown>
                                     </Box>
@@ -684,6 +683,7 @@ export default function StoryDialog() {
                       </Box>
                     ))}
                   </List>
+                  </Paper>
                 </Box>
                 <Divider />
               </>
