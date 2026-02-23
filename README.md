@@ -15,6 +15,12 @@
 - **AI-Driven Development**: Automate story implementation end-to-end using Claude Code — from branching to code generation, review, and merge
 - **Human-Driven Development**: Manage your sprint workflow manually with the sprint board, using BMAD agents as assistants rather than full automation
 
+### Workflow Dashboard
+- **Dashboard View**: Projects without a board module (BMM/GDS) launch into a dedicated dashboard showing all available workflows and agents
+- **Module Discovery**: Auto-detects BMAD add-on modules (bmb, cis, tea, etc.) with color-coded module chips
+- **One-Click Workflows**: Browse workflows grouped by phase, each showing its assigned agent — click Run to launch directly into chat
+- **Agent Cards**: Grid of discovered agents with role descriptions and quick Chat buttons
+
 ### Sprint Board
 - **Sprint Board**: Drag-and-drop stories across columns (Backlog, Ready for Dev, In Progress, Review, Done, Optional)
 - **Epic Organization**: Stories grouped by epic with color-coded badges
@@ -53,7 +59,7 @@
 - **Configurable Settings**: Base branch (main/master/develop), epic branches, gitignore handling — per-project
 
 ### Developer Experience
-- **Dark/Light Mode**: Gruvbox-themed toggle
+- **100+ Color Themes**: Base24 color schemes with dark/light variants, persisted per-project
 - **Command Palette**: Quick actions via `Cmd/Ctrl+K`
 - **Keyboard Shortcuts**: Comprehensive shortcuts with `Cmd/Ctrl+/` reference dialog
 - **Auto-Refresh**: File watching detects story file changes in real time
@@ -66,7 +72,7 @@
 | Requirement | Supported |
 |-------------|-----------|
 | BMAD Version | **BMAD 6** |
-| Project Types | BMM (BMAD Method), GDS (BMAD Game Dev) |
+| Project Types | BMM (BMAD Method), GDS (BMAD Game Dev), Dashboard (module-only) |
 | AI Tool | Claude Code |
 
 ## Download
@@ -112,7 +118,7 @@ npm run build
 - MUI (Material UI) 6
 - Zustand for state management
 - Vite + electron-builder
-- Emotion (CSS-in-JS) with Gruvbox theme
+- Emotion (CSS-in-JS) with Base24 color themes
 
 ## License
 
