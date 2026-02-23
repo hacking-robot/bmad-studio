@@ -73,6 +73,7 @@ export interface StoryContent {
   rawMarkdown: string
   description: string // The "As a... I want... so that..." part
   acceptanceCriteria: AcceptanceCriterion[]
+  acceptanceCriteriaRaw?: string // Raw markdown fallback when structured AC parsing fails
   tasks: Task[]
   devNotes: string
   fileChanges?: FileChanges

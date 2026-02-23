@@ -628,12 +628,13 @@ export default function StoryDialog() {
                 <Box sx={{ p: 3 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                     <Typography variant="h6">
-                      Acceptance Criteria ({storyContent.acceptanceCriteria.length})
+                      Acceptance Criteria {storyContent.acceptanceCriteria.length > 0 ? `(${storyContent.acceptanceCriteria.length})` : ''}
                     </Typography>
                     <Tooltip title="Criteria that must be met for the story to be considered complete. Written by PM (John)." arrow>
                       <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
                     </Tooltip>
                   </Box>
+                  {storyContent.acceptanceCriteria.length > 0 ? (
                   <Paper variant="outlined" sx={{ p: 2 }}>
                   <List dense disablePadding>
                     {storyContent.acceptanceCriteria.map((ac, index) => (
@@ -676,6 +677,20 @@ export default function StoryDialog() {
                     ))}
                   </List>
                   </Paper>
+                  ) : storyContent.acceptanceCriteriaRaw ? (
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      '& p': { m: 0, mb: 1, '&:last-child': { mb: 0 } },
+                      '& ul, & ol': { pl: 3, mb: 1, '& li': { mb: 0.5 } }
+                    }}
+                  >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+                      {storyContent.acceptanceCriteriaRaw}
+                    </ReactMarkdown>
+                  </Paper>
+                  ) : null}
                 </Box>
 
                 <Divider />
