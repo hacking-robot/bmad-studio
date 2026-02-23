@@ -19,7 +19,9 @@ import {
   Tooltip,
   Checkbox,
   FormControlLabel,
-  Paper
+  Paper,
+  TextField,
+  Button
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
@@ -28,6 +30,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import VerifiedIcon from '@mui/icons-material/Verified'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ReactMarkdown, { Components } from 'react-markdown'
@@ -106,9 +109,20 @@ export default function StoryDialog() {
   const { agents } = useWorkflow()
 
   const openGitDiffPanel = useStore((state) => state.openGitDiffPanel)
+  const developerMode = useStore((state) => state.developerMode)
 
   // Right side panel state: only one can be open at a time
   const [sidePanel, setSidePanel] = useState<'none' | 'devNotes' | 'devRecord'>('none')
+
+  // Dev record editing state (human mode only)
+  const [editingDevRecord, setEditingDevRecord] = useState(false)
+  const [devRecordDraft, setDevRecordDraft] = useState('')
+
+  // Task CRUD state (human mode only)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [addingTaskParent, setAddingTaskParent] = useState<number | null>(null) // -1 = top-level, >= 0 = subtask under that index
+  const [addDraft, setAddDraft] = useState('')
 
   // Auto-open implementation notes for ready-for-dev and in-progress stories
   useEffect(() => {
@@ -144,9 +158,33 @@ export default function StoryDialog() {
   // Create theme-aware code block component (memoized to avoid recreation on every render)
   const CodeBlock = React.useMemo(() => createCodeBlock(prismStyle, inlineCodeColors), [prismStyle, inlineCodeColors])
 
+  // Reset edit state when side panel changes (auto-enter edit for empty dev record in human mode)
+  useEffect(() => {
+    if (sidePanel === 'devRecord' && !storyContent?.developmentRecord && developerMode === 'human') {
+      setEditingDevRecord(true)
+      setDevRecordDraft('')
+    } else {
+      setEditingDevRecord(false)
+      setDevRecordDraft('')
+    }
+  }, [sidePanel, storyContent?.developmentRecord, developerMode])
+
   const handleClose = () => {
     setSidePanel('none')
+    setEditingDevRecord(false)
     setSelectedStory(null)
+  }
+
+  const handleSaveDevRecord = async () => {
+    if (!selectedStory?.filePath) return
+    const result = await window.fileAPI.updateDevelopmentRecord(selectedStory.filePath, devRecordDraft)
+    if (result.success) {
+      const fileResult = await window.fileAPI.readFile(selectedStory.filePath)
+      if (fileResult.content) {
+        setStoryContent(parseStoryContent(fileResult.content))
+      }
+      setEditingDevRecord(false)
+    }
   }
 
   const handleToggleTask = async (taskIndex: number, subtaskIndex: number = -1) => {
@@ -157,6 +195,42 @@ export default function StoryDialog() {
       if (fileResult.content) {
         setStoryContent(parseStoryContent(fileResult.content))
       }
+    }
+  }
+
+  const reloadStoryContent = async () => {
+    if (!selectedStory?.filePath) return
+    const fileResult = await window.fileAPI.readFile(selectedStory.filePath)
+    if (fileResult.content) {
+      setStoryContent(parseStoryContent(fileResult.content))
+    }
+  }
+
+  const handleAddTask = async (parentTaskIndex: number, title: string) => {
+    if (!selectedStory?.filePath || !title.trim()) return
+    const result = await window.fileAPI.addStoryTask(selectedStory.filePath, parentTaskIndex, title.trim())
+    if (result.success) {
+      await reloadStoryContent()
+      setAddingTaskParent(null)
+      setAddDraft('')
+    }
+  }
+
+  const handleEditTask = async (taskIndex: number, subtaskIndex: number, newTitle: string) => {
+    if (!selectedStory?.filePath || !newTitle.trim()) return
+    const result = await window.fileAPI.editStoryTask(selectedStory.filePath, taskIndex, subtaskIndex, newTitle.trim())
+    if (result.success) {
+      await reloadStoryContent()
+      setEditingTaskId(null)
+      setEditDraft('')
+    }
+  }
+
+  const handleDeleteTask = async (taskIndex: number, subtaskIndex: number) => {
+    if (!selectedStory?.filePath) return
+    const result = await window.fileAPI.deleteStoryTask(selectedStory.filePath, taskIndex, subtaskIndex)
+    if (result.success) {
+      await reloadStoryContent()
     }
   }
 
@@ -607,7 +681,7 @@ export default function StoryDialog() {
                 <Divider />
 
                 {/* Tasks */}
-                {storyContent.tasks.length > 0 && (
+                {(storyContent.tasks.length > 0 || (developerMode === 'human' && selectedStory?.filePath)) && (
                   <>
                     <Box sx={{ p: 3 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -617,14 +691,28 @@ export default function StoryDialog() {
                         <Tooltip title="Implementation tasks. Click to toggle completion." arrow>
                           <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
                         </Tooltip>
+                        {developerMode === 'human' && selectedStory?.filePath && (
+                          <Tooltip title="Add task">
+                            <IconButton
+                              size="small"
+                              onClick={() => { setAddingTaskParent(-1); setAddDraft('') }}
+                              sx={{ ml: 'auto' }}
+                            >
+                              <AddIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                       </Box>
+                      {storyContent.tasks.length > 0 ? (
                       <Paper variant="outlined" sx={{ p: 2 }}>
                       <List dense disablePadding>
                         {storyContent.tasks.map((task, taskIdx) => (
                           <Box key={task.id}>
                             <ListItem
-                              sx={{ px: 0, py: 0.5, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' } }}
-                              onClick={() => handleToggleTask(taskIdx)}
+                              sx={{ px: 0, py: 0.5, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' }, '&:hover .task-actions': { opacity: 1 } }}
+                              onClick={() => {
+                                if (editingTaskId !== task.id) handleToggleTask(taskIdx)
+                              }}
                             >
                               <ListItemIcon sx={{ minWidth: 32 }}>
                                 <Checkbox
@@ -636,22 +724,64 @@ export default function StoryDialog() {
                                   disableRipple
                                 />
                               </ListItemIcon>
-                              <ListItemText
-                                primary={
-                                  <Box sx={{ '& p': { m: 0 } }}>
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{task.title}</ReactMarkdown>
-                                  </Box>
-                                }
-                                primaryTypographyProps={{ fontWeight: 500, component: 'div' }}
-                              />
+                              {editingTaskId === task.id ? (
+                                <TextField
+                                  size="small"
+                                  fullWidth
+                                  autoFocus
+                                  value={editDraft}
+                                  onChange={(e) => setEditDraft(e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    e.stopPropagation()
+                                    if (e.key === 'Enter') {
+                                      handleEditTask(taskIdx, -1, editDraft)
+                                    } else if (e.key === 'Escape') {
+                                      setEditingTaskId(null)
+                                      setEditDraft('')
+                                    }
+                                  }}
+                                  sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: '0.875rem' } }}
+                                />
+                              ) : (
+                                <ListItemText
+                                  primary={
+                                    <Box sx={{ '& p': { m: 0 } }}>
+                                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{task.title}</ReactMarkdown>
+                                    </Box>
+                                  }
+                                  primaryTypographyProps={{ fontWeight: 500, component: 'div' }}
+                                />
+                              )}
+                              {developerMode === 'human' && editingTaskId !== task.id && (
+                                <Box className="task-actions" sx={{ display: 'flex', opacity: 0, transition: 'opacity 0.15s', ml: 1 }}>
+                                  <Tooltip title="Add subtask">
+                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); setAddingTaskParent(taskIdx); setAddDraft('') }}>
+                                      <AddIcon sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Edit">
+                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditingTaskId(task.id); setEditDraft(task.title) }}>
+                                      <EditIcon sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Delete task and subtasks">
+                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteTask(taskIdx, -1) }}>
+                                      <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+                              )}
                             </ListItem>
                             {task.subtasks.length > 0 && (
                               <List dense disablePadding sx={{ pl: 4 }}>
                                 {task.subtasks.map((subtask, subtaskIdx) => (
                                   <ListItem
                                     key={subtask.id}
-                                    sx={{ px: 0, py: 0.25, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' } }}
-                                    onClick={() => handleToggleTask(taskIdx, subtaskIdx)}
+                                    sx={{ px: 0, py: 0.25, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' }, '&:hover .task-actions': { opacity: 1 } }}
+                                    onClick={() => {
+                                      if (editingTaskId !== subtask.id) handleToggleTask(taskIdx, subtaskIdx)
+                                    }}
                                   >
                                     <ListItemIcon sx={{ minWidth: 28 }}>
                                       <Checkbox
@@ -663,25 +793,184 @@ export default function StoryDialog() {
                                         disableRipple
                                       />
                                     </ListItemIcon>
-                                    <ListItemText
-                                      primary={
-                                        <Box sx={{
-                                          '& p': { m: 0 },
-                                          fontSize: '0.875rem',
-                                        }}>
-                                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{subtask.title}</ReactMarkdown>
-                                        </Box>
-                                      }
-                                      primaryTypographyProps={{ component: 'div' }}
-                                    />
+                                    {editingTaskId === subtask.id ? (
+                                      <TextField
+                                        size="small"
+                                        fullWidth
+                                        autoFocus
+                                        value={editDraft}
+                                        onChange={(e) => setEditDraft(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onKeyDown={(e) => {
+                                          e.stopPropagation()
+                                          if (e.key === 'Enter') {
+                                            handleEditTask(taskIdx, subtaskIdx, editDraft)
+                                          } else if (e.key === 'Escape') {
+                                            setEditingTaskId(null)
+                                            setEditDraft('')
+                                          }
+                                        }}
+                                        sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: '0.8rem' } }}
+                                      />
+                                    ) : (
+                                      <ListItemText
+                                        primary={
+                                          <Box sx={{
+                                            '& p': { m: 0 },
+                                            fontSize: '0.875rem',
+                                          }}>
+                                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{subtask.title}</ReactMarkdown>
+                                          </Box>
+                                        }
+                                        primaryTypographyProps={{ component: 'div' }}
+                                      />
+                                    )}
+                                    {developerMode === 'human' && editingTaskId !== subtask.id && (
+                                      <Box className="task-actions" sx={{ display: 'flex', opacity: 0, transition: 'opacity 0.15s', ml: 1 }}>
+                                        <Tooltip title="Edit">
+                                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditingTaskId(subtask.id); setEditDraft(subtask.title) }}>
+                                            <EditIcon sx={{ fontSize: 16 }} />
+                                          </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title="Delete subtask">
+                                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteTask(taskIdx, subtaskIdx) }}>
+                                            <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                                          </IconButton>
+                                        </Tooltip>
+                                      </Box>
+                                    )}
                                   </ListItem>
                                 ))}
+                                {/* Inline add subtask */}
+                                {addingTaskParent === taskIdx && (
+                                  <ListItem sx={{ px: 0, py: 0.5 }}>
+                                    <ListItemIcon sx={{ minWidth: 28 }} />
+                                    <TextField
+                                      size="small"
+                                      fullWidth
+                                      autoFocus
+                                      placeholder="New subtask..."
+                                      value={addDraft}
+                                      onChange={(e) => setAddDraft(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && addDraft.trim()) {
+                                          handleAddTask(taskIdx, addDraft)
+                                        } else if (e.key === 'Escape') {
+                                          setAddingTaskParent(null)
+                                          setAddDraft('')
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        if (!addDraft.trim()) {
+                                          setAddingTaskParent(null)
+                                          setAddDraft('')
+                                        }
+                                      }}
+                                      sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: '0.8rem' } }}
+                                    />
+                                  </ListItem>
+                                )}
+                              </List>
+                            )}
+                            {/* Inline add subtask when task has no subtasks yet */}
+                            {task.subtasks.length === 0 && addingTaskParent === taskIdx && (
+                              <List dense disablePadding sx={{ pl: 4 }}>
+                                <ListItem sx={{ px: 0, py: 0.5 }}>
+                                  <ListItemIcon sx={{ minWidth: 28 }} />
+                                  <TextField
+                                    size="small"
+                                    fullWidth
+                                    autoFocus
+                                    placeholder="New subtask..."
+                                    value={addDraft}
+                                    onChange={(e) => setAddDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && addDraft.trim()) {
+                                        handleAddTask(taskIdx, addDraft)
+                                      } else if (e.key === 'Escape') {
+                                        setAddingTaskParent(null)
+                                        setAddDraft('')
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      if (!addDraft.trim()) {
+                                        setAddingTaskParent(null)
+                                        setAddDraft('')
+                                      }
+                                    }}
+                                    sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: '0.8rem' } }}
+                                  />
+                                </ListItem>
                               </List>
                             )}
                           </Box>
                         ))}
                       </List>
+                      {/* Inline add top-level task */}
+                      {addingTaskParent === -1 && (
+                        <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Checkbox disabled size="small" sx={{ p: 0 }} />
+                          <TextField
+                            size="small"
+                            fullWidth
+                            autoFocus
+                            placeholder="New task..."
+                            value={addDraft}
+                            onChange={(e) => setAddDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && addDraft.trim()) {
+                                handleAddTask(-1, addDraft)
+                              } else if (e.key === 'Escape') {
+                                setAddingTaskParent(null)
+                                setAddDraft('')
+                              }
+                            }}
+                            onBlur={() => {
+                              if (!addDraft.trim()) {
+                                setAddingTaskParent(null)
+                                setAddDraft('')
+                              }
+                            }}
+                            sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: '0.875rem' } }}
+                          />
+                        </Box>
+                      )}
                       </Paper>
+                      ) : (
+                        <Paper variant="outlined" sx={{ p: 2 }}>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: addingTaskParent === -1 ? 1 : 0 }}>
+                            No tasks yet. Click + to add one.
+                          </Typography>
+                          {addingTaskParent === -1 && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Checkbox disabled size="small" sx={{ p: 0 }} />
+                              <TextField
+                                size="small"
+                                fullWidth
+                                autoFocus
+                                placeholder="New task..."
+                                value={addDraft}
+                                onChange={(e) => setAddDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && addDraft.trim()) {
+                                    handleAddTask(-1, addDraft)
+                                  } else if (e.key === 'Escape') {
+                                    setAddingTaskParent(null)
+                                    setAddDraft('')
+                                  }
+                                }}
+                                onBlur={() => {
+                                  if (!addDraft.trim()) {
+                                    setAddingTaskParent(null)
+                                    setAddDraft('')
+                                  }
+                                }}
+                                sx={{ '& .MuiInputBase-input': { py: 0.5, fontSize: '0.875rem' } }}
+                              />
+                            </Box>
+                          )}
+                        </Paper>
+                      )}
                     </Box>
                     <Divider />
                   </>
@@ -827,7 +1116,7 @@ export default function StoryDialog() {
                   <ChevronRightIcon sx={{ fontSize: 18 }} />
                 </Box>
               )}
-              {storyContent?.developmentRecord && (
+              {(storyContent?.developmentRecord || (developerMode === 'human' && selectedStory?.filePath && storyContent?.devNotes)) && (
                 <Box
                   onClick={() => setSidePanel('devRecord')}
                   sx={{
@@ -852,7 +1141,7 @@ export default function StoryDialog() {
                   }}
                 >
                   <ChevronRightIcon sx={{ fontSize: 18 }} />
-                  Dev Record
+                  {storyContent?.developmentRecord ? 'Dev Record' : '+ Dev Record'}
                   <ChevronRightIcon sx={{ fontSize: 18 }} />
                 </Box>
               )}
@@ -860,7 +1149,7 @@ export default function StoryDialog() {
           )}
 
           {/* Side Panel */}
-          {sidePanel !== 'none' && (sidePanel === 'devNotes' ? storyContent?.devNotes : storyContent?.developmentRecord) && (
+          {sidePanel !== 'none' && (sidePanel === 'devNotes' ? storyContent?.devNotes : (storyContent?.developmentRecord || editingDevRecord)) && (
             <>
               <Divider orientation="vertical" flexItem />
               <Box
@@ -886,12 +1175,33 @@ export default function StoryDialog() {
                     <Typography variant="subtitle2" fontWeight={600}>
                       {sidePanel === 'devNotes' ? 'Implementation Notes' : 'Development Record'}
                     </Typography>
+                    <Tooltip title={sidePanel === 'devNotes'
+                      ? 'AI-generated guidance for implementing this story, including architecture decisions and approach notes.'
+                      : 'Log of development activity, decisions made, and progress notes recorded during implementation.'
+                    } arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.disabled', cursor: 'help' }} />
+                    </Tooltip>
+                    {/* Edit icon next to title (human mode, dev record only) */}
+                    {sidePanel === 'devRecord' && developerMode === 'human' && selectedStory?.filePath && !editingDevRecord && (
+                      <Tooltip title="Edit Development Record">
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setEditingDevRecord(true)
+                            setDevRecordDraft(storyContent?.developmentRecord || '')
+                          }}
+                        >
+                          <EditIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     {/* Toggle to the other panel if both are available */}
-                    {storyContent?.devNotes && storyContent?.developmentRecord && (
+                    {storyContent?.devNotes && (storyContent?.developmentRecord || (developerMode === 'human' && selectedStory?.filePath)) && (
                       <Tooltip title={sidePanel === 'devNotes' ? 'Switch to Development Record' : 'Switch to Implementation Notes'}>
                         <Chip
+                          icon={<CompareArrowsIcon sx={{ fontSize: 16 }} />}
                           label={sidePanel === 'devNotes' ? 'Dev Record' : 'Impl Notes'}
                           size="small"
                           onClick={() => setSidePanel(sidePanel === 'devNotes' ? 'devRecord' : 'devNotes')}
@@ -899,12 +1209,50 @@ export default function StoryDialog() {
                         />
                       </Tooltip>
                     )}
+                    {/* Save+Cancel for dev record in human mode */}
+                    {sidePanel === 'devRecord' && developerMode === 'human' && selectedStory?.filePath && editingDevRecord && (
+                      <>
+                        <Button
+                          size="small"
+                          onClick={() => {
+                            setEditingDevRecord(false)
+                            setDevRecordDraft('')
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={handleSaveDevRecord}
+                        >
+                          Save
+                        </Button>
+                      </>
+                    )}
                     <IconButton size="small" onClick={() => setSidePanel('none')}>
                       <CloseIcon fontSize="small" />
                     </IconButton>
                   </Box>
                 </Box>
                 <Box sx={{ p: 3, flex: 1, overflowY: 'auto' }}>
+                  {editingDevRecord && sidePanel === 'devRecord' ? (
+                    <TextField
+                      multiline
+                      fullWidth
+                      minRows={12}
+                      value={devRecordDraft}
+                      onChange={(e) => setDevRecordDraft(e.target.value)}
+                      placeholder="Enter development record notes (markdown supported)..."
+                      sx={{
+                        flex: 1,
+                        '& .MuiInputBase-input': {
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                          fontSize: '0.85rem'
+                        }
+                      }}
+                    />
+                  ) : (
                   <Paper
                     variant="outlined"
                     sx={{
@@ -939,6 +1287,7 @@ export default function StoryDialog() {
                       {sidePanel === 'devNotes' ? storyContent!.devNotes : storyContent!.developmentRecord!}
                     </ReactMarkdown>
                   </Paper>
+                  )}
                 </Box>
               </Box>
             </>
