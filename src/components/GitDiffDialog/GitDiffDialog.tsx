@@ -658,19 +658,25 @@ export default function GitDiffPanel() {
     }
 
     try {
-      // Get the default branch to compare against
-      const defaultBranchResult = await window.gitAPI.getDefaultBranch(projectPath)
-      if (defaultBranchResult.error || !defaultBranchResult.branch) {
-        // On refresh, don't overwrite existing data with transient errors (e.g. git lock during agent work)
-        if (!isRefresh) setError('Could not determine default branch')
-        setLoading(false)
-        return
+      let compareBranch: string
+
+      if (disableGitBranching) {
+        // No branching: compare working tree against HEAD (current branch)
+        compareBranch = branchName
+      } else {
+        // Normal mode: compare feature branch against default branch
+        const defaultBranchResult = await window.gitAPI.getDefaultBranch(projectPath)
+        if (defaultBranchResult.error || !defaultBranchResult.branch) {
+          if (!isRefresh) setError('Could not determine default branch')
+          setLoading(false)
+          return
+        }
+        compareBranch = defaultBranchResult.branch
       }
 
-      setDefaultBranch(defaultBranchResult.branch)
+      setDefaultBranch(compareBranch)
 
-      // Get changed files between default branch and the feature branch
-      const result = await window.gitAPI.getChangedFiles(projectPath, defaultBranchResult.branch, branchName)
+      const result = await window.gitAPI.getChangedFiles(projectPath, compareBranch, branchName)
       if (result.error) {
         if (!isRefresh) setError(result.error)
         setLoading(false)

@@ -1335,7 +1335,39 @@ ipcMain.handle('git-changed-files', async (_, projectPath: string, baseBranch: s
     }
   }
 
-  // Process all files and get their metadata
+  // Batch-fetch last commit times for all files in a single git command
+  // instead of spawning one git process per file (which blocks the main thread with spawnSync)
+  const commitTimeMap = new Map<string, number>()
+  const allPaths = Array.from(fileMap.keys())
+  if (allPaths.length > 0) {
+    // git log with --name-only outputs: timestamp\n\nfile1\nfile2\n\ntimestamp\n\nfile3\n...
+    // We parse this to build a map of file -> most recent commit timestamp
+    const logResult = runGitCommand(
+      ['log', '--format=%ct', '--name-only', targetBranch],
+      projectPath,
+      50 * 1024 * 1024
+    )
+    if (!logResult.error && logResult.stdout) {
+      const pathSet = new Set(allPaths)
+      let currentTimestamp = 0
+      for (const line of logResult.stdout.split('\n')) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        // Lines that are purely digits are timestamps
+        if (/^\d+$/.test(trimmed)) {
+          currentTimestamp = parseInt(trimmed, 10) * 1000
+        } else if (currentTimestamp && pathSet.has(trimmed) && !commitTimeMap.has(trimmed)) {
+          // First occurrence = most recent commit for this file
+          commitTimeMap.set(trimmed, currentTimestamp)
+          pathSet.delete(trimmed)
+          // Stop early once all files are resolved
+          if (pathSet.size === 0) break
+        }
+      }
+    }
+  }
+
+  // Get file modification times (async stat calls are fast, no git process needed)
   const files = await Promise.all(
     Array.from(fileMap.entries()).map(async ([filePath, data]) => {
       // Security: Validate file path
@@ -1348,7 +1380,6 @@ ipcMain.handle('git-changed-files', async (_, projectPath: string, baseBranch: s
         }
       }
 
-      // Get file modification time if we're on the branch and file exists
       let mtime: number | null = null
       if (isOnBranch && data.status !== 'D') {
         try {
@@ -1362,18 +1393,11 @@ ipcMain.handle('git-changed-files', async (_, projectPath: string, baseBranch: s
         }
       }
 
-      // For commits, get the last commit time for this file on the branch
-      let lastCommitTime: number | null = null
-      const commitTimeResult = runGitCommand(['log', '-1', '--format=%ct', targetBranch, '--', filePath], projectPath)
-      if (!commitTimeResult.error && commitTimeResult.stdout.trim()) {
-        lastCommitTime = parseInt(commitTimeResult.stdout.trim(), 10) * 1000
-      }
-
       return {
         status: data.status as 'A' | 'M' | 'D' | 'R' | 'C',
         path: filePath,
         mtime,
-        lastCommitTime
+        lastCommitTime: commitTimeMap.get(filePath) ?? null
       }
     })
   )
