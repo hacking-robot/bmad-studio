@@ -1084,6 +1084,36 @@ export default function StoryDialog() {
                   </Accordion>
                 )}
 
+                {/* FRs Addressed */}
+                {selectedStory.frsAddressed && selectedStory.frsAddressed.length > 0 && (
+                  <>
+                    <Divider />
+                    <Box sx={{ p: 3 }}>
+                      <Typography variant="h6" gutterBottom>
+                        Functional Requirements Addressed
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {selectedStory.frsAddressed.map((fr, index) => (
+                          <Box
+                            key={index}
+                            sx={{
+                              px: 1.5,
+                              py: 0.5,
+                              bgcolor: 'warning.main',
+                              color: 'white',
+                              borderRadius: 1,
+                              fontSize: '0.875rem',
+                              fontWeight: 500
+                            }}
+                          >
+                            {fr}
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  </>
+                )}
+
                 {/* Chat History (Collapsible) */}
                 <ChatHistorySection storyId={selectedStory.id} />
 

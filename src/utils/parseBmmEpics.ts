@@ -93,13 +93,12 @@ export function parseBmmEpics(
         }
       }
 
-      // Extract FRs addressed section
-      const frsMatch = fullText.match(/\*\*FRs\s+addressed:?\*\*\s*([\s\S]*?)(?=\*\*Acceptance\s+Criteria:?\*\*|\*\*Technical\s+Notes:?\*\*|$)/i)
+      // Extract FRs addressed section (stop at next **Header:** or blank line)
+      const frsMatch = fullText.match(/\*\*FRs\s+addressed:?\*\*\s*([^\n]+)/i)
       if (frsMatch) {
-        const frsText = frsMatch[1].trim()
-        // Parse as comma-separated or line-separated list
-        const frsItems = frsText
-          .split(/[,\n]/)
+        // Parse comma-separated FRs from the same line
+        const frsItems = frsMatch[1].trim()
+          .split(/,/)
           .map(item => item.trim())
           .filter(Boolean)
         if (frsItems.length > 0) {
