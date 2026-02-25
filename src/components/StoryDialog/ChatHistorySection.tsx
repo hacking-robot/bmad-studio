@@ -16,6 +16,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { useStore } from '../../store'
 import { useThemedSyntax } from '../../hooks/useThemedSyntax'
@@ -252,7 +253,7 @@ function ChatSession({ session }: { session: StoryChatSession }) {
                   '& ul, & ol': { pl: 2, mb: 1 }
                 }}
               >
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>
                   {message.content || '*[Empty message]*'}
                 </ReactMarkdown>
               </Box>

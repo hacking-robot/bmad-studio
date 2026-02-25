@@ -11,6 +11,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close'
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { useThemedSyntax } from '../../hooks/useThemedSyntax'
 
@@ -128,7 +129,7 @@ export default function WizardArtifactDialog({ open, title, filePath, onClose }:
             '& th': { fontWeight: 600, bgcolor: 'action.hover' },
             '& blockquote': { borderLeft: 3, borderColor: 'primary.main', pl: 2, ml: 0, my: 1, color: 'text.secondary' }
           }}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>
               {content}
             </ReactMarkdown>
           </Box>

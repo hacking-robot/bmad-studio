@@ -44,16 +44,41 @@ export function parseBmmEpics(
       currentStory.description = description
 
       // Extract Acceptance Criteria section
-      const acMatch = fullText.match(/\*\*Acceptance\s+Criteria:?\*\*\s*([\s\S]*?)(?=\*\*Technical\s+Notes:?\*\*|\*\*FRs\s+addressed:?\*\*|$)/i)
+      const acMatch = fullText.match(/\*\*Acceptance\s+Criteria:?\*\*\s*([\s\S]*?)(?=\*\*Testing\s+Acceptance\s+Criteria:?\*\*|\*\*Technical\s+Notes:?\*\*|\*\*FRs\s+addressed:?\*\*|$)/i)
       if (acMatch) {
         const acText = acMatch[1].trim()
-        // Parse bullet points (lines starting with - or *)
-        const acItems = acText
-          .split('\n')
-          .map(line => line.trim())
-          .filter(line => line.startsWith('-') || line.startsWith('*'))
-          .map(line => line.replace(/^[-*]\s*/, '').trim())
-          .filter(Boolean)
+        const acLines = acText.split('\n').map(line => line.trim()).filter(Boolean)
+
+        // Detect BDD format (Given/When/Then)
+        const hasBDD = acLines.some(line => /^\*\*(Given|When|Then|And)\*\*/.test(line))
+
+        let acItems: string[]
+        if (hasBDD) {
+          // Parse BDD: group each **Given** block as one AC item, preserving markdown
+          const blocks: string[] = []
+          let current: string[] = []
+          for (const line of acLines) {
+            if (/^\*\*Given\*\*/.test(line)) {
+              if (current.length > 0) blocks.push(current.join('\n'))
+              current = [line]
+            } else if (/^\*\*(When|Then|And)\*\*/.test(line)) {
+              current.push(line)
+            } else if (line.startsWith('- ')) {
+              current.push(line)
+            } else {
+              current.push(line)
+            }
+          }
+          if (current.length > 0) blocks.push(current.join('\n'))
+          acItems = blocks
+        } else {
+          // Parse bullet points (lines starting with - or * but not ** bold)
+          acItems = acLines
+            .filter(line => line.startsWith('- ') || (line.startsWith('* ') && !line.startsWith('**')))
+            .map(line => line.replace(/^[-*]\s*/, '').trim())
+            .filter(Boolean)
+        }
+
         if (acItems.length > 0) {
           currentStory.acceptanceCriteriaPreview = acItems.slice(0, 3) // First 3 items
         }

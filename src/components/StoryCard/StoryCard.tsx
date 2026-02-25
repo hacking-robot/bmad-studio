@@ -17,6 +17,7 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import { Story, EPIC_COLORS, AI_TOOLS } from '../../types'
 import type { AgentDefinition } from '../../types/flow'
 import { useStore } from '../../store'
@@ -453,24 +454,26 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
 
           {/* User story description */}
           {story.epicDescription && (
-            <Box
-              sx={{
-                mt: 1,
-                color: 'text.secondary',
-                fontStyle: 'italic',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                lineHeight: 1.3,
-                fontSize: '0.75rem',
-                '& p': { m: 0 },
-                '& ul, & ol': { m: 0, pl: 2 },
-                '& code': { fontSize: '0.7rem' }
-              }}
-            >
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{story.epicDescription}</ReactMarkdown>
-            </Box>
+            <Tooltip title={story.epicDescription.replace(/\*\*/g, '').slice(0, 150) + (story.epicDescription.length > 150 ? '...' : '')} arrow placement="bottom">
+              <Box
+                sx={{
+                  mt: 1,
+                  color: 'text.secondary',
+                  fontStyle: 'italic',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  lineHeight: 1.3,
+                  fontSize: '0.75rem',
+                  '& p': { m: 0 },
+                  '& ul, & ol': { m: 0, pl: 2 },
+                  '& code': { fontSize: '0.7rem' }
+                }}
+              >
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{story.epicDescription}</ReactMarkdown>
+              </Box>
+            </Tooltip>
           )}
 
           {/* Human Review Progress Badge - only shows for human-review status */}
