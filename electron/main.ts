@@ -410,9 +410,40 @@ function createMenu() {
         { role: 'forceReload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        {
+          label: 'Actual Size',
+          accelerator: 'CmdOrCtrl+0',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.setZoomFactor(1)
+              mainWindow.webContents.send('zoom-changed', 100)
+            }
+          }
+        },
+        {
+          label: 'Zoom In',
+          accelerator: 'CmdOrCtrl+=',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              const currentFactor = mainWindow.webContents.getZoomFactor()
+              const newLevel = Math.min(200, Math.round(currentFactor * 100) + 10)
+              mainWindow.webContents.setZoomFactor(newLevel / 100)
+              mainWindow.webContents.send('zoom-changed', newLevel)
+            }
+          }
+        },
+        {
+          label: 'Zoom Out',
+          accelerator: 'CmdOrCtrl+-',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              const currentFactor = mainWindow.webContents.getZoomFactor()
+              const newLevel = Math.max(50, Math.round(currentFactor * 100) - 10)
+              mainWindow.webContents.setZoomFactor(newLevel / 100)
+              mainWindow.webContents.send('zoom-changed', newLevel)
+            }
+          }
+        },
         { type: 'separator' },
         { role: 'togglefullscreen' }
       ]
@@ -704,6 +735,13 @@ ipcMain.handle('get-settings', async () => {
 
 ipcMain.handle('save-settings', async (_, settings: Partial<AppSettings>) => {
   return await saveSettings(settings)
+})
+
+ipcMain.handle('set-zoom', async (_, level: number) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const clamped = Math.max(50, Math.min(200, level))
+    mainWindow.webContents.setZoomFactor(clamped / 100)
+  }
 })
 
 // File watching for auto-refresh
@@ -1297,7 +1335,39 @@ ipcMain.handle('git-changed-files', async (_, projectPath: string, baseBranch: s
     }
   }
 
-  // Process all files and get their metadata
+  // Batch-fetch last commit times for all files in a single git command
+  // instead of spawning one git process per file (which blocks the main thread with spawnSync)
+  const commitTimeMap = new Map<string, number>()
+  const allPaths = Array.from(fileMap.keys())
+  if (allPaths.length > 0) {
+    // git log with --name-only outputs: timestamp\n\nfile1\nfile2\n\ntimestamp\n\nfile3\n...
+    // We parse this to build a map of file -> most recent commit timestamp
+    const logResult = runGitCommand(
+      ['log', '--format=%ct', '--name-only', targetBranch],
+      projectPath,
+      50 * 1024 * 1024
+    )
+    if (!logResult.error && logResult.stdout) {
+      const pathSet = new Set(allPaths)
+      let currentTimestamp = 0
+      for (const line of logResult.stdout.split('\n')) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        // Lines that are purely digits are timestamps
+        if (/^\d+$/.test(trimmed)) {
+          currentTimestamp = parseInt(trimmed, 10) * 1000
+        } else if (currentTimestamp && pathSet.has(trimmed) && !commitTimeMap.has(trimmed)) {
+          // First occurrence = most recent commit for this file
+          commitTimeMap.set(trimmed, currentTimestamp)
+          pathSet.delete(trimmed)
+          // Stop early once all files are resolved
+          if (pathSet.size === 0) break
+        }
+      }
+    }
+  }
+
+  // Get file modification times (async stat calls are fast, no git process needed)
   const files = await Promise.all(
     Array.from(fileMap.entries()).map(async ([filePath, data]) => {
       // Security: Validate file path
@@ -1310,7 +1380,6 @@ ipcMain.handle('git-changed-files', async (_, projectPath: string, baseBranch: s
         }
       }
 
-      // Get file modification time if we're on the branch and file exists
       let mtime: number | null = null
       if (isOnBranch && data.status !== 'D') {
         try {
@@ -1324,18 +1393,11 @@ ipcMain.handle('git-changed-files', async (_, projectPath: string, baseBranch: s
         }
       }
 
-      // For commits, get the last commit time for this file on the branch
-      let lastCommitTime: number | null = null
-      const commitTimeResult = runGitCommand(['log', '-1', '--format=%ct', targetBranch, '--', filePath], projectPath)
-      if (!commitTimeResult.error && commitTimeResult.stdout.trim()) {
-        lastCommitTime = parseInt(commitTimeResult.stdout.trim(), 10) * 1000
-      }
-
       return {
         status: data.status as 'A' | 'M' | 'D' | 'R' | 'C',
         path: filePath,
         mtime,
-        lastCommitTime
+        lastCommitTime: commitTimeMap.get(filePath) ?? null
       }
     })
   )
@@ -1552,11 +1614,18 @@ ipcMain.handle('update-story-status', async (_, filePath: string, newStatus: str
     const content = await readFile(sprintStatusPath, 'utf-8')
     const sprintStatus = parseYaml(content)
 
+    // Validate and normalize the status before writing
+    const { normalizeStatus } = await import('../src/types')
+    const normalized = normalizeStatus(newStatus)
+    if (!normalized) {
+      return { success: false, error: `Unrecognized status: "${newStatus}"` }
+    }
+
     // Update the story status in development_status section
     if (!sprintStatus.development_status) {
       sprintStatus.development_status = {}
     }
-    sprintStatus.development_status[storyKey] = newStatus
+    sprintStatus.development_status[storyKey] = normalized
 
     // Write the file back with proper YAML formatting
     const updatedContent = stringifyYaml(sprintStatus, {
@@ -1572,67 +1641,300 @@ ipcMain.handle('update-story-status', async (_, filePath: string, newStatus: str
   }
 })
 
+// Shared helper: find a task/subtask line within ## Tasks section
+function findTaskLine(lines: string[], taskIndex: number, subtaskIndex: number): {
+  lineIndex: number
+  sectionStart: number
+  sectionEnd: number
+} | null {
+  let inTasksSection = false
+  let sectionStart = -1
+  let sectionEnd = lines.length
+  let currentTaskIdx = -1
+  let currentSubtaskIdx = -1
+  let targetLine = -1
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    if (line.startsWith('## Tasks')) {
+      inTasksSection = true
+      sectionStart = i
+      continue
+    }
+    if (inTasksSection && (line.startsWith('## ') || line.startsWith('# '))) {
+      sectionEnd = i
+      break
+    }
+
+    if (!inTasksSection) continue
+
+    // Match main task: - [x] or - [ ]
+    if (/^- \[[ xX]\]\s+/.test(line)) {
+      currentTaskIdx++
+      currentSubtaskIdx = -1
+
+      if (currentTaskIdx === taskIndex && subtaskIndex === -1) {
+        targetLine = i
+        break
+      }
+    }
+
+    // Match subtask: indented - [x] or - [ ]
+    if (/^\s+- \[[ xX]\]\s+/.test(line) && currentTaskIdx === taskIndex) {
+      currentSubtaskIdx++
+      if (currentSubtaskIdx === subtaskIndex) {
+        targetLine = i
+        break
+      }
+    }
+  }
+
+  if (sectionStart === -1 || targetLine === -1) return null
+  return { lineIndex: targetLine, sectionStart, sectionEnd }
+}
+
 // Toggle a task checkbox in a story markdown file
 ipcMain.handle('toggle-story-task', async (_, filePath: string, taskIndex: number, subtaskIndex: number) => {
   try {
     const content = await readFile(filePath, 'utf-8')
     const lines = content.split('\n')
 
-    let inTasksSection = false
-    let currentTaskIdx = -1
-    let currentSubtaskIdx = -1
-    let targetLine = -1
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-
-      if (line.startsWith('## Tasks')) {
-        inTasksSection = true
-        continue
-      }
-      if (inTasksSection && (line.startsWith('## ') || line.startsWith('# '))) {
-        break
-      }
-
-      if (!inTasksSection) continue
-
-      // Match main task: - [x] or - [ ]
-      if (/^- \[[ xX]\]\s+/.test(line)) {
-        currentTaskIdx++
-        currentSubtaskIdx = -1
-
-        if (currentTaskIdx === taskIndex && subtaskIndex === -1) {
-          targetLine = i
-          break
-        }
-      }
-
-      // Match subtask: indented - [x] or - [ ]
-      if (/^\s+- \[[ xX]\]\s+/.test(line) && currentTaskIdx === taskIndex) {
-        currentSubtaskIdx++
-        if (currentSubtaskIdx === subtaskIndex) {
-          targetLine = i
-          break
-        }
-      }
-    }
-
-    if (targetLine === -1) {
+    const result = findTaskLine(lines, taskIndex, subtaskIndex)
+    if (!result) {
       return { success: false, error: 'Task not found' }
     }
 
     // Toggle the checkbox
-    const line = lines[targetLine]
+    const line = lines[result.lineIndex]
     if (/\[x\]/i.test(line)) {
-      lines[targetLine] = line.replace(/\[[xX]\]/, '[ ]')
+      lines[result.lineIndex] = line.replace(/\[[xX]\]/, '[ ]')
     } else {
-      lines[targetLine] = line.replace(/\[ \]/, '[x]')
+      lines[result.lineIndex] = line.replace(/\[ \]/, '[x]')
     }
 
     await writeFile(filePath, lines.join('\n'), 'utf-8')
     return { success: true }
   } catch (error) {
     console.error('Failed to toggle story task:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// Add a new task or subtask to a story markdown file
+ipcMain.handle('add-story-task', async (_, filePath: string, parentTaskIndex: number, title: string) => {
+  try {
+    const content = await readFile(filePath, 'utf-8')
+    const lines = content.split('\n')
+
+    // Find the Tasks section boundaries
+    let sectionStart = -1
+    let sectionEnd = lines.length
+    let lastTaskLine = -1
+    let currentTaskIdx = -1
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (line.startsWith('## Tasks')) {
+        sectionStart = i
+        continue
+      }
+      if (sectionStart !== -1 && (line.startsWith('## ') || line.startsWith('# '))) {
+        sectionEnd = i
+        break
+      }
+      if (sectionStart === -1) continue
+
+      if (/^- \[[ xX]\]\s+/.test(line)) {
+        currentTaskIdx++
+        lastTaskLine = i
+      }
+      if (/^\s+- \[[ xX]\]\s+/.test(line)) {
+        lastTaskLine = i
+      }
+    }
+
+    if (parentTaskIndex === -1) {
+      // Add top-level task
+      const newLine = `- [ ] ${title}`
+      if (sectionStart === -1) {
+        // No ## Tasks section - create one
+        // Insert before the next ## section or at end
+        let insertAt = lines.length
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].startsWith('## Dev Agent Record') || lines[i].startsWith('## Development Record')) {
+            insertAt = i
+            break
+          }
+        }
+        lines.splice(insertAt, 0, '', '## Tasks', '', newLine, '')
+      } else if (lastTaskLine === -1) {
+        // Section exists but no tasks yet - insert after section header
+        lines.splice(sectionStart + 1, 0, '', newLine)
+      } else {
+        // Insert after the last task/subtask line in the section
+        lines.splice(lastTaskLine + 1, 0, newLine)
+      }
+    } else {
+      // Add subtask under a specific parent task
+      let parentLine = -1
+      let insertAfter = -1
+      let tIdx = -1
+
+      for (let i = sectionStart + 1; i < sectionEnd; i++) {
+        const line = lines[i]
+        if (/^- \[[ xX]\]\s+/.test(line)) {
+          tIdx++
+          if (tIdx === parentTaskIndex) {
+            parentLine = i
+            insertAfter = i
+            // Continue to find the last subtask of this parent
+            for (let j = i + 1; j < sectionEnd; j++) {
+              if (/^\s+- \[[ xX]\]\s+/.test(lines[j])) {
+                insertAfter = j
+              } else if (/^- \[[ xX]\]\s+/.test(lines[j]) || lines[j].startsWith('## ') || lines[j].startsWith('# ')) {
+                break
+              }
+            }
+            break
+          }
+        }
+      }
+
+      if (parentLine === -1) {
+        return { success: false, error: 'Parent task not found' }
+      }
+
+      const newLine = `  - [ ] ${title}`
+      lines.splice(insertAfter + 1, 0, newLine)
+    }
+
+    await writeFile(filePath, lines.join('\n'), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to add story task:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// Edit a task or subtask title in a story markdown file
+ipcMain.handle('edit-story-task', async (_, filePath: string, taskIndex: number, subtaskIndex: number, newTitle: string) => {
+  try {
+    const content = await readFile(filePath, 'utf-8')
+    const lines = content.split('\n')
+
+    const result = findTaskLine(lines, taskIndex, subtaskIndex)
+    if (!result) {
+      return { success: false, error: 'Task not found' }
+    }
+
+    const line = lines[result.lineIndex]
+    // Preserve indentation, checkbox state, and optional "Task N:" prefix
+    // Pattern: (indent)(- [x/X/ ]) (optional "Task N: ")(title text)
+    const match = line.match(/^(\s*- \[[ xX]\]\s+)((?:Task\s+\d+:\s+)?)(.*)$/)
+    if (!match) {
+      return { success: false, error: 'Could not parse task line' }
+    }
+
+    lines[result.lineIndex] = match[1] + match[2] + newTitle
+
+    await writeFile(filePath, lines.join('\n'), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to edit story task:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// Delete a task or subtask from a story markdown file
+ipcMain.handle('delete-story-task', async (_, filePath: string, taskIndex: number, subtaskIndex: number) => {
+  try {
+    const content = await readFile(filePath, 'utf-8')
+    const lines = content.split('\n')
+
+    if (subtaskIndex >= 0) {
+      // Delete a single subtask line
+      const result = findTaskLine(lines, taskIndex, subtaskIndex)
+      if (!result) {
+        return { success: false, error: 'Subtask not found' }
+      }
+      lines.splice(result.lineIndex, 1)
+    } else {
+      // Delete a top-level task and all its subtasks
+      const result = findTaskLine(lines, taskIndex, -1)
+      if (!result) {
+        return { success: false, error: 'Task not found' }
+      }
+
+      // Count how many subtask lines follow this task
+      let deleteCount = 1
+      for (let i = result.lineIndex + 1; i < result.sectionEnd; i++) {
+        if (/^\s+- \[[ xX]\]\s+/.test(lines[i])) {
+          deleteCount++
+        } else {
+          break
+        }
+      }
+
+      lines.splice(result.lineIndex, deleteCount)
+    }
+
+    await writeFile(filePath, lines.join('\n'), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to delete story task:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// Update story development record content (replaces entire section)
+ipcMain.handle('update-story-development-record', async (_, filePath: string, newContent: string) => {
+  try {
+    const content = await readFile(filePath, 'utf-8')
+    const lines = content.split('\n')
+
+    // Find the Development Record section
+    let sectionStart = -1
+    let sectionEnd = lines.length
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (line.startsWith('## Dev Agent Record') || line.startsWith('## Development Record')) {
+        sectionStart = i
+        continue
+      }
+      if (sectionStart !== -1 && sectionStart !== i && (line.startsWith('## ') || line.startsWith('# '))) {
+        sectionEnd = i
+        break
+      }
+    }
+
+    if (sectionStart === -1) {
+      // No Development Record section exists — insert at end
+      const insertContent = `\n## Development Record\n\n${newContent}\n`
+      const result = [...lines]
+      result.splice(lines.length, 0, ...insertContent.split('\n'))
+      await writeFile(filePath, result.join('\n'), 'utf-8')
+      return { success: true }
+    }
+
+    const heading = lines[sectionStart]
+    const replacement = [
+      heading,
+      '',
+      ...newContent.split('\n'),
+    ]
+
+    const result = [
+      ...lines.slice(0, sectionStart),
+      ...replacement,
+      ...lines.slice(sectionEnd)
+    ]
+
+    await writeFile(filePath, result.join('\n'), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to update development record:', error)
     return { success: false, error: String(error) }
   }
 })

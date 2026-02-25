@@ -134,6 +134,8 @@ const electronStorage = {
           disableEnvCheck,
           chatSidebarWidth,
           gitDiffPanelWidth,
+          gitDiffMode,
+          zoomLevel,
         } = parsed.state;
 
         // Migrate git settings from app-level to per-project in recentProjects
@@ -210,6 +212,8 @@ const electronStorage = {
           disableEnvCheck: disableEnvCheck ?? false,
           chatSidebarWidth: chatSidebarWidth ?? null,
           gitDiffPanelWidth: gitDiffPanelWidth ?? 600,
+          gitDiffMode: gitDiffMode || 'split',
+          zoomLevel: zoomLevel ?? 100,
         });
       }
     } catch (error) {
@@ -496,6 +500,10 @@ interface AppState {
     branchName: string | undefined,
   ) => void;
 
+  // Zoom Level
+  zoomLevel: number;
+  setZoomLevel: (level: number) => void;
+
   // Chat Sidebar
   chatSidebarWidth: number | null;
   setChatSidebarWidth: (width: number | null) => void;
@@ -504,9 +512,11 @@ interface AppState {
   gitDiffPanelOpen: boolean;
   gitDiffPanelBranch: string | null;
   gitDiffPanelWidth: number;
+  gitDiffMode: 'split' | 'unified';
   openGitDiffPanel: (branchName: string) => void;
   closeGitDiffPanel: () => void;
   setGitDiffPanelWidth: (width: number) => void;
+  setGitDiffMode: (mode: 'split' | 'unified') => void;
 
   // Status History
   statusHistoryByStory: Record<string, StatusChangeEntry[]>;
@@ -517,7 +527,7 @@ interface AppState {
     storyId: string,
     storyTitle: string,
     epicId: number,
-    storyNumber: number,
+    storyNumber: number | string,
     oldStatus: StoryStatus,
     newStatus: StoryStatus,
     source: StatusChangeSource,
@@ -1293,6 +1303,14 @@ export const useStore = create<AppState>()(
           };
         }),
 
+      // Zoom Level
+      zoomLevel: 100,
+      setZoomLevel: (level) => {
+        const clamped = Math.max(50, Math.min(200, level))
+        set({ zoomLevel: clamped })
+        window.fileAPI.setZoom(clamped)
+      },
+
       // Chat Sidebar
       chatSidebarWidth: null,
       setChatSidebarWidth: (width) => set({ chatSidebarWidth: width }),
@@ -1301,12 +1319,14 @@ export const useStore = create<AppState>()(
       gitDiffPanelOpen: false,
       gitDiffPanelBranch: null,
       gitDiffPanelWidth: 600,
+      gitDiffMode: 'split',
       openGitDiffPanel: (branchName) =>
         set({ gitDiffPanelOpen: true, gitDiffPanelBranch: branchName }),
       closeGitDiffPanel: () =>
         set({ gitDiffPanelOpen: false, gitDiffPanelBranch: null }),
       setGitDiffPanelWidth: (width) =>
         set({ gitDiffPanelWidth: Math.max(400, Math.min(1500, width)) }),
+      setGitDiffMode: (mode) => set({ gitDiffMode: mode }),
 
       // Status History
       statusHistoryByStory: {},
@@ -1851,6 +1871,8 @@ export const useStore = create<AppState>()(
         hasConfiguredProfile: state.hasConfiguredProfile,
         chatSidebarWidth: state.chatSidebarWidth,
         gitDiffPanelWidth: state.gitDiffPanelWidth,
+        gitDiffMode: state.gitDiffMode,
+        zoomLevel: state.zoomLevel,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
@@ -1890,6 +1912,10 @@ export const useStore = create<AppState>()(
           // Set correct initial viewMode based on project type
           if (state.projectType === 'dashboard') {
             state.viewMode = 'dashboard';
+          }
+          // Restore persisted zoom level
+          if (state.zoomLevel && state.zoomLevel !== 100) {
+            window.fileAPI.setZoom(state.zoomLevel)
           }
           state.setHasHydrated(true);
         }

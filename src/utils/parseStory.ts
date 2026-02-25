@@ -12,25 +12,29 @@ export function parseStoryContent(markdown: string): StoryContent {
   let currentSection = ''
   let currentTask: Task | null = null
   let descriptionLines: string[] = []
+  let acLines: string[] = []
   let devNotesLines: string[] = []
+  let developmentRecordLines: string[] = []
+  let inFileList = false
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // Track current section
-    if (line.startsWith('## Story')) {
+    // Track current section (supports both ## headings and **bold:** markers)
+    const trimmed = line.trim()
+    if (line.startsWith('## Story') || /^### Story\s+\d/.test(line)) {
       currentSection = 'story'
       continue
     }
-    if (line.startsWith('## Acceptance Criteria')) {
+    if (line.startsWith('## Acceptance Criteria') || /^\*\*Acceptance\s+Criteria/.test(trimmed)) {
       currentSection = 'ac'
       continue
     }
-    if (line.startsWith('## Tasks')) {
+    if (line.startsWith('## Tasks') || /^\*\*Tasks/.test(trimmed)) {
       currentSection = 'tasks'
       continue
     }
-    if (line.startsWith('## Dev Notes')) {
+    if (line.startsWith('## Dev Notes') || /^\*\*Technical\s+Notes/.test(trimmed)) {
       currentSection = 'devnotes'
       continue
     }
@@ -56,6 +60,7 @@ export function parseStoryContent(markdown: string): StoryContent {
         break
 
       case 'ac':
+        acLines.push(line)
         // Match: 1. **AC1: Title** - Description
         const acMatch = line.match(/^\d+\.\s+\*\*([^*]+)\*\*\s*[-–]?\s*(.*)/)
         if (acMatch) {
@@ -95,19 +100,37 @@ export function parseStoryContent(markdown: string): StoryContent {
       case 'devnotes':
         devNotesLines.push(line)
         break
+
+      case 'agent':
+        // Skip lines inside ### File List (already parsed into fileChanges)
+        if (line.startsWith('### File List')) {
+          inFileList = true
+          continue
+        }
+        if (inFileList && (line.startsWith('### ') || line.startsWith('## '))) {
+          inFileList = false
+        }
+        if (!inFileList) {
+          developmentRecordLines.push(line)
+        }
+        break
     }
   }
 
   description = descriptionLines.join('\n').trim()
   devNotes = devNotesLines.join('\n').trim()
+  const developmentRecord = developmentRecordLines.join('\n').trim() || undefined
+  const acceptanceCriteriaRaw = acceptanceCriteria.length === 0 ? acLines.join('\n').trim() || undefined : undefined
 
   return {
     rawMarkdown: markdown,
     description,
     acceptanceCriteria,
+    acceptanceCriteriaRaw,
     tasks,
     devNotes,
-    fileChanges
+    fileChanges,
+    developmentRecord
   }
 }
 

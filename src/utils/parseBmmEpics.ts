@@ -4,7 +4,7 @@ import { getStoryStatus, getEpicStatus } from './parseSprintStatus'
 
 interface ParsedStory {
   title: string
-  storyNumber: number
+  storyNumber: number | string
   description: string // User story from epics.md (As a... I want... So that...)
   acceptanceCriteriaPreview?: string[]  // First 3 AC items
   technicalNotes?: string               // Technical Notes section
@@ -35,15 +35,16 @@ export function parseBmmEpics(
       const fullText = storyDescriptionLines.join('\n')
 
       // Extract the user story description (before any section headers)
+      // Use \s+ instead of literal space to handle non-breaking spaces from AI tools
       const description = fullText
-        .split(/\*\*Acceptance Criteria:\*\*/i)[0]
-        .split(/\*\*Technical Notes:\*\*/i)[0]
-        .split(/\*\*FRs addressed:\*\*/i)[0]
+        .split(/\*\*Acceptance\s+Criteria:?\*\*/i)[0]
+        .split(/\*\*Technical\s+Notes:?\*\*/i)[0]
+        .split(/\*\*FRs\s+addressed:?\*\*/i)[0]
         .trim()
       currentStory.description = description
 
       // Extract Acceptance Criteria section
-      const acMatch = fullText.match(/\*\*Acceptance Criteria:\*\*\s*([\s\S]*?)(?=\*\*Testing Acceptance Criteria:\*\*|\*\*Technical Notes:\*\*|\*\*FRs addressed:\*\*|$)/i)
+      const acMatch = fullText.match(/\*\*Acceptance\s+Criteria:?\*\*\s*([\s\S]*?)(?=\*\*Testing\s+Acceptance\s+Criteria:?\*\*|\*\*Technical\s+Notes:?\*\*|\*\*FRs\s+addressed:?\*\*|$)/i)
       if (acMatch) {
         const acText = acMatch[1].trim()
         const acLines = acText.split('\n').map(line => line.trim()).filter(Boolean)
@@ -84,7 +85,7 @@ export function parseBmmEpics(
       }
 
       // Extract Technical Notes section
-      const techMatch = fullText.match(/\*\*Technical Notes:\*\*\s*([\s\S]*?)(?=\*\*Acceptance Criteria:\*\*|\*\*FRs addressed:\*\*|$)/i)
+      const techMatch = fullText.match(/\*\*Technical\s+Notes:?\*\*\s*([\s\S]*?)(?=\*\*Acceptance\s+Criteria:?\*\*|\*\*FRs\s+addressed:?\*\*|$)/i)
       if (techMatch) {
         const techText = techMatch[1].trim()
         if (techText) {
@@ -93,7 +94,7 @@ export function parseBmmEpics(
       }
 
       // Extract FRs addressed section
-      const frsMatch = fullText.match(/\*\*FRs addressed:\*\*\s*([\s\S]*?)(?=\*\*Acceptance Criteria:\*\*|\*\*Technical Notes:\*\*|$)/i)
+      const frsMatch = fullText.match(/\*\*FRs\s+addressed:?\*\*\s*([\s\S]*?)(?=\*\*Acceptance\s+Criteria:?\*\*|\*\*Technical\s+Notes:?\*\*|$)/i)
       if (frsMatch) {
         const frsText = frsMatch[1].trim()
         // Parse as comma-separated or line-separated list
@@ -162,13 +163,14 @@ export function parseBmmEpics(
       continue
     }
 
-    // Match BMM Story header: ### Story 1.1: Title Here
-    const storyMatch = line.match(/^### Story (\d+)\.(\d+): (.+)$/)
+    // Match BMM Story header: ### Story 1.1: Title Here or ### Story 1.F0: Title
+    const storyMatch = line.match(/^### Story (\d+)\.([\w]+): (.+)$/)
     if (storyMatch && currentEpic) {
       finishCurrentStory()
       inStoriesSection = true
       const epicNumber = parseInt(storyMatch[1])
-      const storyNumber = parseInt(storyMatch[2])
+      const rawStoryNum = storyMatch[2]
+      const storyNumber = /^\d+$/.test(rawStoryNum) ? parseInt(rawStoryNum) : rawStoryNum
       const title = stripMarkdown(storyMatch[3].trim())
 
       // Only add if this story belongs to the current epic

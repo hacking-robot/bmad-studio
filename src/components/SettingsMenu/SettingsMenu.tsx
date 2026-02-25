@@ -45,6 +45,7 @@ import DownloadIcon from '@mui/icons-material/Download'
 import InstallDesktopIcon from '@mui/icons-material/InstallDesktop'
 import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest'
 import PaletteIcon from '@mui/icons-material/Palette'
+import ZoomInIcon from '@mui/icons-material/ZoomIn'
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
 import { AI_TOOLS, AITool, CLIDetectionResult, CLAUDE_MODELS, CustomEndpointConfig } from '../../types'
@@ -58,6 +59,7 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [toolDialogOpen, setToolDialogOpen] = useState(false)
   const [chatSettingsDialogOpen, setChatSettingsDialogOpen] = useState(false)
+  const [zoomDialogOpen, setZoomDialogOpen] = useState(false)
   const profileDialogOpen = useStore((state) => state.profileDialogOpen)
   const setProfileDialogOpen = useStore((state) => state.setProfileDialogOpen)
   const setHasConfiguredProfile = useStore((state) => state.setHasConfiguredProfile)
@@ -100,6 +102,8 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const setEnableHumanReviewColumn = useStore((state) => state.setEnableHumanReviewColumn)
   const maxThreadMessages = useStore((state) => state.maxThreadMessages)
   const setMaxThreadMessages = useStore((state) => state.setMaxThreadMessages)
+  const zoomLevel = useStore((state) => state.zoomLevel)
+  const setZoomLevel = useStore((state) => state.setZoomLevel)
   const bmadUserName = useStore((state) => state.bmadUserName)
   const setBmadUserName = useStore((state) => state.setBmadUserName)
   const bmadLanguage = useStore((state) => state.bmadLanguage)
@@ -202,6 +206,11 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const handleChatSettingsClick = () => {
     handleClose()
     setChatSettingsDialogOpen(true)
+  }
+
+  const handleZoomClick = () => {
+    handleClose()
+    setZoomDialogOpen(true)
   }
 
   const handleProfileClick = () => {
@@ -416,6 +425,16 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
               <ListItemText
                 primary="Chat Settings"
                 secondary={`Max ${maxThreadMessages} messages`}
+                secondaryTypographyProps={{ variant: 'caption' }}
+              />
+            </MenuItem>
+            <MenuItem onClick={handleZoomClick}>
+              <ListItemIcon>
+                <ZoomInIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Zoom Level"
+                secondary={`${zoomLevel}%`}
                 secondaryTypographyProps={{ variant: 'caption' }}
               />
             </MenuItem>
@@ -878,6 +897,50 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
             </Box>
             <Typography variant="body2" sx={{ mt: 1, textAlign: 'center' }}>
               Current: <strong>{maxThreadMessages}</strong> messages
+            </Typography>
+          </Box>
+        </DialogContent>
+      </Dialog>
+
+      {/* Zoom Level Dialog */}
+      <Dialog
+        open={zoomDialogOpen}
+        onClose={() => setZoomDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          Zoom Level
+          <IconButton size="small" onClick={() => setZoomDialogOpen(false)}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Adjust the application zoom level. You can also use {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+/- to zoom.
+          </Typography>
+
+          <Box sx={{ mb: 3 }}>
+            <Box sx={{ px: 1 }}>
+              <Slider
+                value={zoomLevel}
+                onChange={(_, value) => setZoomLevel(value as number)}
+                min={50}
+                max={200}
+                step={10}
+                marks={[
+                  { value: 50, label: '50%' },
+                  { value: 75, label: '75%' },
+                  { value: 100, label: '100%' },
+                  { value: 150, label: '150%' },
+                  { value: 200, label: '200%' }
+                ]}
+                valueLabelDisplay="auto"
+                valueLabelFormat={(value) => `${value}%`}
+              />
+            </Box>
+            <Typography variant="body2" sx={{ mt: 1, textAlign: 'center' }}>
+              Current: <strong>{zoomLevel}%</strong>
             </Typography>
           </Box>
         </DialogContent>

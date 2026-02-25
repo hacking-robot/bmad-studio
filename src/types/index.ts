@@ -4,13 +4,43 @@ export type StoryStatus = 'backlog' | 'ready-for-dev' | 'in-progress' | 'review'
 // Extended type that includes legacy/alternate status values that may appear in sprint-status.yaml
 export type StoryStatusExtended = StoryStatus | 'ready-for-review' | 'complete'
 
-// Normalize extended statuses to canonical statuses (for display in columns)
-// 'ready-for-review' is treated as 'review'
-// 'complete' is treated as 'done'
-export function normalizeStatus(status: StoryStatusExtended): StoryStatus {
-  if (status === 'ready-for-review') return 'review'
-  if (status === 'complete') return 'done'
-  return status
+export const VALID_STATUSES: Set<StoryStatus> = new Set([
+  'backlog', 'ready-for-dev', 'in-progress', 'review', 'human-review', 'done', 'optional'
+])
+
+// Synonym map: normalized key → canonical StoryStatus
+const STATUS_SYNONYMS: Record<string, StoryStatus> = {
+  // done synonyms
+  'completed': 'done',
+  'complete': 'done',
+  'finished': 'done',
+  // in-progress synonyms
+  'wip': 'in-progress',
+  'working': 'in-progress',
+  'in-dev': 'in-progress',
+  'development': 'in-progress',
+  // review synonyms
+  'ready-for-review': 'review',
+  'needs-review': 'review',
+  'pending-review': 'review',
+  // backlog synonyms
+  'todo': 'backlog',
+  'new': 'backlog',
+  'not-started': 'backlog',
+  'pending': 'backlog',
+  // ready-for-dev synonyms
+  'ready': 'ready-for-dev',
+  'ready-to-dev': 'ready-for-dev',
+  'ready-to-develop': 'ready-for-dev',
+  'ready-for-development': 'ready-for-dev',
+}
+
+// Normalize any status string to a canonical StoryStatus.
+// Returns null if the value cannot be recognized.
+export function normalizeStatus(status: string): StoryStatus | null {
+  const key = status.trim().toLowerCase().replace(/[_\s]+/g, '-')
+  if (VALID_STATUSES.has(key as StoryStatus)) return key as StoryStatus
+  return STATUS_SYNONYMS[key] ?? null
 }
 
 export interface Epic {
@@ -24,7 +54,7 @@ export interface Epic {
 export interface Story {
   id: string // e.g., "1-1-place-nand-gates"
   epicId: number
-  storyNumber: number
+  storyNumber: number | string
   title: string
   slug: string
   status: StoryStatus
@@ -43,9 +73,11 @@ export interface StoryContent {
   rawMarkdown: string
   description: string // The "As a... I want... so that..." part
   acceptanceCriteria: AcceptanceCriterion[]
+  acceptanceCriteriaRaw?: string // Raw markdown fallback when structured AC parsing fails
   tasks: Task[]
   devNotes: string
   fileChanges?: FileChanges
+  developmentRecord?: string
 }
 
 export interface AcceptanceCriterion {
@@ -307,7 +339,7 @@ export interface StatusChangeEntry {
   storyId: string               // e.g., "1-1-place-nand-gates"
   storyTitle: string            // Human-readable title
   epicId: number                // Epic number
-  storyNumber: number           // Story number within epic
+  storyNumber: number | string   // Story number within epic
   oldStatus: StoryStatus
   newStatus: StoryStatus
   timestamp: number             // Unix timestamp

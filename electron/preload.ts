@@ -117,11 +117,17 @@ export interface FileAPI {
   stopWatching: () => Promise<boolean>
   updateStoryStatus: (filePath: string, newStatus: string) => Promise<{ success: boolean; error?: string }>
   toggleStoryTask: (filePath: string, taskIndex: number, subtaskIndex: number) => Promise<{ success: boolean; error?: string }>
+  updateDevelopmentRecord: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>
+  addStoryTask: (filePath: string, parentTaskIndex: number, title: string) => Promise<{ success: boolean; error?: string }>
+  editStoryTask: (filePath: string, taskIndex: number, subtaskIndex: number, newTitle: string) => Promise<{ success: boolean; error?: string }>
+  deleteStoryTask: (filePath: string, taskIndex: number, subtaskIndex: number) => Promise<{ success: boolean; error?: string }>
   showNotification: (title: string, body: string) => Promise<void>
   checkBmadInGitignore: (projectPath: string, outputFolder?: string) => Promise<{ inGitignore: boolean; error?: string }>
   scanBmad: (projectPath: string) => Promise<unknown | null>
   onFilesChanged: (callback: () => void) => () => void
   onShowKeyboardShortcuts: (callback: () => void) => () => void
+  setZoom: (level: number) => Promise<void>
+  onZoomChanged: (callback: (level: number) => void) => () => void
 }
 
 const fileAPI: FileAPI = {
@@ -134,6 +140,10 @@ const fileAPI: FileAPI = {
   stopWatching: () => ipcRenderer.invoke('stop-watching'),
   updateStoryStatus: (filePath: string, newStatus: string) => ipcRenderer.invoke('update-story-status', filePath, newStatus),
   toggleStoryTask: (filePath: string, taskIndex: number, subtaskIndex: number) => ipcRenderer.invoke('toggle-story-task', filePath, taskIndex, subtaskIndex),
+  updateDevelopmentRecord: (filePath, content) => ipcRenderer.invoke('update-story-development-record', filePath, content),
+  addStoryTask: (filePath, parentTaskIndex, title) => ipcRenderer.invoke('add-story-task', filePath, parentTaskIndex, title),
+  editStoryTask: (filePath, taskIndex, subtaskIndex, newTitle) => ipcRenderer.invoke('edit-story-task', filePath, taskIndex, subtaskIndex, newTitle),
+  deleteStoryTask: (filePath, taskIndex, subtaskIndex) => ipcRenderer.invoke('delete-story-task', filePath, taskIndex, subtaskIndex),
   showNotification: (title: string, body: string) => ipcRenderer.invoke('show-notification', title, body),
   checkBmadInGitignore: (projectPath: string, outputFolder?: string) => ipcRenderer.invoke('check-bmad-in-gitignore', projectPath, outputFolder),
   scanBmad: (projectPath: string) => ipcRenderer.invoke('scan-bmad', projectPath),
@@ -147,6 +157,12 @@ const fileAPI: FileAPI = {
     const listener = () => callback()
     ipcRenderer.on('show-keyboard-shortcuts', listener)
     return () => ipcRenderer.removeListener('show-keyboard-shortcuts', listener)
+  },
+  setZoom: (level: number) => ipcRenderer.invoke('set-zoom', level),
+  onZoomChanged: (callback: (level: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, level: number) => callback(level)
+    ipcRenderer.on('zoom-changed', listener)
+    return () => ipcRenderer.removeListener('zoom-changed', listener)
   }
 }
 

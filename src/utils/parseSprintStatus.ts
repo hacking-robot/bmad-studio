@@ -1,5 +1,5 @@
 import { parse } from 'yaml'
-import { StoryStatus, normalizeStatus, StoryStatusExtended } from '../types'
+import { StoryStatus, normalizeStatus } from '../types'
 
 export interface SprintStatusData {
   generated: string
@@ -17,8 +17,8 @@ export function parseSprintStatus(yamlContent: string): SprintStatusData {
 
   if (parsed.development_status) {
     for (const [key, value] of Object.entries(parsed.development_status)) {
-      // Normalize extended statuses (e.g., 'ready-for-review' -> 'review')
-      developmentStatus[key] = normalizeStatus(value as StoryStatusExtended)
+      // Normalize statuses - unrecognized values default to 'backlog'
+      developmentStatus[key] = normalizeStatus(value as string) ?? 'backlog'
     }
   }
 

@@ -465,6 +465,7 @@ export default function GitDiffPanel() {
   const enableAgents = useStore((state) => state.enableAgents)
   const viewMode = useStore((state) => state.viewMode)
   const aiTool = useStore((state) => state.aiTool)
+  const disableGitBranching = useStore((state) => state.disableGitBranching)
 
   // Git diff panel store state
   const gitDiffPanelOpen = useStore((state) => state.gitDiffPanelOpen)
@@ -484,7 +485,9 @@ export default function GitDiffPanel() {
   const [error, setError] = useState<string | null>(null)
   const [changedFiles, setChangedFiles] = useState<GitChangedFile[]>([])
   const [mergeBase, setMergeBase] = useState<string>('')
-  const [diffMode, setDiffMode] = useState<DiffModeEnum>(DiffModeEnum.Split)
+  const gitDiffMode = useStore((state) => state.gitDiffMode)
+  const setGitDiffMode = useStore((state) => state.setGitDiffMode)
+  const diffMode = gitDiffMode === 'unified' ? DiffModeEnum.Unified : DiffModeEnum.Split
   const [defaultBranch, setDefaultBranch] = useState<string>('')
 
   // Tab and commit history state
@@ -501,6 +504,10 @@ export default function GitDiffPanel() {
 
   // Filter state - hide BMAD folders
   const [hideBmadFolders, setHideBmadFolders] = useState(true)
+
+  // Pagination for large file lists
+  const FILE_PAGE_SIZE = 50
+  const [visibleFileCount, setVisibleFileCount] = useState(FILE_PAGE_SIZE)
 
   // Resize drag state
   const isDraggingRef = useRef(false)
@@ -574,6 +581,7 @@ export default function GitDiffPanel() {
 
   useEffect(() => {
     if (gitDiffPanelOpen && projectPath && branchName) {
+      setVisibleFileCount(FILE_PAGE_SIZE)
       loadChangedFiles()
     }
   }, [gitDiffPanelOpen, projectPath, branchName])
@@ -650,19 +658,25 @@ export default function GitDiffPanel() {
     }
 
     try {
-      // Get the default branch to compare against
-      const defaultBranchResult = await window.gitAPI.getDefaultBranch(projectPath)
-      if (defaultBranchResult.error || !defaultBranchResult.branch) {
-        // On refresh, don't overwrite existing data with transient errors (e.g. git lock during agent work)
-        if (!isRefresh) setError('Could not determine default branch')
-        setLoading(false)
-        return
+      let compareBranch: string
+
+      if (disableGitBranching) {
+        // No branching: compare working tree against HEAD (current branch)
+        compareBranch = branchName
+      } else {
+        // Normal mode: compare feature branch against default branch
+        const defaultBranchResult = await window.gitAPI.getDefaultBranch(projectPath)
+        if (defaultBranchResult.error || !defaultBranchResult.branch) {
+          if (!isRefresh) setError('Could not determine default branch')
+          setLoading(false)
+          return
+        }
+        compareBranch = defaultBranchResult.branch
       }
 
-      setDefaultBranch(defaultBranchResult.branch)
+      setDefaultBranch(compareBranch)
 
-      // Get changed files between default branch and the feature branch
-      const result = await window.gitAPI.getChangedFiles(projectPath, defaultBranchResult.branch, branchName)
+      const result = await window.gitAPI.getChangedFiles(projectPath, compareBranch, branchName)
       if (result.error) {
         if (!isRefresh) setError(result.error)
         setLoading(false)
@@ -756,6 +770,13 @@ export default function GitDiffPanel() {
     const folder = useStore.getState().outputFolder
     return changedFiles.filter((f) => !f.path.startsWith(folder + '/') && !f.path.startsWith('_bmad/'))
   }, [changedFiles, hideBmadFolders])
+
+  // Paginated slice of filtered files
+  const visibleFiles = useMemo(() => {
+    return filteredFiles.slice(0, visibleFileCount)
+  }, [filteredFiles, visibleFileCount])
+
+  const hasMoreFiles = visibleFileCount < filteredFiles.length
 
   // Calculate total stats
   const totalStats = useMemo(() => {
@@ -867,7 +888,7 @@ export default function GitDiffPanel() {
       >
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle1" fontWeight={600} noWrap>
-            Branch Diff
+            {disableGitBranching ? 'Working Changes' : 'Branch Diff'}
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
             <Chip
@@ -968,7 +989,7 @@ export default function GitDiffPanel() {
         <ToggleButtonGroup
           value={diffMode}
           exclusive
-          onChange={(_, value) => value !== null && setDiffMode(value)}
+          onChange={(_, value) => value !== null && setGitDiffMode(value === DiffModeEnum.Unified ? 'unified' : 'split')}
           size="small"
         >
           <Tooltip title="Split view">
@@ -998,18 +1019,20 @@ export default function GitDiffPanel() {
         )}
 
         {/* Tabs */}
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
-          <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
-            <Tab label="All Changes" />
-            <Tab label={`Commits${commits.length > 0 ? ` (${commits.length})` : ''}`} icon={<CommitIcon sx={{ fontSize: 18 }} />} iconPosition="start" />
-          </Tabs>
-        </Box>
+        {!disableGitBranching && (
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
+            <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
+              <Tab label="All Changes" />
+              <Tab label={`Commits${commits.length > 0 ? ` (${commits.length})` : ''}`} icon={<CommitIcon sx={{ fontSize: 18 }} />} iconPosition="start" />
+            </Tabs>
+          </Box>
+        )}
 
         {loading ? (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 8 }}>
             <CircularProgress size={32} />
             <Typography sx={{ ml: 2 }} color="text.secondary">
-              Loading branch changes...
+              {disableGitBranching ? 'Loading changes...' : 'Loading branch changes...'}
             </Typography>
           </Box>
         ) : error ? (
@@ -1021,7 +1044,7 @@ export default function GitDiffPanel() {
             <Typography color="text.secondary">
               {changedFiles.length > 0 && hideBmadFolders
                 ? 'No changes found (BMAD folders hidden)'
-                : 'No changes found on this branch'}
+                : disableGitBranching ? 'No uncommitted changes' : 'No changes found on this branch'}
             </Typography>
           </Box>
         ) : (
@@ -1093,7 +1116,7 @@ export default function GitDiffPanel() {
                 )}
 
                 {/* File Diffs */}
-                {filteredFiles.map((file) => (
+                {visibleFiles.map((file) => (
                   <FileDiff
                     key={file.path}
                     file={file}
@@ -1105,6 +1128,17 @@ export default function GitDiffPanel() {
                     isCurrentBranch={isCurrentBranch}
                   />
                 ))}
+                {hasMoreFiles && (
+                  <Box sx={{ textAlign: 'center', mt: 2 }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => setVisibleFileCount((c) => c + FILE_PAGE_SIZE)}
+                    >
+                      Show more ({filteredFiles.length - visibleFileCount} remaining)
+                    </Button>
+                  </Box>
+                )}
               </>
             )}
 
