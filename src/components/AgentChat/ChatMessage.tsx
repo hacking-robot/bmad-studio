@@ -10,6 +10,7 @@ import { useStore } from '../../store'
 import { useThemedSyntax } from '../../hooks/useThemedSyntax'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import type { Components } from 'react-markdown'
 
 interface ChatMessageProps {
@@ -486,7 +487,7 @@ export default function ChatMessage({ message, agentName, agentAvatar }: ChatMes
             </Typography>
           ) : (
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkBreaks]}
               components={createMarkdownComponents(contentIsDark, themedPrismStyle)}
             >
               {message.content}

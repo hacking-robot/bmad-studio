@@ -460,7 +460,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
 
           {/* User story from epics.md - shown for stories without a story file */}
           {!story.filePath && story.epicDescription && (
-            <Tooltip title={story.epicDescription} arrow placement="bottom">
+            <Tooltip title={story.epicDescription.replace(/\*\*/g, '').slice(0, 150) + (story.epicDescription.length > 150 ? '...' : '')} arrow placement="bottom">
               <Typography
                 variant="caption"
                 sx={{
@@ -474,7 +474,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
                   lineHeight: 1.3
                 }}
               >
-                {story.epicDescription}
+                {story.epicDescription.replace(/\*\*/g, '')}
               </Typography>
             </Tooltip>
           )}

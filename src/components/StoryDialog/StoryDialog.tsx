@@ -32,6 +32,7 @@ import CompareArrowsIcon from '@mui/icons-material/CompareArrows'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { useStore } from '../../store'
 import { useThemedSyntax } from '../../hooks/useThemedSyntax'
@@ -332,12 +333,16 @@ export default function StoryDialog() {
                   sx={{
                     bgcolor: 'action.hover',
                     borderRadius: 2,
-                    p: 2
+                    p: 2,
+                    fontSize: '0.875rem',
+                    fontStyle: 'italic',
+                    '& p': { m: 0 },
+                    '& ul, & ol': { pl: 2.5 }
                   }}
                 >
-                  <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>
                     {selectedStory.epicDescription}
-                  </Typography>
+                  </ReactMarkdown>
                 </Box>
               </Box>
             )}
@@ -350,31 +355,33 @@ export default function StoryDialog() {
                   <Typography variant="h6" gutterBottom>
                     Acceptance Criteria
                   </Typography>
-                  <List dense disablePadding>
-                    {selectedStory.acceptanceCriteriaPreview.map((ac, index) => (
-                      <ListItem key={index} sx={{ px: 0, py: 0.5 }}>
-                        <ListItemIcon sx={{ minWidth: 32 }}>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              bgcolor: 'primary.main',
-                              color: 'white',
-                              width: 20,
-                              height: 20,
-                              borderRadius: '50%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 600
-                            }}
-                          >
-                            {index + 1}
-                          </Typography>
-                        </ListItemIcon>
-                        <ListItemText primary={ac} primaryTypographyProps={{ variant: 'body2' }} />
-                      </ListItem>
-                    ))}
-                  </List>
+                  {selectedStory.acceptanceCriteriaPreview.map((ac, index) => (
+                    <Box key={index} sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          bgcolor: 'primary.main',
+                          color: 'white',
+                          width: 20,
+                          height: 20,
+                          minWidth: 20,
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 600,
+                          mt: 0.25
+                        }}
+                      >
+                        {index + 1}
+                      </Typography>
+                      <Box sx={{ flex: 1, fontSize: '0.875rem', '& p': { m: 0 }, '& ul': { mt: 0.5, mb: 0.5, pl: 2.5 } }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>
+                          {ac}
+                        </ReactMarkdown>
+                      </Box>
+                    </Box>
+                  ))}
                 </Box>
               </>
             )}
@@ -397,7 +404,7 @@ export default function StoryDialog() {
                         '& ul, & ol': { pl: 3, mb: 1 }
                       }}
                     >
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>
                         {selectedStory.technicalNotes}
                       </ReactMarkdown>
                     </Box>
@@ -480,7 +487,7 @@ export default function StoryDialog() {
                   }
                 }}
               >
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>
                   {storyContent.description}
                 </ReactMarkdown>
               </Paper>
@@ -586,13 +593,13 @@ export default function StoryDialog() {
                     <ListItemText
                       primary={
                         <Box sx={{ '& p': { m: 0 } }}>
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{ac.title}</ReactMarkdown>
+                          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>{ac.title}</ReactMarkdown>
                         </Box>
                       }
                       secondary={
                         ac.description ? (
                           <Box sx={{ '& p': { m: 0 } }}>
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{ac.description}</ReactMarkdown>
+                            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>{ac.description}</ReactMarkdown>
                           </Box>
                         ) : null
                       }
@@ -640,7 +647,7 @@ export default function StoryDialog() {
                           <ListItemText
                             primary={
                               <Box sx={{ '& p': { m: 0 } }}>
-                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{task.title}</ReactMarkdown>
+                                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>{task.title}</ReactMarkdown>
                               </Box>
                             }
                             primaryTypographyProps={{ fontWeight: 500, component: 'div' }}
@@ -670,7 +677,7 @@ export default function StoryDialog() {
                                       '& p': { m: 0 },
                                       fontSize: '0.875rem',
                                     }}>
-                                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{subtask.title}</ReactMarkdown>
+                                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>{subtask.title}</ReactMarkdown>
                                     </Box>
                                   }
                                   primaryTypographyProps={{ component: 'div' }}
@@ -876,7 +883,7 @@ export default function StoryDialog() {
                       }
                     }}
                   >
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>
                       {storyContent.devNotes}
                     </ReactMarkdown>
                   </Paper>
