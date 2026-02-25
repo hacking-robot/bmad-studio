@@ -431,33 +431,35 @@ export default function StoryDialog() {
                   <Typography variant="h6" gutterBottom>
                     Acceptance Criteria
                   </Typography>
-                  {selectedStory.acceptanceCriteriaPreview.map((ac, index) => (
-                    <Box key={index} sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          bgcolor: 'primary.main',
-                          color: 'white',
-                          width: 20,
-                          height: 20,
-                          minWidth: 20,
-                          borderRadius: '50%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 600,
-                          mt: 0.25
-                        }}
-                      >
-                        {index + 1}
-                      </Typography>
-                      <Box sx={{ flex: 1, fontSize: '0.875rem', '& p': { m: 0 }, '& ul, & ol': { pl: 2.5 } }}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>
-                          {ac}
-                        </ReactMarkdown>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    {selectedStory.acceptanceCriteriaPreview.map((ac, index) => (
+                      <Box key={index} sx={{ display: 'flex', gap: 1.5, mb: 2, '&:last-child': { mb: 0 } }}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            bgcolor: 'primary.main',
+                            color: 'white',
+                            width: 20,
+                            height: 20,
+                            minWidth: 20,
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 600,
+                            mt: 0.25
+                          }}
+                        >
+                          {index + 1}
+                        </Typography>
+                        <Box sx={{ flex: 1, fontSize: '0.875rem', '& p': { m: 0 }, '& ul, & ol': { pl: 2.5 } }}>
+                          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ code: CodeBlock }}>
+                            {ac}
+                          </ReactMarkdown>
+                        </Box>
                       </Box>
-                    </Box>
-                  ))}
+                    ))}
+                  </Paper>
                 </Box>
               </>
             )}
