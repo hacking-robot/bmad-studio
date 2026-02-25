@@ -1,6 +1,6 @@
 {
   "name": "bmad-studio",
-  "version": "1.0.81",
+  "version": "1.0.82",
   "description": "A beautiful sprint board for BMAD projects",
   "main": "dist-electron/main.js",
   "scripts": {
