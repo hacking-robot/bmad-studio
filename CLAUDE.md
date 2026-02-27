@@ -31,7 +31,7 @@ src/
 │   ├── CommandPalette/  # Keyboard-driven command palette
 │   ├── common/          # Shared utility components (SearchableDropdown)
 │   ├── Dashboard/       # Workflow dashboard with module-grouped commands
-│   ├── EnvCheckDialog/  # Environment prerequisites check on project open
+│   ├── EnvCheckDialog/  # Prerequisites check on project open
 │   ├── EpicFilter/      # Filter stories by epic
 │   ├── FullCycleDialog/ # Full cycle & epic cycle automation UI
 │   ├── GitDiffDialog/   # Side-by-side git diff viewer
@@ -126,7 +126,7 @@ electron/
 - **Project Switcher**: Quick switch between recent projects (up to 10)
 - **BMAD Scanner**: Auto-discovers agents, workflows, and version info from `_bmad/` directory
 - **Version Gate**: Incompatible version dialog blocks usage with pre-v6 BMAD
-- **Environment Check**: Verifies required tools (Claude CLI, Git, Node.js) on project open
+- **Prerequisites**: Verifies required tools (Claude CLI, Git, Node.js) on first launch, then available manually via Settings
 - **Planning Artifacts**: View epics, goals, and planning documents within the app
 
 ### Git Integration

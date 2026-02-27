@@ -131,7 +131,7 @@ const electronStorage = {
           bmadUserName,
           bmadLanguage,
           hasConfiguredProfile,
-          disableEnvCheck,
+          envCheckCompletedOnce,
           chatSidebarWidth,
           gitDiffPanelWidth,
           gitDiffMode,
@@ -209,7 +209,7 @@ const electronStorage = {
           bmadUserName: bmadUserName || '',
           bmadLanguage: bmadLanguage || 'en',
           hasConfiguredProfile: hasConfiguredProfile ?? false,
-          disableEnvCheck: disableEnvCheck ?? false,
+          envCheckCompletedOnce: envCheckCompletedOnce ?? (parsed.state as Record<string, unknown>).disableEnvCheck ?? false,
           chatSidebarWidth: chatSidebarWidth ?? null,
           gitDiffPanelWidth: gitDiffPanelWidth ?? 600,
           gitDiffMode: gitDiffMode || 'split',
@@ -302,8 +302,8 @@ interface AppState {
   setEnableEpicBranches: (enabled: boolean) => void;
   disableGitBranching: boolean; // When true, bypass all branch restrictions and hide branch UI
   setDisableGitBranching: (disabled: boolean) => void;
-  disableEnvCheck: boolean; // When true, skip environment check on project open
-  setDisableEnvCheck: (disabled: boolean) => void;
+  envCheckCompletedOnce: boolean; // When true, prerequisites check has run at least once — skip auto-check
+  setEnvCheckCompletedOnce: (completed: boolean) => void;
   fullCycleReviewCount: number; // 0-5, how many code review rounds in full cycle
   setFullCycleReviewCount: (count: number) => void;
 
@@ -582,7 +582,7 @@ interface AppState {
   setUpdateVersion: (version: string) => void;
   setUpdateDownloadPercent: (percent: number) => void;
 
-  // Environment Check Dialog
+  // Prerequisites Dialog
   envCheckDialogOpen: boolean;
   envCheckResults: import("../electron/preload").EnvCheckItem[] | null;
   envCheckLoading: boolean;
@@ -730,8 +730,8 @@ export const useStore = create<AppState>()(
               )
             : state.recentProjects,
         })),
-      disableEnvCheck: false,
-      setDisableEnvCheck: (disabled) => set({ disableEnvCheck: disabled }),
+      envCheckCompletedOnce: false,
+      setEnvCheckCompletedOnce: (completed) => set({ envCheckCompletedOnce: completed }),
       fullCycleReviewCount: 1,
       setFullCycleReviewCount: (count) =>
         set({ fullCycleReviewCount: Math.max(0, Math.min(5, count)) }),
@@ -1633,7 +1633,7 @@ export const useStore = create<AppState>()(
           };
         }),
 
-      // Environment Check Dialog (NOT persisted)
+      // Prerequisites Dialog (NOT persisted)
       // Auto-Update
       updateStatus: 'idle',
       updateVersion: '',
@@ -1863,7 +1863,7 @@ export const useStore = create<AppState>()(
         lastViewedStatusHistoryAt: state.lastViewedStatusHistoryAt,
         enableEpicBranches: state.enableEpicBranches,
         disableGitBranching: state.disableGitBranching,
-        disableEnvCheck: state.disableEnvCheck,
+        envCheckCompletedOnce: state.envCheckCompletedOnce,
         fullCycleReviewCount: state.fullCycleReviewCount,
         developerMode: state.developerMode,
         bmadUserName: state.bmadUserName,

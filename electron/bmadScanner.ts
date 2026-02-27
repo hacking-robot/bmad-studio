@@ -50,9 +50,17 @@ export interface BmadScanResult {
  * Extract workflow/agent info from a menu item path attribute.
  * e.g. "_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml" -> { module: "bmm", name: "dev-story", type: "workflows" }
  * e.g. "_bmad/core/workflows/brainstorming/workflow.md" -> { module: "core", name: "brainstorming", type: "workflows" }
+ * e.g. "_bmad/bmm/workflows/2-plan-workflows/create-prd/workflow-edit-prd.md" -> { module: "bmm", name: "edit-prd", type: "workflows" }
  */
 function extractFromPath(path: string): { name: string; module: string; type: 'workflows' | 'agents' } | null {
-  // Workflow path: _bmad/{module}/workflows/.../{name}/workflow.{ext}
+  // Variant workflow: _bmad/{module}/workflows/.../{dir}/workflow-{name}.{ext}
+  // Multiple workflow variants live in the same directory (e.g. create-prd/, edit-prd/, validate-prd/ all under create-prd/)
+  const variantMatch = path.match(/_bmad\/([^/]+)\/workflows\/(?:.*\/)?[^/]+\/workflow-([^/.]+)\.\w+$/)
+  if (variantMatch) {
+    return { module: variantMatch[1], name: variantMatch[2], type: 'workflows' }
+  }
+
+  // Standard workflow: _bmad/{module}/workflows/.../{name}/workflow.{ext}
   const workflowMatch = path.match(/_bmad\/([^/]+)\/workflows\/(?:.*\/)?([^/]+)\/workflow\.\w+$/)
   if (workflowMatch) {
     return { module: workflowMatch[1], name: workflowMatch[2], type: 'workflows' }

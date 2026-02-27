@@ -2256,7 +2256,7 @@ ipcMain.handle('cli-clear-cache', async () => {
   clearDetectionCache()
 })
 
-// Environment check handler - verifies dev environment prerequisites
+// Prerequisites check handler - verifies dev environment prerequisites
 ipcMain.handle('check-environment', async () => {
   interface EnvCheckItem {
     id: string
@@ -2300,7 +2300,28 @@ ipcMain.handle('check-environment', async () => {
     detail: gitPath ? undefined : 'Not found in PATH'
   })
 
-  // 3-6. Plugins and MCP servers - read Claude settings file
+  // 3. Node.js (needed for npx bmad-method install)
+  const nodePath = findBinary('node')
+  let nodeVersion: string | null = null
+  if (nodePath) {
+    try {
+      const execFileAsync = promisify(execFile)
+      const nodeResult = await execFileAsync('node', ['--version'], { encoding: 'utf-8', timeout: 5000 })
+      if (nodeResult.stdout) {
+        const match = nodeResult.stdout.match(/v?(\d+\.\d+\.\d+)/)
+        if (match) nodeVersion = match[1]
+      }
+    } catch { /* node --version failed */ }
+  }
+  items.push({
+    id: 'node',
+    label: 'Node.js',
+    status: nodePath ? 'ok' : 'warning',
+    version: nodeVersion,
+    detail: nodePath ? undefined : 'Needed for BMAD installation (npx)'
+  })
+
+  // 4-7. Plugins and MCP servers - read Claude settings file
   let enabledPlugins: Record<string, boolean> = {}
   try {
     const claudeSettingsPath = join(homedir(), '.claude', 'settings.json')
@@ -2968,7 +2989,8 @@ ipcMain.handle('create-project-directory', async (_, parentPath: string, project
       return { success: false, error: 'Created folder but git init failed: ' + (gitInit.stderr?.toString() || 'unknown error') }
     }
     // Create an initial empty commit so the default branch is a valid ref for branching
-    spawnSync('git', ['commit', '--allow-empty', '-m', 'Initial commit'], { cwd: projectPath })
+    // Skip GPG signing — this is a housekeeping commit, not user content
+    spawnSync('git', ['commit', '--allow-empty', '--no-gpg-sign', '-m', 'Initial commit'], { cwd: projectPath })
     return { success: true, path: projectPath }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to create directory' }

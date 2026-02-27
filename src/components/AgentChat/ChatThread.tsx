@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Box, Fab } from '@mui/material'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
@@ -35,6 +35,18 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
   const messages = thread?.messages || []
   const isTyping = thread?.isTyping || false
   const thinkingActivity = thread?.thinkingActivity
+
+  // Get context usage from the last assistant message with stats
+  // inputTokens of the latest response = current conversation context size
+  const contextTokens = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i]
+      if (msg.role === 'assistant' && msg.stats?.inputTokens) {
+        return msg.stats.inputTokens + msg.stats.outputTokens
+      }
+    }
+    return 0
+  }, [messages])
 
   // Determine if agent is busy with automation cycle
   const isBusyWithCycle = fullCycle.isRunning || epicCycle.isRunning
@@ -224,15 +236,15 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
     }
   }, [agentId, setChatTyping, updateChatMessage, clearAgentState])
 
-  // Scroll to bottom when typing starts (handles wizard flow where thread is freshly created)
+  // Scroll to bottom when typing starts only if already at bottom (handles wizard flow where thread is freshly created)
   useEffect(() => {
-    if (isTyping && !prevIsTypingRef.current && messages.length > 0) {
+    if (isTyping && !prevIsTypingRef.current && messages.length > 0 && atBottom) {
       setTimeout(() => {
         virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: 'end', behavior: 'smooth' })
       }, 50)
     }
     prevIsTypingRef.current = isTyping
-  }, [isTyping, messages.length])
+  }, [isTyping, messages.length, atBottom])
 
   // Guard against concurrent pending message processing
   const isSendingRef = useRef(false)
@@ -305,7 +317,7 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
               ref={virtuosoRef}
               data={messages}
               initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
-              followOutput={(isAtBottom) => (isAtBottom || isTyping) ? 'smooth' : false}
+              followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
               atBottomStateChange={setAtBottom}
               atBottomThreshold={50}
               itemContent={(_index, message) => (
@@ -358,6 +370,8 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
         disabled={isTyping || isBusyWithCycle}
         agentId={agentId}
         busyReason={cycleBusyReason}
+        contextTokens={contextTokens}
+        contextLimit={200_000}
       />
     </Box>
   )
