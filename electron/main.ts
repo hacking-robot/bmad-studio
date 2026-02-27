@@ -336,7 +336,7 @@ async function createWindow() {
 
   // Set dock icon on macOS (for dev mode)
   if (process.platform === 'darwin' && appIcon) {
-    app.dock.setIcon(appIcon)
+    app.dock?.setIcon(appIcon)
   }
 
   // Restore maximized state if it was saved
