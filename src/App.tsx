@@ -55,7 +55,8 @@ export default function App() {
   const setEnvCheckDialogOpen = useStore((state) => state.setEnvCheckDialogOpen)
   const setEnvCheckResults = useStore((state) => state.setEnvCheckResults)
   const setEnvCheckLoading = useStore((state) => state.setEnvCheckLoading)
-  const disableEnvCheck = useStore((state) => state.disableEnvCheck)
+  const envCheckCompletedOnce = useStore((state) => state.envCheckCompletedOnce)
+  const setEnvCheckCompletedOnce = useStore((state) => state.setEnvCheckCompletedOnce)
   const setUpdateStatus = useStore((state) => state.setUpdateStatus)
   const setUpdateVersion = useStore((state) => state.setUpdateVersion)
   const setUpdateDownloadPercent = useStore((state) => state.setUpdateDownloadPercent)
@@ -109,13 +110,14 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [toggleViewMode])
 
-  // Run environment check in background; only show dialog if something fails
+  // Run prerequisites check once on first-ever launch; after that only manually via Settings
   useEffect(() => {
-    if (!hasHydrated || !projectPath || envCheckResults !== null || disableEnvCheck) return
+    if (!hasHydrated || !projectPath || envCheckResults !== null || envCheckCompletedOnce) return
     setEnvCheckLoading(true)
     window.cliAPI.checkEnvironment().then((result) => {
       setEnvCheckResults(result.items)
       setEnvCheckLoading(false)
+      setEnvCheckCompletedOnce(true)
       const hasIssues = result.items.some((i: { status: string }) => i.status === 'error' || i.status === 'warning')
       if (hasIssues) {
         setEnvCheckDialogOpen(true)
@@ -123,7 +125,7 @@ export default function App() {
     }).catch(() => {
       setEnvCheckLoading(false)
     })
-  }, [hasHydrated, projectPath, envCheckResults, disableEnvCheck, setEnvCheckDialogOpen, setEnvCheckResults, setEnvCheckLoading])
+  }, [hasHydrated, projectPath, envCheckResults, envCheckCompletedOnce, setEnvCheckDialogOpen, setEnvCheckResults, setEnvCheckLoading, setEnvCheckCompletedOnce])
 
   // Open profile dialog on first launch once a project is loaded
   useEffect(() => {

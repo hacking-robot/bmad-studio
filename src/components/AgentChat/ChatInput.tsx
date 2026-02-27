@@ -12,9 +12,11 @@ interface ChatInputProps {
   disabled?: boolean
   agentId: string
   busyReason?: string
+  contextTokens?: number
+  contextLimit?: number
 }
 
-export default function ChatInput({ onSend, onCancel, disabled = false, agentId, busyReason }: ChatInputProps) {
+export default function ChatInput({ onSend, onCancel, disabled = false, agentId, busyReason, contextTokens, contextLimit }: ChatInputProps) {
   const [message, setMessage] = useState('')
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -185,13 +187,32 @@ export default function ChatInput({ onSend, onCancel, disabled = false, agentId,
           </Tooltip>
         )}
       </Box>
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{ display: 'block', mt: 0.5, textAlign: 'right' }}
-      >
-        Enter to send · Shift+Enter for new line
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
+        {contextTokens != null && contextTokens > 0 ? (
+          <Typography
+            variant="caption"
+            sx={{
+              fontFamily: 'monospace',
+              fontSize: '0.7rem',
+              color: contextLimit
+                ? contextTokens / contextLimit > 0.8
+                  ? 'warning.main'
+                  : 'text.disabled'
+                : 'text.disabled'
+            }}
+          >
+            {contextLimit
+              ? `${Math.round(contextTokens / 1000)}K / ${Math.round(contextLimit / 1000)}K context`
+              : `${Math.round(contextTokens / 1000)}K tokens`
+            }
+          </Typography>
+        ) : (
+          <Box />
+        )}
+        <Typography variant="caption" color="text.secondary">
+          Enter to send · Shift+Enter for new line
+        </Typography>
+      </Box>
       <Box
         sx={{
           display: 'flex',

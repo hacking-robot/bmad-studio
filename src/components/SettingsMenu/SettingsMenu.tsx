@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   IconButton,
   Menu,
@@ -46,6 +46,9 @@ import InstallDesktopIcon from '@mui/icons-material/InstallDesktop'
 import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest'
 import PaletteIcon from '@mui/icons-material/Palette'
 import ZoomInIcon from '@mui/icons-material/ZoomIn'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
+import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings'
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
 import { AI_TOOLS, AITool, CLIDetectionResult, CLAUDE_MODELS, CustomEndpointConfig } from '../../types'
@@ -66,6 +69,10 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const [themePickerDialogOpen, setThemePickerDialogOpen] = useState(false)
   const [themeSearchQuery, setThemeSearchQuery] = useState('')
   const themeBeforePreview = useRef<{ slug: string } | null>(null)
+  const [displaySubAnchor, setDisplaySubAnchor] = useState<null | HTMLElement>(null)
+  const [chatSubAnchor, setChatSubAnchor] = useState<null | HTMLElement>(null)
+  const [boardSubAnchor, setBoardSubAnchor] = useState<null | HTMLElement>(null)
+  const [gitSubAnchor, setGitSubAnchor] = useState<null | HTMLElement>(null)
   const [branchDialogOpen, setBranchDialogOpen] = useState(false)
   const [cliStatus, setCliStatus] = useState<Record<string, CLIDetectionResult>>({})
   const [detectingCli, setDetectingCli] = useState(false)
@@ -116,8 +123,10 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const setEnableEpicBranches = useStore((state) => state.setEnableEpicBranches)
   const disableGitBranching = useStore((state) => state.disableGitBranching)
   const setDisableGitBranching = useStore((state) => state.setDisableGitBranching)
-  const disableEnvCheck = useStore((state) => state.disableEnvCheck)
-  const setDisableEnvCheck = useStore((state) => state.setDisableEnvCheck)
+  const setEnvCheckResults = useStore((state) => state.setEnvCheckResults)
+  const setEnvCheckLoading = useStore((state) => state.setEnvCheckLoading)
+  const setEnvCheckDialogOpen = useStore((state) => state.setEnvCheckDialogOpen)
+  const setEnvCheckCompletedOnce = useStore((state) => state.setEnvCheckCompletedOnce)
   const fullCycleReviewCount = useStore((state) => state.fullCycleReviewCount)
   const setFullCycleReviewCount = useStore((state) => state.setFullCycleReviewCount)
   const projectPath = useStore((state) => state.projectPath)
@@ -203,33 +212,31 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
     }
   }
 
-  const handleChatSettingsClick = () => {
-    handleClose()
-    setChatSettingsDialogOpen(true)
-  }
-
-  const handleZoomClick = () => {
-    handleClose()
-    setZoomDialogOpen(true)
-  }
-
   const handleProfileClick = () => {
     handleClose()
     setProfileDialogOpen(true)
-  }
-
-  const handleBranchSettingsClick = () => {
-    handleClose()
-    setBranchDialogOpen(true)
   }
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget)
   }
 
+  const closeAllSubs = useCallback(() => {
+    setDisplaySubAnchor(null)
+    setChatSubAnchor(null)
+    setBoardSubAnchor(null)
+    setGitSubAnchor(null)
+  }, [])
+
   const handleClose = () => {
     setAnchorEl(null)
+    closeAllSubs()
   }
+
+  const openSub = useCallback((setter: (el: HTMLElement | null) => void) => (e: React.MouseEvent<HTMLElement>) => {
+    closeAllSubs()
+    setter(e.currentTarget)
+  }, [closeAllSubs])
 
   const handleUpdateAction = () => {
     if (updateStatus === 'available') {
@@ -240,13 +247,6 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
       setUpdateStatus('checking')
       window.updaterAPI.checkForUpdates()
     }
-  }
-
-  const handleThemePickerClick = () => {
-    handleClose()
-    themeBeforePreview.current = { slug: colorTheme }
-    setThemeSearchQuery('')
-    setThemePickerDialogOpen(true)
   }
 
   const handleThemePickerClose = () => {
@@ -305,16 +305,20 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
           }
         }}
       >
-        <MenuItem onClick={handleThemePickerClick}>
+        {/* ── Display ── */}
+        <MenuItem onClick={openSub(setDisplaySubAnchor)}>
           <ListItemIcon>
-            <PaletteIcon fontSize="small" />
+            <DisplaySettingsIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
-            primary="Project Color Theme"
+            primary="Display"
             secondary={base24Schemes[colorTheme]?.name || colorTheme}
             secondaryTypographyProps={{ variant: 'caption' }}
           />
+          <ChevronRightIcon fontSize="small" sx={{ color: 'text.secondary', ml: 1 }} />
         </MenuItem>
+
+        {/* ── Project ── */}
         {!compact && viewMode === 'board' && (
           <MenuItem onClick={() => { loadProjectData(); handleClose() }}>
             <ListItemIcon>
@@ -323,6 +327,18 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
             <ListItemText primary="Refresh Board" />
           </MenuItem>
         )}
+        <MenuItem onClick={handleProfileClick}>
+          <ListItemIcon>
+            <PersonIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="BMAD Profile"
+            secondary={bmadUserName || 'Not set'}
+            secondaryTypographyProps={{ variant: 'caption' }}
+          />
+        </MenuItem>
+
+        {/* ── AI & Chat ── */}
         <MenuItem onClick={handleToolSelect}>
           <ListItemIcon>
             <SmartToyIcon fontSize="small" />
@@ -340,6 +356,39 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
           />
         </MenuItem>
         {!compact && (
+          <MenuItem onClick={openSub(setChatSubAnchor)}>
+            <ListItemIcon>
+              <ChatIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Chat Settings" />
+            <ChevronRightIcon fontSize="small" sx={{ color: 'text.secondary', ml: 1 }} />
+          </MenuItem>
+        )}
+
+        {/* ── Board ── */}
+        {!compact && viewMode === 'board' && (
+          <MenuItem onClick={openSub(setBoardSubAnchor)}>
+            <ListItemIcon>
+              <ViewColumnIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Board Settings" />
+            <ChevronRightIcon fontSize="small" sx={{ color: 'text.secondary', ml: 1 }} />
+          </MenuItem>
+        )}
+
+        {/* ── Git ── */}
+        {!compact && viewMode === 'board' && (
+          <MenuItem onClick={openSub(setGitSubAnchor)}>
+            <ListItemIcon>
+              <GitIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Git Settings" />
+            <ChevronRightIcon fontSize="small" sx={{ color: 'text.secondary', ml: 1 }} />
+          </MenuItem>
+        )}
+
+        {/* ── App ── */}
+        {!compact && (
           <MenuItem onClick={() => setNotificationsEnabled(!notificationsEnabled)}>
             <ListItemIcon>
               <NotificationsIcon fontSize="small" />
@@ -356,170 +405,36 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
             />
           </MenuItem>
         )}
-        <MenuItem onClick={() => setVerboseMode(!verboseMode)}>
-          <ListItemIcon>
-            <BuildIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText
-            primary="Verbose Chat"
-            secondary="Show tool calls in messages"
-            secondaryTypographyProps={{ variant: 'caption' }}
-          />
-          <Switch
-            edge="end"
-            checked={verboseMode}
-            size="small"
-          />
-        </MenuItem>
-        <MenuItem onClick={handleProfileClick}>
-          <ListItemIcon>
-            <PersonIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText
-            primary="BMAD Profile"
-            secondary={bmadUserName || 'Not set'}
-            secondaryTypographyProps={{ variant: 'caption' }}
-          />
-        </MenuItem>
         {!compact && (
           <>
-            {viewMode === 'board' && (
-              <MenuItem onClick={() => setEnableHumanReviewColumn(!enableHumanReviewColumn)}>
-                <ListItemIcon>
-                  <RateReviewIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Human Review Column"
-                  secondary="Review checklist step"
-                  secondaryTypographyProps={{ variant: 'caption' }}
-                />
-                <Switch
-                  edge="end"
-                  checked={enableHumanReviewColumn}
-                  size="small"
-                />
-              </MenuItem>
-            )}
-            {viewMode === 'board' && (
-              <MenuItem onClick={() => setFullCycleReviewCount(fullCycleReviewCount >= 5 ? 0 : fullCycleReviewCount + 1)}>
-                <ListItemIcon>
-                  <RepeatIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Full Cycle Reviews"
-                  secondary={fullCycleReviewCount === 0 ? 'No reviews' : `${fullCycleReviewCount} review round${fullCycleReviewCount > 1 ? 's' : ''}`}
-                  secondaryTypographyProps={{ variant: 'caption' }}
-                />
-                <Chip
-                  label={fullCycleReviewCount}
-                  size="small"
-                  color={fullCycleReviewCount === 0 ? 'default' : 'primary'}
-                  sx={{ minWidth: 32, ml: 1 }}
-                />
-              </MenuItem>
-            )}
-            <MenuItem onClick={handleChatSettingsClick}>
-              <ListItemIcon>
-                <ChatIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary="Chat Settings"
-                secondary={`Max ${maxThreadMessages} messages`}
-                secondaryTypographyProps={{ variant: 'caption' }}
-              />
-            </MenuItem>
-            <MenuItem onClick={handleZoomClick}>
-              <ListItemIcon>
-                <ZoomInIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText
-                primary="Zoom Level"
-                secondary={`${zoomLevel}%`}
-                secondaryTypographyProps={{ variant: 'caption' }}
-              />
-            </MenuItem>
-            {!disableGitBranching && (
-              <MenuItem onClick={handleBranchSettingsClick}>
-                <ListItemIcon>
-                  <GitIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Base Branch"
-                  secondary={baseBranch}
-                  secondaryTypographyProps={{ variant: 'caption' }}
-                />
-              </MenuItem>
-            )}
-            {!disableGitBranching && (
-              <MenuItem onClick={() => setAllowDirectEpicMerge(!allowDirectEpicMerge)}>
-                <ListItemIcon>
-                  <MergeIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Direct Epic Merge"
-                  secondary="Merge without PR"
-                  secondaryTypographyProps={{ variant: 'caption' }}
-                />
-                <Switch
-                  edge="end"
-                  checked={allowDirectEpicMerge}
-                  size="small"
-                />
-              </MenuItem>
-            )}
-            {!disableGitBranching && (
-              <MenuItem onClick={() => setEnableEpicBranches(!enableEpicBranches)}>
-                <ListItemIcon>
-                  <GitIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Enable Epic Branches"
-                  secondary="Show epic branch controls"
-                  secondaryTypographyProps={{ variant: 'caption' }}
-                />
-                <Switch
-                  edge="end"
-                  checked={enableEpicBranches}
-                  size="small"
-                />
-              </MenuItem>
-            )}
-            <MenuItem onClick={() => setDisableEnvCheck(!disableEnvCheck)}>
+            <MenuItem onClick={async () => {
+              handleClose()
+              setEnvCheckResults(null)
+              setEnvCheckLoading(true)
+              setEnvCheckDialogOpen(true)
+              try {
+                const result = await window.cliAPI.checkEnvironment()
+                setEnvCheckResults(result.items)
+                setEnvCheckCompletedOnce(true)
+              } finally {
+                setEnvCheckLoading(false)
+              }
+            }}>
               <ListItemIcon>
                 <SettingsSuggestIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText
-                primary="Disable Env Check"
-                secondary="Skip startup environment check"
+                primary="Prerequisites"
+                secondary="Check required tools & plugins"
                 secondaryTypographyProps={{ variant: 'caption' }}
               />
-              <Switch
-                edge="end"
-                checked={disableEnvCheck}
-                size="small"
-              />
             </MenuItem>
-            {viewMode === 'board' && (
-              <MenuItem onClick={() => setDisableGitBranching(!disableGitBranching)}>
-                <ListItemIcon>
-                  <GitIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Disable Git Branching"
-                  secondary="Skip branch creation & merging"
-                  secondaryTypographyProps={{ variant: 'caption' }}
-                />
-                <Switch
-                  edge="end"
-                  checked={disableGitBranching}
-                  size="small"
-                />
-              </MenuItem>
-            )}
-          </>
-        )}
-        {!compact && (
-          <>
+            <MenuItem onClick={handleKeyboardShortcuts}>
+              <ListItemIcon>
+                <KeyboardIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Keyboard Shortcuts</ListItemText>
+            </MenuItem>
             {appVersion && (
               <MenuItem disabled sx={{ opacity: '0.7 !important' }}>
                 <ListItemIcon>
@@ -565,13 +480,193 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
                 secondaryTypographyProps={{ variant: 'caption' }}
               />
             </MenuItem>
-            <MenuItem onClick={handleKeyboardShortcuts}>
-              <ListItemIcon>
-                <KeyboardIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Keyboard Shortcuts</ListItemText>
-            </MenuItem>
           </>
+        )}
+      </Menu>
+
+      {/* Display Submenu */}
+      <Menu
+        anchorEl={displaySubAnchor}
+        open={Boolean(displaySubAnchor)}
+        onClose={() => setDisplaySubAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { minWidth: 220 } } }}
+      >
+        <MenuItem onClick={() => {
+          setDisplaySubAnchor(null)
+          themeBeforePreview.current = { slug: colorTheme }
+          setThemeSearchQuery('')
+          setThemePickerDialogOpen(true)
+        }}>
+          <ListItemIcon>
+            <PaletteIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Color Theme"
+            secondary={base24Schemes[colorTheme]?.name || colorTheme}
+            secondaryTypographyProps={{ variant: 'caption' }}
+          />
+        </MenuItem>
+        <MenuItem onClick={() => { setDisplaySubAnchor(null); handleClose(); setZoomDialogOpen(true) }}>
+          <ListItemIcon>
+            <ZoomInIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Zoom Level"
+            secondary={`${zoomLevel}%`}
+            secondaryTypographyProps={{ variant: 'caption' }}
+          />
+        </MenuItem>
+      </Menu>
+
+      {/* Chat Settings Submenu */}
+      <Menu
+        anchorEl={chatSubAnchor}
+        open={Boolean(chatSubAnchor)}
+        onClose={() => setChatSubAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { minWidth: 220 } } }}
+      >
+        <MenuItem onClick={() => setVerboseMode(!verboseMode)}>
+          <ListItemIcon>
+            <BuildIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Verbose Chat"
+            secondary="Show tool calls in messages"
+            secondaryTypographyProps={{ variant: 'caption' }}
+          />
+          <Switch
+            edge="end"
+            checked={verboseMode}
+            size="small"
+          />
+        </MenuItem>
+        <MenuItem onClick={() => { handleClose(); setChatSettingsDialogOpen(true) }}>
+          <ListItemIcon>
+            <ChatIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Max Messages"
+            secondary={`${maxThreadMessages} per thread`}
+            secondaryTypographyProps={{ variant: 'caption' }}
+          />
+        </MenuItem>
+      </Menu>
+
+      {/* Board Settings Submenu */}
+      <Menu
+        anchorEl={boardSubAnchor}
+        open={Boolean(boardSubAnchor)}
+        onClose={() => setBoardSubAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { minWidth: 220 } } }}
+      >
+        <MenuItem onClick={() => setFullCycleReviewCount(fullCycleReviewCount >= 5 ? 0 : fullCycleReviewCount + 1)}>
+          <ListItemIcon>
+            <RepeatIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Full Cycle Reviews"
+            secondary={fullCycleReviewCount === 0 ? 'No reviews' : `${fullCycleReviewCount} review round${fullCycleReviewCount > 1 ? 's' : ''}`}
+            secondaryTypographyProps={{ variant: 'caption' }}
+          />
+          <Chip
+            label={fullCycleReviewCount}
+            size="small"
+            color={fullCycleReviewCount === 0 ? 'default' : 'primary'}
+            sx={{ minWidth: 32, ml: 1 }}
+          />
+        </MenuItem>
+        <MenuItem onClick={() => setEnableHumanReviewColumn(!enableHumanReviewColumn)}>
+          <ListItemIcon>
+            <RateReviewIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Human Review Column"
+            secondary="Review checklist step"
+            secondaryTypographyProps={{ variant: 'caption' }}
+          />
+          <Switch
+            edge="end"
+            checked={enableHumanReviewColumn}
+            size="small"
+          />
+        </MenuItem>
+      </Menu>
+
+      {/* Git Settings Submenu */}
+      <Menu
+        anchorEl={gitSubAnchor}
+        open={Boolean(gitSubAnchor)}
+        onClose={() => setGitSubAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { minWidth: 220 } } }}
+      >
+        <MenuItem onClick={() => setDisableGitBranching(!disableGitBranching)}>
+          <ListItemIcon>
+            <GitIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Disable Git Branching"
+            secondary="Skip branch creation & merging"
+            secondaryTypographyProps={{ variant: 'caption' }}
+          />
+          <Switch
+            edge="end"
+            checked={disableGitBranching}
+            size="small"
+          />
+        </MenuItem>
+        {!disableGitBranching && (
+          <MenuItem onClick={() => { handleClose(); setBranchDialogOpen(true) }}>
+            <ListItemIcon>
+              <GitIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Base Branch"
+              secondary={baseBranch}
+              secondaryTypographyProps={{ variant: 'caption' }}
+            />
+          </MenuItem>
+        )}
+        {!disableGitBranching && (
+          <MenuItem onClick={() => setAllowDirectEpicMerge(!allowDirectEpicMerge)}>
+            <ListItemIcon>
+              <MergeIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Direct Epic Merge"
+              secondary="Merge without PR"
+              secondaryTypographyProps={{ variant: 'caption' }}
+            />
+            <Switch
+              edge="end"
+              checked={allowDirectEpicMerge}
+              size="small"
+            />
+          </MenuItem>
+        )}
+        {!disableGitBranching && (
+          <MenuItem onClick={() => setEnableEpicBranches(!enableEpicBranches)}>
+            <ListItemIcon>
+              <GitIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Enable Epic Branches"
+              secondary="Show epic branch controls"
+              secondaryTypographyProps={{ variant: 'caption' }}
+            />
+            <Switch
+              edge="end"
+              checked={enableEpicBranches}
+              size="small"
+            />
+          </MenuItem>
         )}
       </Menu>
 
