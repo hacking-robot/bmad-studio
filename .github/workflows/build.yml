@@ -2,11 +2,55 @@ name: Build and Release
 
 on:
   push:
+    branches:
+      - master
+      - main
     tags:
       - 'v*'
 
 jobs:
+  version:
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Pull latest changes
+        run: git pull origin ${{ github.ref_name }} --rebase
+
+      - name: Bump version and tag
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+
+          NEW_VERSION=$(echo $CURRENT_VERSION | awk -F. '{$NF = $NF + 1;} 1' | sed 's/ /./g')
+          echo "New version: $NEW_VERSION"
+
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          git add package.json
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+          git tag "v$NEW_VERSION"
+          git push && git push --tags
+
   build:
+    if: always() && (github.ref_type == 'tag' || needs.version.result == 'success')
+    needs: version
     strategy:
       matrix:
         include:
@@ -22,9 +66,22 @@ jobs:
       contents: write
 
     steps:
+      - name: Determine ref
+        id: ref
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "checkout_ref=${{ github.ref }}" >> $GITHUB_OUTPUT
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(curl -s "https://api.github.com/repos/${{ github.repository }}/tags?per_page=1" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['name'])")
+            echo "checkout_ref=$VERSION" >> $GITHUB_OUTPUT
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ steps.ref.outputs.checkout_ref }}
 
       - name: Setup Python (for node-gyp)
         uses: actions/setup-python@v5
@@ -53,9 +110,16 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Get version from tag
+      - name: Determine version
         id: version
-        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(curl -s "https://api.github.com/repos/${{ github.repository }}/tags?per_page=1" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['name'])")
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
 
       - name: Publish release
         run: gh release edit "${{ steps.version.outputs.version }}" --repo "${{ github.repository }}" --draft=false --title "BMad Studio ${{ steps.version.outputs.version }}"
