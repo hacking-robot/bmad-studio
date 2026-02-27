@@ -1,0 +1,440 @@
+{
+  "statuses": [
+    {
+      "id": "backlog",
+      "label": "Backlog",
+      "color": "#6B7280",
+      "description": "Game stories identified but not yet refined. Requirements may be incomplete or need design work.",
+      "displayOrder": 1,
+      "visible": true
+    },
+    {
+      "id": "ready-for-dev",
+      "label": "Ready for Dev",
+      "color": "#3B82F6",
+      "description": "Game stories with complete design specs, ready for implementation. All mechanics are defined.",
+      "displayOrder": 2,
+      "visible": true
+    },
+    {
+      "id": "in-progress",
+      "label": "In Progress",
+      "color": "#F59E0B",
+      "description": "Currently being implemented. Developer is actively working on the game feature.",
+      "displayOrder": 3,
+      "visible": true
+    },
+    {
+      "id": "review",
+      "label": "Review",
+      "color": "#8B5CF6",
+      "description": "Implementation complete, awaiting playtest and code review before merging.",
+      "displayOrder": 4,
+      "visible": true
+    },
+    {
+      "id": "human-review",
+      "label": "Human Review",
+      "color": "#E91E63",
+      "description": "Awaiting human review and approval. Complete all checklist items before moving to Done.",
+      "displayOrder": 4.5,
+      "visible": true
+    },
+    {
+      "id": "done",
+      "label": "Done",
+      "color": "#10B981",
+      "description": "Implemented, tested, and verified. The game feature is complete.",
+      "displayOrder": 5,
+      "visible": true
+    },
+    {
+      "id": "optional",
+      "label": "Optional",
+      "color": "#9CA3AF",
+      "description": "Nice-to-have game features that are not required for the current milestone.",
+      "displayOrder": 6,
+      "visible": false
+    }
+  ],
+  "transitions": [
+    { "from": "backlog", "to": "ready-for-dev" },
+    { "from": "backlog", "to": "optional" },
+    { "from": "ready-for-dev", "to": "in-progress" },
+    { "from": "in-progress", "to": "review" },
+    { "from": "review", "to": "done" },
+    { "from": "review", "to": "human-review" },
+    { "from": "review", "to": "in-progress" },
+    { "from": "human-review", "to": "done" },
+    { "from": "human-review", "to": "review" },
+    { "from": "optional", "to": "ready-for-dev" }
+  ],
+  "statusActions": {
+    "backlog": {
+      "nextSteps": [
+        {
+          "label": "Create Story",
+          "commandRef": "create-story",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Draft story for development"
+        },
+        {
+          "label": "Create GDD",
+          "commandRef": "create-gdd",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Create Game Design Document"
+        },
+        {
+          "label": "Brainstorm Game",
+          "commandRef": "brainstorm-game",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Brainstorm game features"
+        }
+      ]
+    },
+    "ready-for-dev": {
+      "nextSteps": [
+        {
+          "label": "Implement Story",
+          "commandRef": "dev-story",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Implement the game feature",
+          "primary": true
+        },
+        {
+          "label": "Quick Prototype",
+          "commandRef": "quick-prototype",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Rapid prototyping"
+        },
+        {
+          "label": "Game Architecture",
+          "commandRef": "game-architecture",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Design technical approach first"
+        }
+      ]
+    },
+    "in-progress": {
+      "nextSteps": [
+        {
+          "label": "Continue Development",
+          "commandRef": "game-dev",
+          "commandModule": "gds",
+          "commandType": "agents",
+          "description": "Continue working with Game Dev agent",
+          "primary": true
+        },
+        {
+          "label": "Sprint Status",
+          "commandRef": "sprint-status",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Check sprint progress"
+        },
+        {
+          "label": "Quick Dev",
+          "commandRef": "quick-dev",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Flexible development"
+        },
+        {
+          "label": "Code Review",
+          "commandRef": "code-review",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Request code review when ready"
+        }
+      ]
+    },
+    "review": {
+      "nextSteps": [
+        {
+          "label": "Code Review",
+          "commandRef": "code-review",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Review code changes",
+          "primary": true
+        },
+        {
+          "label": "Test Review",
+          "commandRef": "gametest-test-review",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Review test coverage"
+        },
+        {
+          "label": "Playtest Plan",
+          "commandRef": "gametest-playtest-plan",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Create playtest plan"
+        },
+        {
+          "label": "Correct Course",
+          "commandRef": "correct-course",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Send back with corrections needed"
+        }
+      ]
+    },
+    "human-review": {
+      "nextSteps": [
+        {
+          "label": "Code Review",
+          "commandRef": "code-review",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Review code changes",
+          "primary": true
+        },
+        {
+          "label": "Test Review",
+          "commandRef": "gametest-test-review",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Review test coverage"
+        },
+        {
+          "label": "Playtest Plan",
+          "commandRef": "gametest-playtest-plan",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Create playtest plan"
+        },
+        {
+          "label": "Correct Course",
+          "commandRef": "correct-course",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Send back with corrections needed"
+        }
+      ]
+    },
+    "done": {
+      "nextSteps": [
+        {
+          "label": "Retrospective",
+          "commandRef": "retrospective",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Run retrospective"
+        },
+        {
+          "label": "Performance Test",
+          "commandRef": "gametest-performance",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Validate performance"
+        }
+      ]
+    },
+    "optional": {
+      "nextSteps": [
+        {
+          "label": "Create Story",
+          "commandRef": "create-story",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Prioritize and refine story"
+        },
+        {
+          "label": "Quick Prototype",
+          "commandRef": "quick-prototype",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Quick implementation"
+        }
+      ]
+    }
+  },
+  "agentOverrides": {
+    "game-designer": {
+      "avatar": "GD",
+      "color": "#8B5CF6",
+      "whenToUse": "At the start of a game project to define mechanics, create GDDs, and design game systems.",
+      "examplePrompts": [
+        "Create a GDD for a 2D platformer",
+        "Design the combat mechanics for the RPG",
+        "Define the progression system for the puzzle game"
+      ]
+    },
+    "game-architect": {
+      "avatar": "GA",
+      "color": "#10B981",
+      "whenToUse": "After game design to select engine (Unity, Unreal, Godot), design architecture, and create technical specs.",
+      "examplePrompts": [
+        "Design the entity component system architecture",
+        "Select the best engine for our puzzle game",
+        "Create the networking architecture for multiplayer"
+      ]
+    },
+    "game-scrum-master": {
+      "avatar": "GS",
+      "color": "#F59E0B",
+      "whenToUse": "During production to plan sprints, track progress, prepare stories, and run retrospectives.",
+      "examplePrompts": [
+        "Generate the current sprint status",
+        "Prepare story 2.3 for development",
+        "Run a milestone retrospective"
+      ]
+    },
+    "game-dev": {
+      "avatar": "GV",
+      "color": "#EF4444",
+      "whenToUse": "When game stories are ready for development, or when code needs review.",
+      "examplePrompts": [
+        "Implement the player movement system",
+        "Review the code changes for the inventory feature",
+        "Add unit tests for the combat module"
+      ]
+    },
+    "game-solo-dev": {
+      "avatar": "SD",
+      "color": "#EC4899",
+      "whenToUse": "For quick prototypes, rapid iteration, or when working solo without full planning overhead.",
+      "examplePrompts": [
+        "Quick prototype the core gameplay loop",
+        "Rapidly implement the save system",
+        "Create a playtest plan for the demo"
+      ]
+    },
+    "game-qa": {
+      "avatar": "GQ",
+      "color": "#06B6D4",
+      "whenToUse": "When setting up testing infrastructure, creating playtest plans, or validating game performance.",
+      "examplePrompts": [
+        "Set up the game testing framework",
+        "Create a playtest plan for the demo level",
+        "Validate the performance on target hardware"
+      ]
+    }
+  },
+  "projectWorkflows": {
+    "analysis": {
+      "label": "Analysis",
+      "icon": "🔍",
+      "description": "Brainstorm game ideas, define the creative vision, and develop narrative elements.",
+      "workflows": [
+        {
+          "label": "Brainstorm Game",
+          "commandRef": "brainstorm-game",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Brainstorm game ideas and features",
+          "tooltip": "Interactive brainstorming session to explore game concepts, mechanics, art direction, and core gameplay loops. Produces a brainstorming report to guide game design decisions."
+        },
+        {
+          "label": "Create Game Brief",
+          "commandRef": "create-game-brief",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Create or update game brief",
+          "tooltip": "Creates a game brief capturing the core concept, genre, target audience, unique selling points, and high-level design pillars. The foundation document for all game development."
+        },
+        {
+          "label": "Narrative",
+          "commandRef": "narrative",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Develop game narrative and story",
+          "tooltip": "Develops the game's narrative elements: world-building, character backgrounds, story arcs, dialogue systems, and lore. Creates a narrative document that informs level and quest design."
+        }
+      ]
+    },
+    "planning": {
+      "label": "Planning",
+      "icon": "📋",
+      "description": "Create Game Design Documents, define gameplay systems, and plan development stories.",
+      "workflows": [
+        {
+          "label": "Create GDD",
+          "commandRef": "create-gdd",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Create or update Game Design Document",
+          "tooltip": "Creates a comprehensive Game Design Document (GDD) covering gameplay mechanics, systems design, progression, controls, and technical requirements. The primary reference for all game development work."
+        },
+        {
+          "label": "Create Story",
+          "commandRef": "create-story",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Create a new development story",
+          "tooltip": "Creates an individual development story with detailed acceptance criteria, technical requirements, and implementation notes. Stories become the work items on your sprint board."
+        }
+      ]
+    },
+    "architecture": {
+      "label": "Architecture",
+      "icon": "🏗️",
+      "description": "Design game technical architecture, plan engine systems, and create component diagrams.",
+      "workflows": [
+        {
+          "label": "Game Architecture",
+          "commandRef": "game-architecture",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Design game technical architecture",
+          "tooltip": "Designs the game's technical architecture: engine systems, rendering pipeline, physics, networking, asset pipeline, and component structure. Produces an architecture document guiding all implementation."
+        }
+      ]
+    },
+    "management": {
+      "label": "Management",
+      "icon": "📊",
+      "description": "Sprint planning, progress tracking, retrospectives, and project context generation.",
+      "workflows": [
+        {
+          "label": "Sprint Planning",
+          "commandRef": "sprint-planning",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Plan sprint work",
+          "tooltip": "Helps prioritize stories, estimate effort, and organize the next sprint. Selects which backlog stories to move into the sprint based on capacity and dependencies."
+        },
+        {
+          "label": "Sprint Status",
+          "commandRef": "sprint-status",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Check sprint progress",
+          "tooltip": "Generates a progress report of the current sprint: which stories are in progress, completed, or blocked. Updates the sprint-status tracking file."
+        },
+        {
+          "label": "Retrospective",
+          "commandRef": "retrospective",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Run sprint retrospective",
+          "tooltip": "Facilitates a sprint retrospective to review what went well, what didn't, and what to improve. Documents learnings and action items for the next sprint."
+        },
+        {
+          "label": "Correct Course",
+          "commandRef": "correct-course",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Adjust direction based on findings",
+          "tooltip": "When a story or implementation has gone off-track, this workflow helps diagnose the issue and plan corrections. Use when code review reveals problems or requirements have changed."
+        },
+        {
+          "label": "Generate Project Context",
+          "commandRef": "generate-project-context",
+          "commandModule": "gds",
+          "commandType": "workflows",
+          "description": "Generate project context document",
+          "tooltip": "Generates a comprehensive project context summary of all planning artifacts. AI agents use this during development to understand the full project scope."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,51 @@
+/* Git Diff View Custom Styles */
+/* Color theming is injected dynamically from base24 palette via useThemedSyntax */
+
+/* General diff view styling */
+.diff-view-wrapper .diff-view {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Line number styling */
+.diff-view-wrapper .diff-view-line-number {
+  text-align: right;
+  padding-right: 8px;
+  user-select: none;
+  opacity: 0.7;
+}
+
+/* Code content styling */
+.diff-view-wrapper .diff-view-content {
+  padding-left: 8px;
+  white-space: pre;
+  tab-size: 2;
+}
+
+/* Syntax highlighting enhancements */
+.diff-view-wrapper .diff-view-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Split view spacing */
+.diff-view-wrapper .diff-view-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+/* Unified view */
+.diff-view-wrapper .diff-view-unified {
+  width: 100%;
+}
+
+/* Ensure proper overflow handling */
+.diff-view-wrapper {
+  overflow: auto;
+}
+
+/* File header in split view */
+.diff-view-wrapper .diff-view-file-header {
+  padding: 8px 12px;
+  font-weight: 500;
+}
