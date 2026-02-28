@@ -1,9 +1,11 @@
 import { useMemo, useState, useRef, useCallback } from 'react'
-import { Box, CircularProgress, Typography, Alert, Snackbar, Chip } from '@mui/material'
+import { Box, CircularProgress, Typography, Alert, Snackbar, Chip, Button } from '@mui/material'
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, rectIntersection, closestCorners, CollisionDetection, PointerSensor, useSensor, useSensors, UniqueIdentifier } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import MergeIcon from '@mui/icons-material/Merge'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import VisibilityIcon from '@mui/icons-material/Visibility'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
 import { useWorkflow } from '../../hooks/useWorkflow'
@@ -61,6 +63,11 @@ export default function Board() {
   const baseBranch = useStore((state) => state.baseBranch)
   const bmadInGitignore = useStore((state) => state.bmadInGitignore)
   const disableGitBranching = useStore((state) => state.disableGitBranching)
+  const projectPath = useStore((state) => state.projectPath)
+  const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
+  const isRemoteProject = useStore((state) => state.isRemoteProject)
+  const setRemoteViewingBranch = useStore((state) => state.setRemoteViewingBranch)
+  const storeReadOnly = useStore((state) => state.isReadOnly())
 
   // Parse current branch to determine type and scope
   const branchInfo = useMemo(() => parseBranchInfo(currentBranch, baseBranch), [currentBranch, baseBranch])
@@ -74,7 +81,8 @@ export default function Board() {
   // For story branches, board is editable but only for the matching story
   // For epic branches (when not epicReadOnly), only stories in that epic are editable
   // For base branch, everything is editable
-  const readOnly = epicReadOnly
+  // Remote viewing forces read-only
+  const readOnly = epicReadOnly || storeReadOnly
 
   // Configure sensors for drag detection - empty when read-only to disable dragging
   const sensors = useSensors(
@@ -253,7 +261,7 @@ export default function Board() {
 
     // Block drag operations in read-only mode
     if (readOnly) {
-      setSnackbarMessage('Board is read-only. Merge story branches first.')
+      setSnackbarMessage(storeReadOnly ? 'Board is read-only in remote view.' : 'Board is read-only. Merge story branches first.')
       setSnackbarOpen(true)
       return
     }
@@ -445,7 +453,7 @@ export default function Board() {
 
   if (error) {
     return (
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ p: 3, flex: 1 }}>
         <Alert severity="error">{error}</Alert>
       </Box>
     )
@@ -547,8 +555,60 @@ export default function Board() {
           </Alert>
         )}
 
+        {/* Remote viewing banner */}
+        {storeReadOnly && (remoteViewingBranch || isRemoteProject) && (
+          <Alert
+            severity="info"
+            icon={<VisibilityIcon />}
+            action={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Button
+                  color="inherit"
+                  size="small"
+                  startIcon={<RefreshIcon fontSize="small" />}
+                  onClick={async () => {
+                    if (!projectPath) return
+                    try {
+                      await window.gitAPI.fetch(projectPath)
+                    } catch {
+                      // fetch may fail if offline — still reload cached data
+                    }
+                    loadProjectData()
+                  }}
+                >
+                  Refresh Board
+                </Button>
+                {remoteViewingBranch && !isRemoteProject && (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => {
+                      setRemoteViewingBranch(null)
+                      loadProjectData()
+                    }}
+                    sx={{ fontWeight: 600 }}
+                  >
+                    Exit Remote View
+                  </Button>
+                )}
+              </Box>
+            }
+            sx={{
+              mx: 2,
+              mt: 2,
+              mb: 0,
+              py: 0.5,
+              '& .MuiAlert-message': { py: 0.5, display: 'flex', alignItems: 'center', gap: 1 }
+            }}
+          >
+            <Typography variant="body2">
+              <strong>Viewing:</strong> {remoteViewingBranch || 'Remote project'} (read-only)
+            </Typography>
+          </Alert>
+        )}
+
         {/* Read-only banner when on epic with unmerged story branches */}
-        {readOnly && (
+        {epicReadOnly && !storeReadOnly && (
           <Alert
             severity="warning"
             icon={!epicMergeStatusChecked ? <CircularProgress size={16} /> : <MergeIcon />}

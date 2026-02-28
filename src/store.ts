@@ -50,6 +50,9 @@ export interface RecentProject {
   allowDirectEpicMerge?: boolean;
   disableGitBranching?: boolean;
   colorTheme?: string;
+  isRemote?: boolean;
+  remoteUrl?: string;
+  remoteCachePath?: string;
 }
 
 const MAX_HISTORY_ENTRIES = 50;
@@ -351,6 +354,17 @@ interface AppState {
   setHasUncommittedChanges: (hasChanges: boolean) => void;
   setUnmergedStoryBranches: (branches: string[]) => void;
   setEpicMergeStatusChecked: (checked: boolean) => void;
+
+  // Remote Viewing (NOT persisted — transient session state)
+  remoteViewingBranch: string | null;
+  isRemoteProject: boolean;
+  remoteProjectUrl: string | null;
+  hasGitHubToken: boolean;
+  isReadOnly: () => boolean;
+  setRemoteViewingBranch: (branch: string | null) => void;
+  setIsRemoteProject: (remote: boolean) => void;
+  setRemoteProjectUrl: (url: string | null) => void;
+  setHasGitHubToken: (hasToken: boolean) => void;
 
   // Data
   epics: Epic[];
@@ -785,6 +799,7 @@ export const useStore = create<AppState>()(
           selectedChatAgent: null,
           gitDiffPanelOpen: false,
           gitDiffPanelBranch: null,
+          remoteViewingBranch: null,
         });
       },
       setProjectType: (type) => set({ projectType: type }),
@@ -838,6 +853,20 @@ export const useStore = create<AppState>()(
       },
       setEpicMergeStatusChecked: (checked) =>
         set({ epicMergeStatusChecked: checked }),
+
+      // Remote Viewing (NOT persisted)
+      remoteViewingBranch: null,
+      isRemoteProject: false,
+      remoteProjectUrl: null,
+      hasGitHubToken: false,
+      isReadOnly: () => {
+        const { remoteViewingBranch, isRemoteProject } = get()
+        return remoteViewingBranch !== null || isRemoteProject
+      },
+      setRemoteViewingBranch: (branch) => set({ remoteViewingBranch: branch }),
+      setIsRemoteProject: (remote) => set({ isRemoteProject: remote }),
+      setRemoteProjectUrl: (url) => set({ remoteProjectUrl: url }),
+      setHasGitHubToken: (hasToken) => set({ hasGitHubToken: hasToken }),
 
       // Data
       epics: [],
@@ -1907,6 +1936,11 @@ export const useStore = create<AppState>()(
                 state.developerMode = current.developerMode;
               if (current.colorTheme)
                 state.colorTheme = current.colorTheme;
+              // Restore remote project state
+              if (current.isRemote) {
+                state.isRemoteProject = true;
+                state.remoteProjectUrl = current.remoteUrl || null;
+              }
             }
           }
           // Set correct initial viewMode based on project type

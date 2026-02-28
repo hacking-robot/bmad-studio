@@ -111,6 +111,7 @@ export default function StoryDialog() {
 
   const openGitDiffPanel = useStore((state) => state.openGitDiffPanel)
   const developerMode = useStore((state) => state.developerMode)
+  const isReadOnly = useStore((state) => state.isReadOnly())
 
   // Right side panel state: only one can be open at a time
   const [sidePanel, setSidePanel] = useState<'none' | 'devNotes' | 'devRecord'>('none')
@@ -714,7 +715,7 @@ export default function StoryDialog() {
                         <Tooltip title="Implementation tasks. Click to toggle completion." arrow>
                           <InfoOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled', cursor: 'help' }} />
                         </Tooltip>
-                        {developerMode === 'human' && selectedStory?.filePath && (
+                        {developerMode === 'human' && selectedStory?.filePath && !isReadOnly && (
                           <Tooltip title="Add task">
                             <IconButton
                               size="small"
@@ -732,9 +733,9 @@ export default function StoryDialog() {
                         {storyContent.tasks.map((task, taskIdx) => (
                           <Box key={task.id}>
                             <ListItem
-                              sx={{ px: 0, py: 0.5, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' }, '&:hover .task-actions': { opacity: 1 } }}
+                              sx={{ px: 0, py: 0.5, cursor: isReadOnly ? 'default' : 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: isReadOnly ? 'transparent' : 'action.hover' }, '&:hover .task-actions': { opacity: 1 } }}
                               onClick={() => {
-                                if (editingTaskId !== task.id) handleToggleTask(taskIdx)
+                                if (!isReadOnly && editingTaskId !== task.id) handleToggleTask(taskIdx)
                               }}
                             >
                               <ListItemIcon sx={{ minWidth: 32 }}>
@@ -776,7 +777,7 @@ export default function StoryDialog() {
                                   primaryTypographyProps={{ fontWeight: 500, component: 'div' }}
                                 />
                               )}
-                              {developerMode === 'human' && editingTaskId !== task.id && (
+                              {developerMode === 'human' && editingTaskId !== task.id && !isReadOnly && (
                                 <Box className="task-actions" sx={{ display: 'flex', opacity: 0, transition: 'opacity 0.15s', ml: 1 }}>
                                   <Tooltip title="Add subtask">
                                     <IconButton size="small" onClick={(e) => { e.stopPropagation(); setAddingTaskParent(taskIdx); setAddDraft('') }}>
@@ -801,9 +802,9 @@ export default function StoryDialog() {
                                 {task.subtasks.map((subtask, subtaskIdx) => (
                                   <ListItem
                                     key={subtask.id}
-                                    sx={{ px: 0, py: 0.25, cursor: 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' }, '&:hover .task-actions': { opacity: 1 } }}
+                                    sx={{ px: 0, py: 0.25, cursor: isReadOnly ? 'default' : 'pointer', borderRadius: 0.5, '&:hover': { bgcolor: isReadOnly ? 'transparent' : 'action.hover' }, '&:hover .task-actions': { opacity: 1 } }}
                                     onClick={() => {
-                                      if (editingTaskId !== subtask.id) handleToggleTask(taskIdx, subtaskIdx)
+                                      if (!isReadOnly && editingTaskId !== subtask.id) handleToggleTask(taskIdx, subtaskIdx)
                                     }}
                                   >
                                     <ListItemIcon sx={{ minWidth: 28 }}>
@@ -848,7 +849,7 @@ export default function StoryDialog() {
                                         primaryTypographyProps={{ component: 'div' }}
                                       />
                                     )}
-                                    {developerMode === 'human' && editingTaskId !== subtask.id && (
+                                    {developerMode === 'human' && editingTaskId !== subtask.id && !isReadOnly && (
                                       <Box className="task-actions" sx={{ display: 'flex', opacity: 0, transition: 'opacity 0.15s', ml: 1 }}>
                                         <Tooltip title="Edit">
                                           <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditingTaskId(subtask.id); setEditDraft(subtask.title) }}>
@@ -1235,7 +1236,7 @@ export default function StoryDialog() {
                       <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.disabled', cursor: 'help' }} />
                     </Tooltip>
                     {/* Edit icon next to title (human mode, dev record only) */}
-                    {sidePanel === 'devRecord' && developerMode === 'human' && selectedStory?.filePath && !editingDevRecord && (
+                    {sidePanel === 'devRecord' && developerMode === 'human' && selectedStory?.filePath && !editingDevRecord && !isReadOnly && (
                       <Tooltip title="Edit Development Record">
                         <IconButton
                           size="small"
@@ -1263,7 +1264,7 @@ export default function StoryDialog() {
                       </Tooltip>
                     )}
                     {/* Save+Cancel for dev record in human mode */}
-                    {sidePanel === 'devRecord' && developerMode === 'human' && selectedStory?.filePath && editingDevRecord && (
+                    {sidePanel === 'devRecord' && developerMode === 'human' && selectedStory?.filePath && editingDevRecord && !isReadOnly && (
                       <>
                         <Button
                           size="small"

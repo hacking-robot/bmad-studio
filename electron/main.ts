@@ -1,15 +1,16 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, screen, Notification, nativeImage, net } from 'electron'
 import { join, dirname, basename, resolve } from 'path'
 import { readFile, readdir, stat, writeFile, mkdir } from 'fs/promises'
-import { existsSync, watch, FSWatcher, readdirSync, readFileSync, appendFileSync } from 'fs'
+import { existsSync, watch, FSWatcher, readdirSync, readFileSync, appendFileSync, mkdirSync } from 'fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import { spawn as spawnChild, spawnSync, execFile } from 'child_process'
+import { spawn as spawnChild, spawnSync, execFile, StdioOptions } from 'child_process'
 import { promisify } from 'util'
 import { autoUpdater } from 'electron-updater'
 import { agentManager } from './agentManager'
 import { detectTool, detectAllTools, clearDetectionCache } from './cliToolManager'
 import { getAugmentedEnv, findBinary } from './envUtils'
-import { scanBmadProject } from './bmadScanner'
+import { scanBmadProject, scanBmadAtRef } from './bmadScanner'
+import { encryptToken, decryptToken, getAuthenticatedUrl } from './tokenManager'
 
 // Set app name (shows in menu bar on macOS)
 app.setName('BMad Studio')
@@ -113,6 +114,8 @@ interface AppSettings {
   statusHistoryByStory: Record<string, StatusChangeEntry[]>
   globalStatusHistory: StatusChangeEntry[]
   lastViewedStatusHistoryAt: number
+  // GitHub token (encrypted)
+  githubTokenEncrypted?: string
 }
 
 const defaultSettings: AppSettings = {
@@ -2994,5 +2997,237 @@ ipcMain.handle('create-project-directory', async (_, parentPath: string, project
     return { success: true, path: projectPath }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to create directory' }
+  }
+})
+
+// ============================================================
+// Remote Branch Viewer — IPC handlers
+// ============================================================
+
+// Save encrypted GitHub PAT token to settings
+ipcMain.handle('save-github-token', async (_, token: string) => {
+  try {
+    const encrypted = encryptToken(token)
+    const settings = await loadSettings()
+    settings.githubTokenEncrypted = encrypted
+    await saveSettings(settings)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to save token' }
+  }
+})
+
+// Load decrypted GitHub PAT token from settings
+ipcMain.handle('load-github-token', async () => {
+  try {
+    const settings = await loadSettings()
+    if (!settings.githubTokenEncrypted) return { token: null }
+    const token = decryptToken(settings.githubTokenEncrypted)
+    return { token }
+  } catch (error) {
+    return { token: null, error: error instanceof Error ? error.message : 'Failed to load token' }
+  }
+})
+
+// Test a GitHub token by running git ls-remote against a test URL
+ipcMain.handle('test-github-token', async (_, token: string, testUrl: string) => {
+  if (!testUrl) {
+    return { success: false, error: 'No test URL provided' }
+  }
+
+  try {
+    const authenticatedUrl = testUrl.startsWith('https://')
+      ? getAuthenticatedUrl(testUrl, encryptToken(token))
+      : testUrl
+
+    const result = spawnSync('git', ['ls-remote', '--heads', authenticatedUrl], {
+      encoding: 'utf-8',
+      timeout: 15000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    })
+
+    if (result.status === 0) {
+      return { success: true }
+    }
+    return { success: false, error: result.stderr?.trim() || 'Authentication failed' }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Token test failed' }
+  }
+})
+
+// Fetch remote refs (git fetch <remote> --prune)
+ipcMain.handle('git-fetch', async (_, projectPath: string, remote?: string) => {
+  const remoteArg = remote || 'origin'
+  // Optionally inject token for HTTPS remotes
+  const settings = await loadSettings()
+  const encrypted = settings.githubTokenEncrypted
+
+  // Get the remote URL to potentially inject token
+  const urlResult = runGitCommand(['remote', 'get-url', remoteArg], projectPath)
+  const env: Record<string, string | undefined> = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  delete env.GPG_TTY
+
+  if (!urlResult.error && urlResult.stdout.trim().startsWith('https://') && encrypted) {
+    // Temporarily set the authenticated URL for this fetch
+    const authUrl = getAuthenticatedUrl(urlResult.stdout.trim(), encrypted)
+    const result = spawnSync('git', ['-c', `url.${authUrl}.insteadOf=${urlResult.stdout.trim()}`, 'fetch', remoteArg, '--prune'], {
+      cwd: projectPath,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 60000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env
+    })
+    if (result.error) return { success: false, error: result.error.message }
+    if (result.status !== 0) return { success: false, error: result.stderr?.trim() || 'Fetch failed' }
+    return { success: true }
+  }
+
+  const result = runGitCommand(['fetch', remoteArg, '--prune'], projectPath)
+  if (result.error) return { success: false, error: result.error }
+  return { success: true }
+})
+
+// List remote branches (origin/*)
+ipcMain.handle('git-list-remote-branches', async (_, projectPath: string) => {
+  const result = runGitCommand(['branch', '-r', '--format=%(refname:short)'], projectPath)
+  if (result.error) {
+    return { branches: [], error: result.error }
+  }
+  const branches = result.stdout.trim().split('\n')
+    .filter(Boolean)
+    .filter(b => !b.includes('->') && b.includes('/')) // Exclude symbolic refs (HEAD resolves to bare "origin")
+  return { branches }
+})
+
+// List files at a git ref via git ls-tree
+ipcMain.handle('git-list-directory-at-ref', async (_, projectPath: string, dirPath: string, ref: string) => {
+  if (!isValidGitRef(ref)) {
+    return { files: [], dirs: [], error: 'Invalid git ref' }
+  }
+
+  const prefix = dirPath ? (dirPath.endsWith('/') ? dirPath : dirPath + '/') : ''
+  const result = runGitCommand(['ls-tree', '--name-only', ref, prefix], projectPath)
+  if (result.error) {
+    return { files: [], dirs: [], error: result.error }
+  }
+
+  const entries = result.stdout.trim().split('\n').filter(Boolean)
+
+  // Separate files and directories by checking ls-tree with -d flag
+  const dirResult = runGitCommand(['ls-tree', '-d', '--name-only', ref, prefix], projectPath)
+  const dirEntries = new Set(dirResult.stdout?.trim().split('\n').filter(Boolean) || [])
+
+  const files: string[] = []
+  const dirs: string[] = []
+  for (const entry of entries) {
+    if (dirEntries.has(entry)) {
+      dirs.push(entry)
+    } else {
+      files.push(entry)
+    }
+  }
+
+  return { files, dirs }
+})
+
+// Shallow clone a remote repository
+ipcMain.handle('git-clone-remote', async (_, url: string, targetName: string) => {
+  try {
+    // Resolve to absolute cache path
+    const cacheDir = join(app.getPath('userData'), 'remote-cache')
+    mkdirSync(cacheDir, { recursive: true })
+    const absolutePath = join(cacheDir, targetName)
+
+    // Inject token if available
+    const settings = await loadSettings()
+    const encrypted = settings.githubTokenEncrypted
+    const authenticatedUrl = getAuthenticatedUrl(url, encrypted || null)
+
+    const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    const spawnOpts = { encoding: 'utf-8' as const, maxBuffer: 10 * 1024 * 1024, timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] as StdioOptions, env: gitEnv }
+
+    // Shallow clone with all branches — gives a proper working tree with _bmad/, .claude/, etc.
+    // --depth 1 only downloads the tip commit per branch (minimal data)
+    // --no-single-branch fetches all remote branches, not just the default
+    const result = spawnSync('git', [
+      'clone', '--depth', '1', '--no-single-branch',
+      authenticatedUrl, absolutePath
+    ], spawnOpts)
+
+    if (result.error) return { success: false, error: result.error.message }
+    if (result.status !== 0) return { success: false, error: result.stderr?.trim() || 'Clone failed' }
+
+    // Determine default branch from remote HEAD
+    const headResult = spawnSync('git', ['-C', absolutePath, 'symbolic-ref', 'refs/remotes/origin/HEAD', '--short'], spawnOpts)
+    const defaultBranch = headResult.status === 0 ? headResult.stdout.trim() : null
+
+    return { success: true, path: absolutePath, defaultBranch }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to set up remote' }
+  }
+})
+
+// Checkout a remote branch in a cached repo (updates working tree for remote project viewing)
+ipcMain.handle('git-checkout-remote-branch', async (_, projectPath: string, branch: string) => {
+  if (!isValidGitRef(branch)) {
+    return { success: false, error: 'Invalid branch name' }
+  }
+  try {
+    // For remote branches like "origin/develop", checkout as detached HEAD
+    const result = runGitCommand(['checkout', branch], projectPath)
+    if (result.error) return { success: false, error: result.error }
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Checkout failed' }
+  }
+})
+
+// List branches from a remote URL without cloning (git ls-remote)
+ipcMain.handle('git-ls-remote', async (_, url: string) => {
+  try {
+    // Inject token if available
+    const settings = await loadSettings()
+    const encrypted = settings.githubTokenEncrypted
+    const authenticatedUrl = getAuthenticatedUrl(url, encrypted || null)
+
+    const result = spawnSync('git', ['ls-remote', '--heads', authenticatedUrl], {
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 30000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    })
+
+    if (result.error) return { branches: [], error: result.error.message }
+    if (result.status !== 0) return { branches: [], error: result.stderr?.trim() || 'ls-remote failed' }
+
+    // Parse output: each line is "<hash>\trefs/heads/<branch>"
+    const branches = result.stdout.trim().split('\n')
+      .filter(Boolean)
+      .map(line => {
+        const parts = line.split('\t')
+        const ref = parts[1] || ''
+        return ref.replace('refs/heads/', '')
+      })
+      .filter(Boolean)
+
+    return { branches }
+  } catch (error) {
+    return { branches: [], error: error instanceof Error ? error.message : 'ls-remote failed' }
+  }
+})
+
+// Scan BMAD project structure at a specific git ref (branch/tag/commit)
+ipcMain.handle('scan-bmad-at-ref', async (_, projectPath: string, ref: string) => {
+  if (!isValidGitRef(ref)) {
+    return null
+  }
+  try {
+    return scanBmadAtRef(projectPath, ref)
+  } catch (error) {
+    console.error('Failed to scan BMAD at ref:', error)
+    return null
   }
 })

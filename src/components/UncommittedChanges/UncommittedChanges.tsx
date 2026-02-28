@@ -29,6 +29,7 @@ export default function UncommittedChanges() {
   const setCurrentBranch = useStore((state) => state.setCurrentBranch)
   const setHasUncommittedChanges = useStore((state) => state.setHasUncommittedChanges)
   const openGitDiffPanel = useStore((state) => state.openGitDiffPanel)
+  const isReadOnly = useStore((state) => state.isReadOnly())
 
   // Parse branch name to find matching story
   // Branch format: epicId-storyId (e.g., "1-1-6-load-built-in-chips")
@@ -91,8 +92,8 @@ export default function UncommittedChanges() {
     setTimeout(() => setCopiedCommand(null), 2000)
   }
 
-  // Don't render if no project or no changes
-  if (!projectPath || !hasChanges || !currentBranch) {
+  // Don't render if no project, no changes, or read-only mode
+  if (!projectPath || !hasChanges || !currentBranch || isReadOnly) {
     return null
   }
 

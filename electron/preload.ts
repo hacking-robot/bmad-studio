@@ -318,6 +318,14 @@ export interface GitAPI {
   getFileAtCommit: (projectPath: string, filePath: string, commitHash: string) => Promise<{ content: string }>
   isBranchMerged: (projectPath: string, branchToCheck: string, targetBranch: string) => Promise<{ merged: boolean; error?: string }>
   mergeBranch: (projectPath: string, branchToMerge: string) => Promise<{ success: boolean; error?: string; hasConflicts?: boolean }>
+  // Remote branch viewer additions
+  fetch: (projectPath: string, remote?: string) => Promise<{ success: boolean; error?: string }>
+  listRemoteBranches: (projectPath: string) => Promise<{ branches: string[]; error?: string }>
+  listDirectoryAtRef: (projectPath: string, dirPath: string, ref: string) => Promise<{ files: string[]; dirs: string[]; error?: string }>
+  cloneRemote: (url: string, targetName: string) => Promise<{ success: boolean; path?: string; defaultBranch?: string; error?: string }>
+  checkoutRemoteBranch: (projectPath: string, branch: string) => Promise<{ success: boolean; error?: string }>
+  lsRemote: (url: string) => Promise<{ branches: string[]; error?: string }>
+  scanBmadAtRef: (projectPath: string, ref: string) => Promise<unknown | null>
 }
 
 const gitAPI: GitAPI = {
@@ -338,7 +346,15 @@ const gitAPI: GitAPI = {
   getFileAtParent: (projectPath, filePath, commitHash) => ipcRenderer.invoke('git-file-at-parent', projectPath, filePath, commitHash),
   getFileAtCommit: (projectPath, filePath, commitHash) => ipcRenderer.invoke('git-file-at-commit', projectPath, filePath, commitHash),
   isBranchMerged: (projectPath, branchToCheck, targetBranch) => ipcRenderer.invoke('git-is-merged', projectPath, branchToCheck, targetBranch),
-  mergeBranch: (projectPath, branchToMerge) => ipcRenderer.invoke('git-merge-branch', projectPath, branchToMerge)
+  mergeBranch: (projectPath, branchToMerge) => ipcRenderer.invoke('git-merge-branch', projectPath, branchToMerge),
+  // Remote branch viewer additions
+  fetch: (projectPath, remote) => ipcRenderer.invoke('git-fetch', projectPath, remote),
+  listRemoteBranches: (projectPath) => ipcRenderer.invoke('git-list-remote-branches', projectPath),
+  listDirectoryAtRef: (projectPath, dirPath, ref) => ipcRenderer.invoke('git-list-directory-at-ref', projectPath, dirPath, ref),
+  cloneRemote: (url, targetName) => ipcRenderer.invoke('git-clone-remote', url, targetName),
+  checkoutRemoteBranch: (projectPath, branch) => ipcRenderer.invoke('git-checkout-remote-branch', projectPath, branch),
+  lsRemote: (url) => ipcRenderer.invoke('git-ls-remote', url),
+  scanBmadAtRef: (projectPath, ref) => ipcRenderer.invoke('scan-bmad-at-ref', projectPath, ref)
 }
 
 contextBridge.exposeInMainWorld('gitAPI', gitAPI)
@@ -650,6 +666,21 @@ const costAPI: CostAPI = {
 
 contextBridge.exposeInMainWorld('costAPI', costAPI)
 
+// Token API — GitHub PAT token management
+export interface TokenAPI {
+  saveToken: (token: string) => Promise<{ success: boolean; error?: string }>
+  loadToken: () => Promise<{ token: string | null; error?: string }>
+  testToken: (token: string, testUrl: string) => Promise<{ success: boolean; error?: string }>
+}
+
+const tokenAPI: TokenAPI = {
+  saveToken: (token) => ipcRenderer.invoke('save-github-token', token),
+  loadToken: () => ipcRenderer.invoke('load-github-token'),
+  testToken: (token, testUrl) => ipcRenderer.invoke('test-github-token', token, testUrl)
+}
+
+contextBridge.exposeInMainWorld('tokenAPI', tokenAPI)
+
 declare global {
   interface Window {
     fileAPI: FileAPI
@@ -660,5 +691,6 @@ declare global {
     wizardAPI: WizardAPI
     updaterAPI: UpdaterAPI
     costAPI: CostAPI
+    tokenAPI: TokenAPI
   }
 }

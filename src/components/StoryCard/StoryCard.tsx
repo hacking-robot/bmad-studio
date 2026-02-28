@@ -49,6 +49,7 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
   const chatThreads = useStore((state) => state.chatThreads)
 
   const developerMode = useStore((state) => state.developerMode)
+  const isReadOnly = useStore((state) => state.isReadOnly())
 
   // Check if selected AI tool supports headless CLI operation
   const selectedToolInfo = AI_TOOLS.find(t => t.id === aiTool)
@@ -416,8 +417,8 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
                 )}
               </Box>
 
-            {/* Quick Actions Menu Button - Three-dot menu */}
-            {nextSteps.length > 0 && (
+            {/* Quick Actions Menu Button - Three-dot menu (hidden in read-only mode) */}
+            {nextSteps.length > 0 && !isReadOnly && (
               <IconButton
                 size="small"
                 onClick={handleMenuOpen}

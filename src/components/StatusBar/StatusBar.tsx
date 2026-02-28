@@ -3,12 +3,14 @@ import { Box, Typography, Tooltip, IconButton, Chip, CircularProgress } from '@m
 import CircleIcon from '@mui/icons-material/Circle'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import DownloadIcon from '@mui/icons-material/Download'
 import InstallDesktopIcon from '@mui/icons-material/InstallDesktop'
 import { useStore } from '../../store'
 import { STATUS_COLUMNS, StoryStatus } from '../../types'
 import BranchSwitcher from '../BranchSwitcher'
 import UncommittedChanges from '../UncommittedChanges'
+import { RemoteBranchTrigger } from '../RemoteBranchViewer'
 
 // Status descriptions for tooltips
 const statusDescriptions: Record<StoryStatus, string> = {
@@ -57,6 +59,9 @@ export default function StatusBar() {
   const developerMode = useStore((state) => state.developerMode)
   const viewMode = useStore((state) => state.viewMode)
   const bmadScanResult = useStore((state) => state.bmadScanResult)
+  const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
+  const isRemoteProject = useStore((state) => state.isRemoteProject)
+  const remoteProjectUrl = useStore((state) => state.remoteProjectUrl)
 
   // Auto-update state from global store
   const updateStatus = useStore((state) => state.updateStatus)
@@ -143,11 +148,32 @@ export default function StatusBar() {
           </Box>
         </Tooltip>
 
-        {/* Git branch switcher and uncommitted changes */}
+        {/* Git branch switcher, remote viewer, and uncommitted changes */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <BranchSwitcher />
+          <RemoteBranchTrigger />
           <UncommittedChanges />
         </Box>
+
+        {/* Remote viewing indicator */}
+        {(remoteViewingBranch || isRemoteProject) && (
+          <Tooltip title={remoteProjectUrl ? `Remote: ${remoteProjectUrl}` : 'Viewing remote branch'}>
+            <Chip
+              size="small"
+              icon={<VisibilityIcon sx={{ fontSize: 12 }} />}
+              label={remoteViewingBranch || (remoteProjectUrl ? remoteProjectUrl.replace(/^https?:\/\/github\.com\//, '') : 'Remote')}
+              color="info"
+              variant="outlined"
+              sx={{
+                height: 20,
+                fontSize: '0.65rem',
+                fontWeight: 500,
+                '& .MuiChip-icon': { ml: 0.5, mr: -0.25 },
+                '& .MuiChip-label': { px: 0.5, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }
+              }}
+            />
+          </Tooltip>
+        )}
 
         {/* Developer mode indicator - only shown in board mode */}
         {viewMode === 'board' && (

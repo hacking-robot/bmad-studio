@@ -48,13 +48,17 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
     return 0
   }, [messages])
 
+  const isReadOnly = useStore((state) => state.isReadOnly())
+
   // Determine if agent is busy with automation cycle
   const isBusyWithCycle = fullCycle.isRunning || epicCycle.isRunning
   const cycleBusyReason = fullCycle.isRunning
     ? 'Agent busy with Full Cycle automation...'
     : epicCycle.isRunning
       ? 'Agent busy with Epic Cycle automation...'
-      : undefined
+      : isReadOnly
+        ? 'Chat disabled in read-only mode'
+        : undefined
 
   // Get agents from workflow (based on current project type)
   const { agents } = useWorkflow()
@@ -367,7 +371,7 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
       <ChatInput
         onSend={handleSendMessage}
         onCancel={isTyping ? handleCancel : undefined}
-        disabled={isTyping || isBusyWithCycle}
+        disabled={isTyping || isBusyWithCycle || isReadOnly}
         agentId={agentId}
         busyReason={cycleBusyReason}
         contextTokens={contextTokens}

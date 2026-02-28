@@ -41,6 +41,7 @@ export default function EpicFilter() {
   const setSelectedEpicId = useStore((state) => state.setSelectedEpicId)
   const projectPath = useStore((state) => state.projectPath)
   const enableEpicBranches = useStore((state) => state.enableEpicBranches)
+  const isReadOnly = useStore((state) => state.isReadOnly())
   const { loadProjectData } = useProjectData()
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -241,7 +242,7 @@ export default function EpicFilter() {
           </Tooltip>
         )}
 
-        {selectedEpic && enableEpicBranches && (
+        {selectedEpic && enableEpicBranches && !isReadOnly && (
           <Tooltip title="Git branch commands">
             <IconButton
               onClick={handleGitClick}

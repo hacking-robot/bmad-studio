@@ -800,6 +800,11 @@ export default function FullCycleOrchestrator() {
     if (fullCycle.error) return
     if (!fullCycle.storyId) return
     if (isProcessingRef.current) return
+    // Prevent full cycle in read-only mode
+    if (useStore.getState().isReadOnly()) {
+      setFullCycleError('Cannot run full cycle in read-only mode')
+      return
+    }
 
     currentRunIdRef.current = `${fullCycle.storyId}-${Date.now()}`
     isProcessingRef.current = true

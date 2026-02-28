@@ -6,6 +6,7 @@ import { parseStoryContent } from '../utils/parseStory'
 import { getEpicsFullPath, getSprintStatusFullPath, hasBoardModule } from '../utils/projectTypes'
 import { mergeWorkflowConfig } from '../utils/workflowMerge'
 import { flushPendingThreadSave } from '../utils/chatUtils'
+import { createLocalReader, createRemoteBranchReader } from '../utils/remoteFileReader'
 import type { BmadScanResult } from '../types/bmadScan'
 
 // Module-level functions using getState() — no hook dependency, stable references,
@@ -23,6 +24,15 @@ export async function loadProjectData() {
     return
   }
 
+  // Create file reader based on remote viewing state
+  const { remoteViewingBranch } = state
+  const readOnly = remoteViewingBranch !== null || state.isRemoteProject
+  // For standalone remote projects: use local reader (working tree is checked out)
+  // For attached remote branch viewing (local project): use git show reader
+  const reader = remoteViewingBranch && projectPath && !state.isRemoteProject
+    ? createRemoteBranchReader(projectPath, remoteViewingBranch)
+    : createLocalReader()
+
   const { stories: currentStories, notificationsEnabled, isUserDragging, setIsUserDragging } = state
 
   // Capture previous statuses before loading new data
@@ -35,7 +45,7 @@ export async function loadProjectData() {
     // Load sprint-status.yaml
     const currentOutputFolder = useStore.getState().outputFolder
     const sprintStatusPath = getSprintStatusFullPath(projectPath, projectType, currentOutputFolder)
-    const statusResult = await window.fileAPI.readFile(sprintStatusPath)
+    const statusResult = await reader.readFile(sprintStatusPath)
 
     if (statusResult.error || !statusResult.content) {
       throw new Error('Failed to read sprint-status.yaml')
@@ -47,11 +57,11 @@ export async function loadProjectData() {
     // Supports both single epics.md and sharded epic-N.md files
     const epicsPath = getEpicsFullPath(projectPath, projectType, currentOutputFolder)
     let epicsContent: string
-    const epicsResult = await window.fileAPI.readFile(epicsPath)
+    const epicsResult = await reader.readFile(epicsPath)
 
     if (epicsResult.error || !epicsResult.content) {
       // Try output root (GDS puts epics.md directly in _bmad-output/)
-      const outputRootEpics = await window.fileAPI.readFile(`${projectPath}/${currentOutputFolder}/epics.md`)
+      const outputRootEpics = await reader.readFile(`${projectPath}/${currentOutputFolder}/epics.md`)
       if (outputRootEpics.content) {
         epicsContent = outputRootEpics.content
       } else {
@@ -63,7 +73,7 @@ export async function loadProjectData() {
         let epicFiles: string[] = []
         let epicDir = ''
         for (const dir of searchDirs) {
-          const dirFiles = await window.fileAPI.listDirectory(dir)
+          const dirFiles = await reader.listDirectory(dir)
           const found = (dirFiles.files || [])
             .filter((f: string) => /^epic-\d+\.md$/.test(f))
             .sort((a: string, b: string) => {
@@ -85,7 +95,7 @@ export async function loadProjectData() {
         // Concatenate sharded files
         const parts: string[] = []
         for (const file of epicFiles) {
-          const result = await window.fileAPI.readFile(`${epicDir}/${file}`)
+          const result = await reader.readFile(`${epicDir}/${file}`)
           if (result.content) parts.push(result.content)
         }
         epicsContent = parts.join('\n\n')
@@ -100,7 +110,7 @@ export async function loadProjectData() {
 
     // Update file paths for stories that have files
     const implementationPath = `${projectPath}/${currentOutputFolder}/implementation-artifacts`
-    const filesResult = await window.fileAPI.listDirectory(implementationPath)
+    const filesResult = await reader.listDirectory(implementationPath)
 
     if (filesResult.files) {
       const storyFiles = filesResult.files.filter((f) => f.endsWith('.md') && !f.startsWith('story-'))
@@ -140,7 +150,8 @@ export async function loadProjectData() {
     const { enableHumanReviewColumn, humanReviewStories, addToHumanReview, isInHumanReview, recordStatusChange } = useStore.getState()
 
     // Check for status changes (only for external changes, not user drags)
-    if (!isUserDragging && previousStatuses.size > 0) {
+    // Skip in read-only mode (remote viewing) — no status tracking needed
+    if (!readOnly && !isUserDragging && previousStatuses.size > 0) {
       for (const story of stories) {
         const oldStatus = previousStatuses.get(story.id)
         if (oldStatus && oldStatus !== story.status) {
@@ -183,6 +194,11 @@ export async function loadProjectData() {
     const msg = err instanceof Error ? err.message : 'Failed to load project data'
     // If essential artifacts are missing, redirect to wizard instead of showing error
     const isMissingArtifacts = msg.includes('Failed to read sprint-status') || msg.includes('Failed to read epics')
+    if (isMissingArtifacts && readOnly) {
+      // Remote viewing: show error instead of redirecting to wizard
+      useStore.getState().setError(`This branch does not contain BMAD project artifacts (missing sprint-status.yaml or epics.md).`)
+      return
+    }
     if (isMissingArtifacts) {
       console.log('[useProjectData] Missing project artifacts — redirecting to wizard')
       const { outputFolder: currentOutput, developerMode: currentDevMode } = useStore.getState()
@@ -218,8 +234,14 @@ export async function loadStoryContent(story: { filePath?: string } | null) {
     return
   }
 
+  // Create file reader based on remote viewing state
+  const state = useStore.getState()
+  const reader = state.remoteViewingBranch && state.projectPath
+    ? createRemoteBranchReader(state.projectPath, state.remoteViewingBranch)
+    : createLocalReader()
+
   try {
-    const result = await window.fileAPI.readFile(story.filePath)
+    const result = await reader.readFile(story.filePath)
 
     if (result.error || !result.content) {
       useStore.getState().setStoryContent(null)
@@ -244,12 +266,71 @@ export function useProjectDataEffects() {
   const outputFolder = useStore((s) => s.outputFolder)
   const wizardIsActive = useStore((s) => s.projectWizard.isActive)
   const selectedStory = useStore((s) => s.selectedStory)
+  const remoteViewingBranch = useStore((s) => s.remoteViewingBranch)
+  const isRemoteProject = useStore((s) => s.isRemoteProject)
 
   // Load project data when path changes or after hydration
   // Also re-runs when wizard deactivates (wizardIsActive flips false → triggers scan + load)
+  // Also re-runs when remoteViewingBranch changes (to reload data from different ref)
   useEffect(() => {
     if (!_hasHydrated || !projectPath || !projectType) return
     if (wizardIsActive) return
+
+    // Remote viewing: checkout the branch (for remote projects) + scan + load
+    if (remoteViewingBranch) {
+      ;(async () => {
+        try {
+          // For standalone remote projects, checkout the branch so the working tree updates
+          const { isRemoteProject: isRemote } = useStore.getState()
+          if (isRemote) {
+            await window.gitAPI.checkoutRemoteBranch(projectPath, remoteViewingBranch)
+          }
+          // Scan BMAD (filesystem for remote projects, git ref for attached mode)
+          const scanResult = isRemote
+            ? await window.fileAPI.scanBmad(projectPath) as BmadScanResult | null
+            : await window.gitAPI.scanBmadAtRef(projectPath, remoteViewingBranch) as BmadScanResult | null
+          useStore.getState().setBmadScanResult(scanResult)
+          if (scanResult) {
+            useStore.getState().setBmadVersionError(null)
+            const scanDetectedType = scanResult.modules.includes('gds')
+              ? 'gds' as const
+              : hasBoardModule(scanResult.modules) ? 'bmm' as const : 'dashboard' as const
+            const { projectType: currentProjectType } = useStore.getState()
+            if (currentProjectType !== scanDetectedType) {
+              useStore.getState().setProjectType(scanDetectedType)
+            }
+            if (scanResult.outputFolder) {
+              useStore.getState().setOutputFolder(scanResult.outputFolder)
+            }
+            // Merge workflow config to populate agents and workflows
+            const merged = mergeWorkflowConfig(scanResult, scanDetectedType)
+            useStore.getState().setScannedWorkflowConfig(merged)
+          }
+        } catch { /* scan failed, continue without */ }
+        loadProjectData()
+      })()
+      return
+    }
+    // Standalone remote project without a branch selected yet — auto-detect default branch
+    if (isRemoteProject) {
+      ;(async () => {
+        try {
+          const result = await window.gitAPI.listRemoteBranches(projectPath)
+          const branches = result.branches || []
+          const defaultBranch = branches.find(b => b === 'origin/develop')
+            || branches.find(b => b === 'origin/main')
+            || branches.find(b => b === 'origin/master')
+            || branches[0]
+            || 'origin/main'
+          useStore.getState().setRemoteViewingBranch(defaultBranch)
+          // Effect will re-run with remoteViewingBranch set → scan + load
+        } catch {
+          useStore.getState().setError('Failed to list remote branches')
+          useStore.getState().setLoading(false)
+        }
+      })()
+      return
+    }
 
     // Check if this is an incomplete project with a saved wizard state
     // This happens when the app restarts mid-wizard (projectPath persisted but wizard state isn't)
@@ -317,17 +398,20 @@ export function useProjectDataEffects() {
           useStore.getState().setDeveloperMode(detected)
         }
         // Version compatibility check: require BMAD v6+ stable (reject alpha builds)
+        // Skip version gate for remote/read-only projects — just display whatever we can
+        const { isRemoteProject: isRemote, remoteViewingBranch: remoteRef } = useStore.getState()
+        const isReadOnlyView = isRemote || !!remoteRef
         const version = result.version
         if (version) {
           const major = parseInt(version.split('.')[0], 10)
           const isAlpha = /alpha/i.test(version)
-          if (!isNaN(major) && (major < 6 || isAlpha)) {
+          if (!isNaN(major) && (major < 6 || isAlpha) && !isReadOnlyView) {
             console.warn(`[useProjectData] Incompatible BMAD version: ${version}`)
             useStore.getState().setBmadVersionError(`Detected BMAD v${version}. BMad Studio requires BMAD v6.0.0 or later (stable format).`)
             useStore.getState().setScannedWorkflowConfig(null)
             return
           }
-        } else {
+        } else if (!isReadOnlyView) {
           // No version in manifest = pre-6.0 alpha project
           console.warn('[useProjectData] No BMAD version detected — treating as incompatible')
           useStore.getState().setBmadVersionError('No BMAD version detected. BMad Studio requires BMAD v6.0.0 or later (stable format). This project may be using an older alpha installation.')
@@ -339,7 +423,7 @@ export function useProjectDataEffects() {
         // If .claude/commands/ is missing (BMAD installed without Claude Code as a tool),
         // redirect to the wizard so the user can run install to add Claude Code support.
         // The wizard's install step runs `npx bmad-method install --tools claude-code`.
-        if (result.missingClaudeCommands) {
+        if (result.missingClaudeCommands && !isReadOnlyView) {
           const installedModules = result.modules.filter(m => m !== 'core')
           const moduleList = installedModules.length > 0 ? installedModules : hasBoardModule(result.modules) ? ['bmm'] : []
           console.log(`[useProjectData] Missing .claude/commands/ — opening wizard to install Claude Code support (modules: ${moduleList.join(',')})`)
@@ -401,7 +485,7 @@ export function useProjectDataEffects() {
         })
       }
     }, 100)
-  }, [_hasHydrated, projectPath, projectType, outputFolder, wizardIsActive])
+  }, [_hasHydrated, projectPath, projectType, outputFolder, wizardIsActive, remoteViewingBranch, isRemoteProject])
 
   // File watcher setup - separate effect with minimal deps to avoid repeated start/stop
   useEffect(() => {
@@ -409,6 +493,9 @@ export function useProjectDataEffects() {
 
     // Skip file watching if wizard is active (wizard has its own watcher)
     if (wizardIsActive) return
+
+    // Skip file watching for remote projects (data comes from git, not filesystem)
+    if (remoteViewingBranch || isRemoteProject) return
 
     // Start watching for file changes (all project types including dashboard)
     window.fileAPI.startWatching(projectPath, projectType, outputFolder)
@@ -440,7 +527,7 @@ export function useProjectDataEffects() {
       window.fileAPI.stopWatching()
       useStore.getState().setIsWatching(false)
     }
-  }, [_hasHydrated, projectPath, projectType, outputFolder, wizardIsActive])
+  }, [_hasHydrated, projectPath, projectType, outputFolder, wizardIsActive, remoteViewingBranch, isRemoteProject])
 
   // Load story content when selected story changes
   useEffect(() => {
@@ -565,7 +652,14 @@ export function useProjectData() {
       viewMode: project.projectType === 'dashboard' ? 'dashboard' : 'board',
       // Clear stale scan data so hasBrd computes correctly before new scan completes
       bmadScanResult: null,
-      scannedWorkflowConfig: null
+      scannedWorkflowConfig: null,
+      // Clear remote viewing state when switching projects
+      remoteViewingBranch: null,
+      // Restore remote project state from recent project entry
+      isRemoteProject: project.isRemote ?? false,
+      remoteProjectUrl: project.remoteUrl ?? null,
+      // Remote projects have no local checkout — set placeholder so UI components render
+      ...(project.isRemote ? { currentBranch: '(remote)' } : {})
     })
   }, [])
 
