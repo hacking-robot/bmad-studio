@@ -41,6 +41,12 @@ export default function RemoteBranchTrigger() {
   // Use original path for git operations (not the cache path)
   const gitSourcePath = attachedLocalProjectPath || projectPath
 
+  // Reset cached branches when project changes
+  useEffect(() => {
+    setRemoteBranches([])
+    setFetched(false)
+  }, [gitSourcePath])
+
   const loadRemoteBranches = useCallback(async (doFetch = false) => {
     if (!gitSourcePath) return
     setLoading(true)
