@@ -16,7 +16,7 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { useThemedSyntax } from '../../hooks/useThemedSyntax'
-import { useStore } from '../../store'
+
 import { type DocumentFile, getArtifactTypeLabel, getArtifactTypeColor } from '../../hooks/useDocuments'
 
 // Factory function to create code component with theme awareness
@@ -75,10 +75,6 @@ export default function ArtifactViewer({ artifact, onClose }: ArtifactViewerProp
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const remoteViewingBranch = useStore((s) => s.remoteViewingBranch)
-  const isRemoteProject = useStore((s) => s.isRemoteProject)
-  const projectPath = useStore((s) => s.projectPath)
-
   // Load artifact content when artifact changes
   useEffect(() => {
     if (!artifact) {
@@ -90,16 +86,8 @@ export default function ArtifactViewer({ artifact, onClose }: ArtifactViewerProp
       setLoading(true)
       setError(null)
       try {
-        let result: { content?: string; error?: string }
-        // In attached mode, read from git ref instead of local filesystem
-        if (remoteViewingBranch && !isRemoteProject && projectPath) {
-          const relativePath = artifact.path.startsWith(projectPath + '/')
-            ? artifact.path.slice(projectPath.length + 1)
-            : artifact.path
-          result = await window.gitAPI.getFileContent(projectPath, relativePath, remoteViewingBranch)
-        } else {
-          result = await window.fileAPI.readFile(artifact.path)
-        }
+        // Both modes now have checked-out working trees
+        const result = await window.fileAPI.readFile(artifact.path)
         if (result.error || !result.content) {
           setError(result.error || 'Failed to read file')
         } else {
@@ -113,7 +101,7 @@ export default function ArtifactViewer({ artifact, onClose }: ArtifactViewerProp
     }
 
     loadContent()
-  }, [artifact, remoteViewingBranch, isRemoteProject, projectPath])
+  }, [artifact])
 
   const CodeBlock = createCodeBlock(prismStyle, inlineCodeColors)
 

@@ -321,12 +321,11 @@ export interface GitAPI {
   // Remote branch viewer additions
   fetch: (projectPath: string, remote?: string) => Promise<{ success: boolean; error?: string }>
   listRemoteBranches: (projectPath: string) => Promise<{ branches: string[]; error?: string }>
-  listDirectoryAtRef: (projectPath: string, dirPath: string, ref: string) => Promise<{ files: string[]; dirs: string[]; error?: string }>
   cloneRemote: (url: string, targetName: string) => Promise<{ success: boolean; path?: string; defaultBranch?: string; error?: string }>
+  cloneLocalToCache: (localProjectPath: string, cacheKey: string) => Promise<{ success: boolean; path?: string; error?: string }>
   checkoutRemoteBranch: (projectPath: string, branch: string) => Promise<{ success: boolean; error?: string }>
   resetWorkingTree: (projectPath: string) => Promise<{ success: boolean; error?: string }>
   lsRemote: (url: string) => Promise<{ branches: string[]; error?: string }>
-  scanBmadAtRef: (projectPath: string, ref: string) => Promise<unknown | null>
 }
 
 const gitAPI: GitAPI = {
@@ -351,12 +350,11 @@ const gitAPI: GitAPI = {
   // Remote branch viewer additions
   fetch: (projectPath, remote) => ipcRenderer.invoke('git-fetch', projectPath, remote),
   listRemoteBranches: (projectPath) => ipcRenderer.invoke('git-list-remote-branches', projectPath),
-  listDirectoryAtRef: (projectPath, dirPath, ref) => ipcRenderer.invoke('git-list-directory-at-ref', projectPath, dirPath, ref),
   cloneRemote: (url, targetName) => ipcRenderer.invoke('git-clone-remote', url, targetName),
+  cloneLocalToCache: (localProjectPath, cacheKey) => ipcRenderer.invoke('git-clone-local-to-cache', localProjectPath, cacheKey),
   checkoutRemoteBranch: (projectPath, branch) => ipcRenderer.invoke('git-checkout-remote-branch', projectPath, branch),
   resetWorkingTree: (projectPath) => ipcRenderer.invoke('git-reset-working-tree', projectPath),
-  lsRemote: (url) => ipcRenderer.invoke('git-ls-remote', url),
-  scanBmadAtRef: (projectPath, ref) => ipcRenderer.invoke('scan-bmad-at-ref', projectPath, ref)
+  lsRemote: (url) => ipcRenderer.invoke('git-ls-remote', url)
 }
 
 contextBridge.exposeInMainWorld('gitAPI', gitAPI)

@@ -48,22 +48,13 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
     return 0
   }, [messages])
 
-  const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
-  const isRemoteProject = useStore((state) => state.isRemoteProject)
-  // Attached mode: local project viewing remote branch — agent reads local files
-  // that don't match the displayed remote data, so chat must be disabled.
-  // Standalone remote: chat is allowed for Q&A — file changes are auto-reverted.
-  const chatDisabledByRemote = remoteViewingBranch !== null && !isRemoteProject
-
   // Determine if agent is busy with automation cycle
   const isBusyWithCycle = fullCycle.isRunning || epicCycle.isRunning
   const cycleBusyReason = fullCycle.isRunning
     ? 'Agent busy with Full Cycle automation...'
     : epicCycle.isRunning
       ? 'Agent busy with Epic Cycle automation...'
-      : chatDisabledByRemote
-        ? 'Chat disabled while viewing a remote branch'
-        : undefined
+      : undefined
 
   // Get agents from workflow (based on current project type)
   const { agents } = useWorkflow()
@@ -376,7 +367,7 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
       <ChatInput
         onSend={handleSendMessage}
         onCancel={isTyping ? handleCancel : undefined}
-        disabled={isTyping || isBusyWithCycle || chatDisabledByRemote}
+        disabled={isTyping || isBusyWithCycle}
         agentId={agentId}
         busyReason={cycleBusyReason}
         contextTokens={contextTokens}

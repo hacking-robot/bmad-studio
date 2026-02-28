@@ -20,38 +20,3 @@ export function createLocalReader(): VirtualFileReader {
   }
 }
 
-/**
- * Creates a reader that reads files from a specific git ref (branch/tag/commit).
- * Converts absolute paths to project-relative paths for git operations.
- *
- * Requires `gitAPI.listDirectoryAtRef` (added by electron backend).
- */
-export function createRemoteBranchReader(projectPath: string, ref: string): VirtualFileReader {
-  const toRelative = (absolutePath: string): string => {
-    if (absolutePath.startsWith(projectPath + '/')) {
-      return absolutePath.slice(projectPath.length + 1)
-    }
-    return absolutePath
-  }
-
-  return {
-    readFile: async (absolutePath) => {
-      try {
-        const relativePath = toRelative(absolutePath)
-        const result = await window.gitAPI.getFileContent(projectPath, relativePath, ref)
-        return { content: result.content }
-      } catch (err) {
-        return { error: err instanceof Error ? err.message : `Failed to read file at ref ${ref}` }
-      }
-    },
-    listDirectory: async (absolutePath) => {
-      try {
-        const relativePath = toRelative(absolutePath)
-        const result = await window.gitAPI.listDirectoryAtRef(projectPath, relativePath, ref)
-        return { files: result.files || [], dirs: result.dirs || [] }
-      } catch (err) {
-        return { error: err instanceof Error ? err.message : `Failed to list directory at ref ${ref}` }
-      }
-    },
-  }
-}

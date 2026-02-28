@@ -360,11 +360,13 @@ interface AppState {
   isRemoteProject: boolean;
   remoteProjectUrl: string | null;
   hasGitHubToken: boolean;
+  attachedLocalProjectPath: string | null;
   isReadOnly: () => boolean;
   setRemoteViewingBranch: (branch: string | null) => void;
   setIsRemoteProject: (remote: boolean) => void;
   setRemoteProjectUrl: (url: string | null) => void;
   setHasGitHubToken: (hasToken: boolean) => void;
+  setAttachedLocalProjectPath: (path: string | null) => void;
 
   // Data
   epics: Epic[];
@@ -800,6 +802,7 @@ export const useStore = create<AppState>()(
           gitDiffPanelOpen: false,
           gitDiffPanelBranch: null,
           remoteViewingBranch: null,
+          attachedLocalProjectPath: null,
         });
       },
       setProjectType: (type) => set({ projectType: type }),
@@ -859,6 +862,7 @@ export const useStore = create<AppState>()(
       isRemoteProject: false,
       remoteProjectUrl: null,
       hasGitHubToken: false,
+      attachedLocalProjectPath: null,
       isReadOnly: () => {
         const { remoteViewingBranch, isRemoteProject } = get()
         return remoteViewingBranch !== null || isRemoteProject
@@ -867,6 +871,7 @@ export const useStore = create<AppState>()(
       setIsRemoteProject: (remote) => set({ isRemoteProject: remote }),
       setRemoteProjectUrl: (url) => set({ remoteProjectUrl: url }),
       setHasGitHubToken: (hasToken) => set({ hasGitHubToken: hasToken }),
+      setAttachedLocalProjectPath: (path) => set({ attachedLocalProjectPath: path }),
 
       // Data
       epics: [],

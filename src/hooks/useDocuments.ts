@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../store'
-import { createRemoteBranchReader, type VirtualFileReader } from '../utils/remoteFileReader'
+import type { VirtualFileReader } from '../utils/remoteFileReader'
 
 // Extended type union covering all artifact/document types
 export type DocumentType =
@@ -165,8 +165,6 @@ export function useDocuments() {
   const outputFolder = useStore((state) => state.outputFolder)
   const bmadScanResult = useStore((state) => state.bmadScanResult)
   const documentsRevision = useStore((state) => state.documentsRevision)
-  const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
-  const isRemoteProject = useStore((state) => state.isRemoteProject)
   const [folders, setFolders] = useState<DocumentFolder[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -180,11 +178,8 @@ export function useDocuments() {
     setLoading(true)
     setError(null)
 
-    // Use remote reader for attached mode (local project viewing remote branch)
-    // Standalone remote projects have a checked-out working tree, so local reader works
-    const reader = (remoteViewingBranch && !isRemoteProject)
-      ? createRemoteBranchReader(projectPath, remoteViewingBranch)
-      : undefined
+    // Both modes now have checked-out working trees, so no custom reader needed
+    const reader = undefined
 
     try {
       const modules = bmadScanResult?.modules || []
@@ -305,7 +300,7 @@ export function useDocuments() {
     } finally {
       setLoading(false)
     }
-  }, [projectPath, projectType, outputFolder, bmadScanResult, documentsRevision, remoteViewingBranch, isRemoteProject])
+  }, [projectPath, projectType, outputFolder, bmadScanResult, documentsRevision])
 
   useEffect(() => {
     loadDocuments()

@@ -24,6 +24,8 @@ export default function ChatInput({ onSend, onCancel, disabled = false, agentId,
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const isRemoteProject = useStore((state) => state.isRemoteProject)
+  const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
+  const isRemoteView = isRemoteProject || remoteViewingBranch !== null
 
   const { getAgent } = useWorkflow()
   const agent = getAgent(agentId)
@@ -225,10 +227,10 @@ export default function ChatInput({ onSend, onCancel, disabled = false, agentId,
           mt: 1,
           p: 0.75,
           borderRadius: 1,
-          bgcolor: (theme) => alpha(theme.palette[isRemoteProject ? 'warning' : 'info'].main, 0.08),
+          bgcolor: (theme) => alpha(theme.palette[isRemoteView ? 'warning' : 'info'].main, 0.08),
         }}
       >
-        {isRemoteProject ? (
+        {isRemoteView ? (
           <>
             <WarningAmberIcon sx={{ fontSize: 14, color: 'warning.main', opacity: 0.7 }} />
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>

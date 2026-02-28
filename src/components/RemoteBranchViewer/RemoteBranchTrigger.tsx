@@ -8,6 +8,15 @@ import SearchableDropdown, { SearchableDropdownItem } from '../common/Searchable
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
 
+function hashCode(str: string): string {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i)
+    hash |= 0
+  }
+  return Math.abs(hash).toString(36)
+}
+
 /**
  * Standalone remote branch viewer trigger for the status bar.
  * Allows viewing board data from remote branches in read-only mode,
@@ -23,20 +32,23 @@ export default function RemoteBranchTrigger() {
   const projectPath = useStore((state) => state.projectPath)
   const currentBranch = useStore((state) => state.currentBranch)
   const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
-  const setRemoteViewingBranch = useStore((state) => state.setRemoteViewingBranch)
   const isRemoteProject = useStore((state) => state.isRemoteProject)
+  const attachedLocalProjectPath = useStore((state) => state.attachedLocalProjectPath)
   const { loadProjectData } = useProjectData()
 
   const open = Boolean(anchorEl)
 
+  // Use original path for git operations (not the cache path)
+  const gitSourcePath = attachedLocalProjectPath || projectPath
+
   const loadRemoteBranches = useCallback(async (doFetch = false) => {
-    if (!projectPath) return
+    if (!gitSourcePath) return
     setLoading(true)
     try {
       if (doFetch) {
-        await window.gitAPI.fetch(projectPath)
+        await window.gitAPI.fetch(gitSourcePath)
       }
-      const result = await window.gitAPI.listRemoteBranches(projectPath)
+      const result = await window.gitAPI.listRemoteBranches(gitSourcePath)
       if (result.branches) {
         setRemoteBranches(result.branches)
       }
@@ -46,7 +58,7 @@ export default function RemoteBranchTrigger() {
     } finally {
       setLoading(false)
     }
-  }, [projectPath])
+  }, [gitSourcePath])
 
   // Auto-load branches when a standalone remote project is opened
   useEffect(() => {
@@ -75,15 +87,52 @@ export default function RemoteBranchTrigger() {
     loadRemoteBranches(true)
   }
 
-  const handleRemoteBranchSelect = (branchName: string) => {
-    setRemoteViewingBranch(branchName)
+  const handleRemoteBranchSelect = async (branchName: string) => {
     handleClose()
-    loadProjectData()
+
+    if (isRemoteProject) {
+      // Standalone: just switch branch (existing behavior)
+      useStore.getState().setRemoteViewingBranch(branchName)
+      loadProjectData()
+      return
+    }
+
+    // Attached mode: clone local repo to cache, switch projectPath
+    if (!projectPath) return
+    const originalPath = attachedLocalProjectPath || projectPath
+    useStore.getState().setLoading(true)
+
+    try {
+      const cacheKey = `local-${hashCode(originalPath)}`
+      const result = await window.gitAPI.cloneLocalToCache(originalPath, cacheKey)
+      if (!result.success || !result.path) {
+        useStore.getState().setError(result.error || 'Failed to create cache')
+        useStore.getState().setLoading(false)
+        return
+      }
+      useStore.setState({
+        attachedLocalProjectPath: originalPath,
+        projectPath: result.path,
+        remoteViewingBranch: branchName,
+      })
+    } catch {
+      useStore.getState().setError('Failed to set up remote view')
+      useStore.getState().setLoading(false)
+    }
   }
 
   const handleExitRemoteView = () => {
-    setRemoteViewingBranch(null)
     handleClose()
+    const { attachedLocalProjectPath: originalPath } = useStore.getState()
+    if (originalPath) {
+      useStore.setState({
+        projectPath: originalPath,
+        attachedLocalProjectPath: null,
+        remoteViewingBranch: null,
+      })
+    } else {
+      useStore.getState().setRemoteViewingBranch(null)
+    }
     loadProjectData()
   }
 
@@ -91,9 +140,8 @@ export default function RemoteBranchTrigger() {
   const items: SearchableDropdownItem[] = useMemo(() => {
     const result: SearchableDropdownItem[] = []
 
-    // "Exit Remote View" only for attached mode (local project viewing a remote branch)
-    // Not shown for standalone remote projects — there's no local project to return to
-    if (remoteViewingBranch && !isRemoteProject) {
+    // "Exit Remote View" when in attached mode (has original path to return to)
+    if (attachedLocalProjectPath) {
       result.push({
         id: '__exit_remote__',
         label: 'Exit Remote View',
@@ -168,7 +216,7 @@ export default function RemoteBranchTrigger() {
     }
 
     return result
-  }, [remoteBranches, remoteViewingBranch, isRemoteProject, loading])
+  }, [remoteBranches, remoteViewingBranch, attachedLocalProjectPath, loading])
 
   // Don't render when no project is open
   if (!projectPath || !currentBranch) {

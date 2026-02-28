@@ -9,7 +9,7 @@ import { autoUpdater } from 'electron-updater'
 import { agentManager } from './agentManager'
 import { detectTool, detectAllTools, clearDetectionCache } from './cliToolManager'
 import { getAugmentedEnv, findBinary } from './envUtils'
-import { scanBmadProject, scanBmadAtRef } from './bmadScanner'
+import { scanBmadProject } from './bmadScanner'
 import { encryptToken, decryptToken, getAuthenticatedUrl } from './tokenManager'
 
 // Set app name (shows in menu bar on macOS)
@@ -3101,38 +3101,48 @@ ipcMain.handle('git-list-remote-branches', async (_, projectPath: string) => {
   return { branches }
 })
 
-// List files at a git ref via git ls-tree
-ipcMain.handle('git-list-directory-at-ref', async (_, projectPath: string, dirPath: string, ref: string) => {
-  if (!isValidGitRef(ref)) {
-    return { files: [], dirs: [], error: 'Invalid git ref' }
-  }
+// Clone a local repo to cache for attached remote branch viewing
+ipcMain.handle('git-clone-local-to-cache', async (_, localProjectPath: string, cacheKey: string) => {
+  try {
+    const cacheDir = join(app.getPath('userData'), 'remote-cache')
+    mkdirSync(cacheDir, { recursive: true })
+    const absolutePath = join(cacheDir, cacheKey)
 
-  const prefix = dirPath ? (dirPath.endsWith('/') ? dirPath : dirPath + '/') : ''
-  const result = runGitCommand(['ls-tree', '--name-only', ref, prefix], projectPath)
-  if (result.error) {
-    return { files: [], dirs: [], error: result.error }
-  }
+    const spawnOpts = { encoding: 'utf-8' as const, maxBuffer: 10 * 1024 * 1024, timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] as StdioOptions }
 
-  const entries = result.stdout.trim().split('\n').filter(Boolean)
-
-  // Separate files and directories by checking ls-tree with -d flag
-  const dirResult = runGitCommand(['ls-tree', '-d', '--name-only', ref, prefix], projectPath)
-  const dirEntries = new Set(dirResult.stdout?.trim().split('\n').filter(Boolean) || [])
-
-  const files: string[] = []
-  const dirs: string[] = []
-  for (const entry of entries) {
-    // Strip prefix to return just the filename/dirname (matching filesystem listDirectory behavior)
-    const name = prefix && entry.startsWith(prefix) ? entry.slice(prefix.length) : entry
-    if (!name) continue
-    if (dirEntries.has(entry)) {
-      dirs.push(name)
-    } else {
-      files.push(name)
+    if (existsSync(absolutePath)) {
+      // Cache exists — just fetch to update refs
+      const fetchResult = spawnSync('git', ['-C', absolutePath, 'fetch', 'origin'], spawnOpts)
+      if (fetchResult.error) return { success: false, error: fetchResult.error.message }
+      if (fetchResult.status !== 0) return { success: false, error: fetchResult.stderr?.trim() || 'Fetch failed' }
+      return { success: true, path: absolutePath }
     }
-  }
 
-  return { files, dirs }
+    // Clone using --local for hardlinks (fast, minimal disk usage)
+    const cloneResult = spawnSync('git', [
+      'clone', '--local', '--depth', '1', '--no-single-branch',
+      localProjectPath, absolutePath
+    ], spawnOpts)
+
+    if (cloneResult.error) return { success: false, error: cloneResult.error.message }
+    if (cloneResult.status !== 0) return { success: false, error: cloneResult.stderr?.trim() || 'Clone failed' }
+
+    // Fix origin URL: point to the real remote instead of local path
+    // so "Refresh Board" fetches from GitHub, not the local directory
+    const realUrlResult = spawnSync('git', ['-C', localProjectPath, 'remote', 'get-url', 'origin'], spawnOpts)
+    if (realUrlResult.status === 0 && realUrlResult.stdout.trim()) {
+      const realUrl = realUrlResult.stdout.trim()
+      // Inject token if available
+      const settings = await loadSettings()
+      const encrypted = settings.githubTokenEncrypted
+      const authenticatedUrl = getAuthenticatedUrl(realUrl, encrypted || null)
+      spawnSync('git', ['-C', absolutePath, 'remote', 'set-url', 'origin', authenticatedUrl], spawnOpts)
+    }
+
+    return { success: true, path: absolutePath }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to clone local repo' }
+  }
 })
 
 // Shallow clone a remote repository
@@ -3239,15 +3249,3 @@ ipcMain.handle('git-ls-remote', async (_, url: string) => {
   }
 })
 
-// Scan BMAD project structure at a specific git ref (branch/tag/commit)
-ipcMain.handle('scan-bmad-at-ref', async (_, projectPath: string, ref: string) => {
-  if (!isValidGitRef(ref)) {
-    return null
-  }
-  try {
-    return scanBmadAtRef(projectPath, ref)
-  } catch (error) {
-    console.error('Failed to scan BMAD at ref:', error)
-    return null
-  }
-})

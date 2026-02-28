@@ -6,7 +6,7 @@ import { parseStoryContent } from '../utils/parseStory'
 import { getEpicsFullPath, getSprintStatusFullPath, hasBoardModule } from '../utils/projectTypes'
 import { mergeWorkflowConfig } from '../utils/workflowMerge'
 import { flushPendingThreadSave } from '../utils/chatUtils'
-import { createLocalReader, createRemoteBranchReader } from '../utils/remoteFileReader'
+import { createLocalReader } from '../utils/remoteFileReader'
 import type { BmadScanResult } from '../types/bmadScan'
 
 // Module-level functions using getState() — no hook dependency, stable references,
@@ -24,14 +24,9 @@ export async function loadProjectData() {
     return
   }
 
-  // Create file reader based on remote viewing state
-  const { remoteViewingBranch } = state
-  const readOnly = remoteViewingBranch !== null || state.isRemoteProject
-  // For standalone remote projects: use local reader (working tree is checked out)
-  // For attached remote branch viewing (local project): use git show reader
-  const reader = remoteViewingBranch && projectPath && !state.isRemoteProject
-    ? createRemoteBranchReader(projectPath, remoteViewingBranch)
-    : createLocalReader()
+  // Both modes now have checked-out working trees (local or cache)
+  const readOnly = state.remoteViewingBranch !== null || state.isRemoteProject
+  const reader = createLocalReader()
 
   const { stories: currentStories, notificationsEnabled, isUserDragging, setIsUserDragging } = state
 
@@ -234,11 +229,8 @@ export async function loadStoryContent(story: { filePath?: string } | null) {
     return
   }
 
-  // Create file reader based on remote viewing state
-  const state = useStore.getState()
-  const reader = state.remoteViewingBranch && state.projectPath
-    ? createRemoteBranchReader(state.projectPath, state.remoteViewingBranch)
-    : createLocalReader()
+  // Both modes now have checked-out working trees
+  const reader = createLocalReader()
 
   try {
     const result = await reader.readFile(story.filePath)
@@ -276,20 +268,14 @@ export function useProjectDataEffects() {
     if (!_hasHydrated || !projectPath || !projectType) return
     if (wizardIsActive) return
 
-    // Remote viewing: checkout the branch (for remote projects) + scan + load
+    // Remote viewing: reset + checkout the branch, scan + load
+    // Both standalone remote and attached mode now have checked-out working trees
     if (remoteViewingBranch) {
       ;(async () => {
         try {
-          // For standalone remote projects, reset any agent modifications then checkout the branch
-          const { isRemoteProject: isRemote } = useStore.getState()
-          if (isRemote) {
-            await window.gitAPI.resetWorkingTree(projectPath)
-            await window.gitAPI.checkoutRemoteBranch(projectPath, remoteViewingBranch)
-          }
-          // Scan BMAD (filesystem for remote projects, git ref for attached mode)
-          const scanResult = isRemote
-            ? await window.fileAPI.scanBmad(projectPath) as BmadScanResult | null
-            : await window.gitAPI.scanBmadAtRef(projectPath, remoteViewingBranch) as BmadScanResult | null
+          await window.gitAPI.resetWorkingTree(projectPath)
+          await window.gitAPI.checkoutRemoteBranch(projectPath, remoteViewingBranch)
+          const scanResult = await window.fileAPI.scanBmad(projectPath) as BmadScanResult | null
           useStore.getState().setBmadScanResult(scanResult)
           if (scanResult) {
             useStore.getState().setBmadVersionError(null)
@@ -495,12 +481,9 @@ export function useProjectDataEffects() {
     // Skip file watching if wizard is active (wizard has its own watcher)
     if (wizardIsActive) return
 
-    // Skip file watching for attached remote branch viewing (reads via git show, no filesystem)
-    if (remoteViewingBranch && !isRemoteProject) return
-
-    // For standalone remote projects: watch for changes and auto-revert to keep cache clean
+    // For any remote viewing (standalone or attached): watch for changes and auto-revert
     // This allows agents to read files for Q&A while preventing permanent modifications
-    if (isRemoteProject) {
+    if (remoteViewingBranch) {
       window.fileAPI.startWatching(projectPath, projectType, outputFolder)
       useStore.getState().setIsWatching(true)
       let revertTimer: ReturnType<typeof setTimeout> | null = null
@@ -679,6 +662,7 @@ export function useProjectData() {
       scannedWorkflowConfig: null,
       // Clear remote viewing state when switching projects
       remoteViewingBranch: null,
+      attachedLocalProjectPath: null,
       // Restore remote project state from recent project entry
       isRemoteProject: project.isRemote ?? false,
       remoteProjectUrl: project.remoteUrl ?? null,

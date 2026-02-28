@@ -66,7 +66,8 @@ export default function Board() {
   const projectPath = useStore((state) => state.projectPath)
   const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
   const isRemoteProject = useStore((state) => state.isRemoteProject)
-  const setRemoteViewingBranch = useStore((state) => state.setRemoteViewingBranch)
+  const attachedLocalProjectPath = useStore((state) => state.attachedLocalProjectPath)
+
   const storeReadOnly = useStore((state) => state.isReadOnly())
 
   // Parse current branch to determine type and scope
@@ -578,12 +579,16 @@ export default function Board() {
                 >
                   Refresh Board
                 </Button>
-                {remoteViewingBranch && !isRemoteProject && (
+                {attachedLocalProjectPath && (
                   <Button
                     color="inherit"
                     size="small"
                     onClick={() => {
-                      setRemoteViewingBranch(null)
+                      useStore.setState({
+                        projectPath: attachedLocalProjectPath,
+                        attachedLocalProjectPath: null,
+                        remoteViewingBranch: null,
+                      })
                       loadProjectData()
                     }}
                     sx={{ fontWeight: 600 }}
