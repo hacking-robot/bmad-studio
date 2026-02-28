@@ -3056,6 +3056,46 @@ ipcMain.handle('test-github-token', async (_, token: string, testUrl: string) =>
   }
 })
 
+// Check if remote branch has new commits (lightweight staleness check)
+ipcMain.handle('git-check-remote-ahead', async (_, projectPath: string, branch: string) => {
+  try {
+    // Snapshot current ref before fetching
+    const beforeResult = runGitCommand(['rev-parse', branch], projectPath)
+    if (beforeResult.error) return { ahead: false }
+    const beforeHash = beforeResult.stdout.trim()
+
+    // Fetch latest from remote (with token injection for private repos)
+    const settings = await loadSettings()
+    const encrypted = settings.githubTokenEncrypted
+    const urlResult = runGitCommand(['remote', 'get-url', 'origin'], projectPath)
+    const env: Record<string, string | undefined> = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    delete env.GPG_TTY
+
+    if (!urlResult.error && urlResult.stdout.trim().startsWith('https://') && encrypted) {
+      const authUrl = getAuthenticatedUrl(urlResult.stdout.trim(), encrypted)
+      spawnSync('git', ['-c', `url.${authUrl}.insteadOf=${urlResult.stdout.trim()}`, 'fetch', 'origin'], {
+        cwd: projectPath,
+        encoding: 'utf-8',
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 30000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env
+      })
+    } else {
+      runGitCommand(['fetch', 'origin'], projectPath)
+    }
+
+    // Compare ref after fetch
+    const afterResult = runGitCommand(['rev-parse', branch], projectPath)
+    if (afterResult.error) return { ahead: false }
+    const afterHash = afterResult.stdout.trim()
+
+    return { ahead: beforeHash !== afterHash }
+  } catch {
+    return { ahead: false }
+  }
+})
+
 // Fetch remote refs (git fetch <remote> --prune)
 ipcMain.handle('git-fetch', async (_, projectPath: string, remote?: string) => {
   const remoteArg = remote || 'origin'
@@ -3185,6 +3225,12 @@ ipcMain.handle('git-clone-remote', async (_, url: string, targetName: string) =>
 // Reset working tree to HEAD — reverts all modifications and removes untracked files
 // Used to keep remote project cache clean after agent interactions
 ipcMain.handle('git-reset-working-tree', async (_, projectPath: string) => {
+  // Safety: only allow reset on cache repos, never a real local project
+  const cacheDir = join(app.getPath('userData'), 'remote-cache')
+  if (!projectPath.startsWith(cacheDir)) {
+    console.warn('[git-reset-working-tree] Blocked: path is not in remote-cache:', projectPath)
+    return { success: false, error: 'Reset blocked: not a cache repo' }
+  }
   try {
     // Revert all tracked file modifications
     const checkoutResult = runGitCommand(['checkout', '--', '.'], projectPath)
@@ -3201,6 +3247,12 @@ ipcMain.handle('git-reset-working-tree', async (_, projectPath: string) => {
 
 // Checkout a remote branch in a cached repo (updates working tree for remote project viewing)
 ipcMain.handle('git-checkout-remote-branch', async (_, projectPath: string, branch: string) => {
+  // Safety: only allow checkout on cache repos, never a real local project
+  const cacheDir = join(app.getPath('userData'), 'remote-cache')
+  if (!projectPath.startsWith(cacheDir)) {
+    console.warn('[git-checkout-remote-branch] Blocked: path is not in remote-cache:', projectPath)
+    return { success: false, error: 'Checkout blocked: not a cache repo' }
+  }
   if (!isValidGitRef(branch)) {
     return { success: false, error: 'Invalid branch name' }
   }

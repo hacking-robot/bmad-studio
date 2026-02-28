@@ -28,12 +28,15 @@ export default function ProjectSwitcher() {
   const triggerRef = useRef<HTMLDivElement>(null)
 
   const projectPath = useStore((state) => state.projectPath)
+  const attachedLocalProjectPath = useStore((state) => state.attachedLocalProjectPath)
   const recentProjects = useStore((state) => state.recentProjects)
   const removeRecentProject = useStore((state) => state.removeRecentProject)
   const { selectProject, switchToProject } = useProjectData()
 
   const open = Boolean(anchorEl)
-  const projectName = projectPath?.split('/').pop() || 'BMad Studio'
+  // Use the real local project path when in attached remote view (projectPath is a cache path)
+  const displayPath = attachedLocalProjectPath || projectPath
+  const projectName = displayPath?.split('/').pop() || 'BMad Studio'
 
   // Filter projects based on search query
   const filteredProjects = recentProjects.filter((project) => {

@@ -271,32 +271,57 @@ export function useProjectDataEffects() {
     // Remote viewing: reset + checkout the branch, scan + load
     // Both standalone remote and attached mode now have checked-out working trees
     if (remoteViewingBranch) {
-      ;(async () => {
-        try {
-          await window.gitAPI.resetWorkingTree(projectPath)
-          await window.gitAPI.checkoutRemoteBranch(projectPath, remoteViewingBranch)
-          const scanResult = await window.fileAPI.scanBmad(projectPath) as BmadScanResult | null
-          useStore.getState().setBmadScanResult(scanResult)
-          if (scanResult) {
-            useStore.getState().setBmadVersionError(null)
-            const scanDetectedType = scanResult.modules.includes('gds')
-              ? 'gds' as const
-              : hasBoardModule(scanResult.modules) ? 'bmm' as const : 'dashboard' as const
-            const { projectType: currentProjectType } = useStore.getState()
-            if (currentProjectType !== scanDetectedType) {
-              useStore.getState().setProjectType(scanDetectedType)
-            }
-            if (scanResult.outputFolder) {
-              useStore.getState().setOutputFolder(scanResult.outputFolder)
-            }
-            // Merge workflow config to populate agents and workflows
-            const merged = mergeWorkflowConfig(scanResult, scanDetectedType)
-            useStore.getState().setScannedWorkflowConfig(merged)
+      // Safety: only run checkout on cache paths, never the real local project.
+      // In attached mode, attachedLocalProjectPath holds the real path and projectPath is the cache.
+      // In standalone mode, isRemoteProject is true and projectPath is always a cache clone.
+      const { isRemoteProject: isRemote, attachedLocalProjectPath: attached } = useStore.getState()
+      if (!isRemote && !attached) {
+        // Inconsistent state — remoteViewingBranch set without remote context. Clear it.
+        // Also restore projectPath if it's a cache path (e.g., after persistence gap).
+        console.warn('[useProjectData] remoteViewingBranch set without remote context — clearing')
+        if (projectPath.includes('/remote-cache/local-')) {
+          const lastReal = useStore.getState().recentProjects.find(p => !p.isRemote)
+          if (lastReal) {
+            console.warn('[useProjectData] Restoring projectPath from recent:', lastReal.path)
+            useStore.setState({
+              projectPath: lastReal.path,
+              projectType: lastReal.projectType,
+              outputFolder: lastReal.outputFolder || '_bmad-output',
+              remoteViewingBranch: null,
+            })
+            return // Effect will re-run with restored path
           }
-        } catch { /* scan failed, continue without */ }
-        loadProjectData()
-      })()
-      return
+        }
+        useStore.getState().setRemoteViewingBranch(null)
+        // Fall through to normal project load below
+      } else {
+        ;(async () => {
+          try {
+            await window.gitAPI.resetWorkingTree(projectPath)
+            await window.gitAPI.checkoutRemoteBranch(projectPath, remoteViewingBranch)
+            const scanResult = await window.fileAPI.scanBmad(projectPath) as BmadScanResult | null
+            useStore.getState().setBmadScanResult(scanResult)
+            if (scanResult) {
+              useStore.getState().setBmadVersionError(null)
+              const scanDetectedType = scanResult.modules.includes('gds')
+                ? 'gds' as const
+                : hasBoardModule(scanResult.modules) ? 'bmm' as const : 'dashboard' as const
+              const { projectType: currentProjectType } = useStore.getState()
+              if (currentProjectType !== scanDetectedType) {
+                useStore.getState().setProjectType(scanDetectedType)
+              }
+              if (scanResult.outputFolder) {
+                useStore.getState().setOutputFolder(scanResult.outputFolder)
+              }
+              // Merge workflow config to populate agents and workflows
+              const merged = mergeWorkflowConfig(scanResult, scanDetectedType)
+              useStore.getState().setScannedWorkflowConfig(merged)
+            }
+          } catch { /* scan failed, continue without */ }
+          loadProjectData()
+        })()
+        return
+      }
     }
     // Standalone remote project without a branch selected yet — auto-detect default branch
     if (isRemoteProject) {
@@ -484,23 +509,29 @@ export function useProjectDataEffects() {
     // For any remote viewing (standalone or attached): watch for changes and auto-revert
     // This allows agents to read files for Q&A while preventing permanent modifications
     if (remoteViewingBranch) {
-      window.fileAPI.startWatching(projectPath, projectType, outputFolder)
-      useStore.getState().setIsWatching(true)
-      let revertTimer: ReturnType<typeof setTimeout> | null = null
-      const cleanup = window.fileAPI.onFilesChanged(() => {
-        // Debounce: wait for agent to finish writing before reverting
-        if (revertTimer) clearTimeout(revertTimer)
-        revertTimer = setTimeout(() => {
-          window.gitAPI.resetWorkingTree(projectPath).then(() => {
-            console.log('[useProjectData] Auto-reverted remote project changes')
-          })
-        }, 3000)
-      })
-      return () => {
-        cleanup()
-        if (revertTimer) clearTimeout(revertTimer)
-        window.fileAPI.stopWatching()
-        useStore.getState().setIsWatching(false)
+      // Safety: only auto-revert on cache paths, never the real local project
+      const { isRemoteProject: isRemote, attachedLocalProjectPath: attached } = useStore.getState()
+      if (!isRemote && !attached) {
+        // Inconsistent state — skip remote watcher, fall through to normal watcher
+      } else {
+        window.fileAPI.startWatching(projectPath, projectType, outputFolder)
+        useStore.getState().setIsWatching(true)
+        let revertTimer: ReturnType<typeof setTimeout> | null = null
+        const cleanup = window.fileAPI.onFilesChanged(() => {
+          // Debounce: wait for agent to finish writing before reverting
+          if (revertTimer) clearTimeout(revertTimer)
+          revertTimer = setTimeout(() => {
+            window.gitAPI.resetWorkingTree(projectPath).then(() => {
+              console.log('[useProjectData] Auto-reverted remote project changes')
+            })
+          }, 3000)
+        })
+        return () => {
+          cleanup()
+          if (revertTimer) clearTimeout(revertTimer)
+          window.fileAPI.stopWatching()
+          useStore.getState().setIsWatching(false)
+        }
       }
     }
 
@@ -535,6 +566,31 @@ export function useProjectDataEffects() {
       useStore.getState().setIsWatching(false)
     }
   }, [_hasHydrated, projectPath, projectType, outputFolder, wizardIsActive, remoteViewingBranch, isRemoteProject])
+
+  // Periodic staleness check for remote branch viewing
+  useEffect(() => {
+    if (!projectPath || !remoteViewingBranch) return
+
+    // Safety: only fetch on cache paths, never the real local project.
+    // In attached mode, attachedLocalProjectPath holds the real path and projectPath is the cache.
+    // In standalone mode, isRemoteProject is true and projectPath is always a cache clone.
+    const { isRemoteProject: isRemote, attachedLocalProjectPath: attached } = useStore.getState()
+    if (!isRemote && !attached) return
+
+    // Clear stale flag when branch changes (fresh data just loaded)
+    useStore.getState().setRemoteUpdateAvailable(false)
+
+    const check = async () => {
+      const result = await window.gitAPI.checkRemoteAhead(projectPath, remoteViewingBranch)
+      if (result.ahead) {
+        useStore.getState().setRemoteUpdateAvailable(true)
+      }
+    }
+
+    // Check every 60s
+    const timer = setInterval(check, 60_000)
+    return () => clearInterval(timer)
+  }, [projectPath, remoteViewingBranch])
 
   // Load story content when selected story changes
   useEffect(() => {
@@ -663,6 +719,7 @@ export function useProjectData() {
       // Clear remote viewing state when switching projects
       remoteViewingBranch: null,
       attachedLocalProjectPath: null,
+      remoteUpdateAvailable: false,
       // Restore remote project state from recent project entry
       isRemoteProject: project.isRemote ?? false,
       remoteProjectUrl: project.remoteUrl ?? null,

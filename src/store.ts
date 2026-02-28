@@ -362,6 +362,8 @@ interface AppState {
   hasGitHubToken: boolean;
   attachedLocalProjectPath: string | null;
   isReadOnly: () => boolean;
+  remoteUpdateAvailable: boolean;
+  setRemoteUpdateAvailable: (available: boolean) => void;
   setRemoteViewingBranch: (branch: string | null) => void;
   setIsRemoteProject: (remote: boolean) => void;
   setRemoteProjectUrl: (url: string | null) => void;
@@ -803,6 +805,7 @@ export const useStore = create<AppState>()(
           gitDiffPanelBranch: null,
           remoteViewingBranch: null,
           attachedLocalProjectPath: null,
+          remoteUpdateAvailable: false,
         });
       },
       setProjectType: (type) => set({ projectType: type }),
@@ -830,9 +833,31 @@ export const useStore = create<AppState>()(
           return { recentProjects: updated };
         }),
       removeRecentProject: (path) =>
-        set((state) => ({
-          recentProjects: state.recentProjects.filter((p) => p.path !== path),
-        })),
+        set((state) => {
+          // Check if removing the active project (direct match or attached local path)
+          const isActive = path === state.projectPath || path === state.attachedLocalProjectPath
+          return {
+            recentProjects: state.recentProjects.filter((p) => p.path !== path),
+            // If removing the active project, reset all project state to avoid
+            // orphaned remote viewing sessions that could checkout on the real repo
+            ...(isActive ? {
+              projectPath: null,
+              projectType: null,
+              remoteViewingBranch: null,
+              attachedLocalProjectPath: null,
+              remoteUpdateAvailable: false,
+              isRemoteProject: false,
+              remoteProjectUrl: null,
+              epics: [],
+              stories: [],
+              error: null,
+              bmadScanResult: null,
+              scannedWorkflowConfig: null,
+              bmadVersionError: null,
+              selectedEpicId: null,
+            } : {})
+          }
+        }),
 
       // Git state (reactive across components)
       currentBranch: null,
@@ -863,11 +888,13 @@ export const useStore = create<AppState>()(
       remoteProjectUrl: null,
       hasGitHubToken: false,
       attachedLocalProjectPath: null,
+      remoteUpdateAvailable: false,
+      setRemoteUpdateAvailable: (available) => set({ remoteUpdateAvailable: available }),
       isReadOnly: () => {
         const { remoteViewingBranch, isRemoteProject } = get()
         return remoteViewingBranch !== null || isRemoteProject
       },
-      setRemoteViewingBranch: (branch) => set({ remoteViewingBranch: branch }),
+      setRemoteViewingBranch: (branch) => set({ remoteViewingBranch: branch, remoteUpdateAvailable: false }),
       setIsRemoteProject: (remote) => set({ isRemoteProject: remote }),
       setRemoteProjectUrl: (url) => set({ remoteProjectUrl: url }),
       setHasGitHubToken: (hasToken) => set({ hasGitHubToken: hasToken }),
@@ -1923,6 +1950,23 @@ export const useStore = create<AppState>()(
           });
           if (updatedHistory.some((h, i) => h !== state.agentHistory[i])) {
             state.agentHistory = updatedHistory;
+          }
+          // Detect stale cache path from a previous attached remote-view session.
+          // projectPath is persisted but attachedLocalProjectPath is not, so on restart
+          // projectPath can be a cache path like "remote-cache/local-abc123" with no way back.
+          // Restore from recentProjects[0] (the last active project) or clear it.
+          if (state.projectPath && state.projectPath.includes('/remote-cache/local-')) {
+            const lastReal = state.recentProjects.find(p => !p.isRemote)
+            if (lastReal) {
+              console.log('[rehydrate] Stale cache path detected, restoring to:', lastReal.path)
+              state.projectPath = lastReal.path
+              state.projectType = lastReal.projectType
+              state.outputFolder = lastReal.outputFolder || '_bmad-output'
+            } else {
+              console.log('[rehydrate] Stale cache path detected, no recent project to restore — clearing')
+              state.projectPath = null
+              state.projectType = null
+            }
           }
           // Restore per-project git settings from recentProjects
           if (state.projectPath && state.recentProjects.length > 0) {

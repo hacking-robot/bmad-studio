@@ -326,6 +326,7 @@ export interface GitAPI {
   checkoutRemoteBranch: (projectPath: string, branch: string) => Promise<{ success: boolean; error?: string }>
   resetWorkingTree: (projectPath: string) => Promise<{ success: boolean; error?: string }>
   lsRemote: (url: string) => Promise<{ branches: string[]; error?: string }>
+  checkRemoteAhead: (projectPath: string, branch: string) => Promise<{ ahead: boolean; error?: string }>
 }
 
 const gitAPI: GitAPI = {
@@ -354,7 +355,8 @@ const gitAPI: GitAPI = {
   cloneLocalToCache: (localProjectPath, cacheKey) => ipcRenderer.invoke('git-clone-local-to-cache', localProjectPath, cacheKey),
   checkoutRemoteBranch: (projectPath, branch) => ipcRenderer.invoke('git-checkout-remote-branch', projectPath, branch),
   resetWorkingTree: (projectPath) => ipcRenderer.invoke('git-reset-working-tree', projectPath),
-  lsRemote: (url) => ipcRenderer.invoke('git-ls-remote', url)
+  lsRemote: (url) => ipcRenderer.invoke('git-ls-remote', url),
+  checkRemoteAhead: (projectPath, branch) => ipcRenderer.invoke('git-check-remote-ahead', projectPath, branch)
 }
 
 contextBridge.exposeInMainWorld('gitAPI', gitAPI)

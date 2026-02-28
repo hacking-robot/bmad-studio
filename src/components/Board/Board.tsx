@@ -69,6 +69,7 @@ export default function Board() {
   const attachedLocalProjectPath = useStore((state) => state.attachedLocalProjectPath)
 
   const storeReadOnly = useStore((state) => state.isReadOnly())
+  const remoteUpdateAvailable = useStore((state) => state.remoteUpdateAvailable)
 
   // Parse current branch to determine type and scope
   const branchInfo = useMemo(() => parseBranchInfo(currentBranch, baseBranch), [currentBranch, baseBranch])
@@ -564,11 +565,12 @@ export default function Board() {
             action={
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <Button
-                  color="inherit"
+                  color={remoteUpdateAvailable ? 'warning' : 'inherit'}
                   size="small"
                   startIcon={<RefreshIcon fontSize="small" />}
                   onClick={async () => {
                     if (!projectPath) return
+                    useStore.getState().setRemoteUpdateAvailable(false)
                     try {
                       await window.gitAPI.fetch(projectPath)
                     } catch {
@@ -607,7 +609,7 @@ export default function Board() {
             }}
           >
             <Typography variant="body2">
-              <strong>Viewing:</strong> {remoteViewingBranch || 'Remote project'} (read-only)
+              <strong>Viewing:</strong> {remoteViewingBranch || 'Remote project'} (read-only){remoteUpdateAvailable && ' — Remote branch has been updated'}
             </Typography>
           </Alert>
         )}
