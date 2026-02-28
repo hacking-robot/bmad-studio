@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../store'
+import { createRemoteBranchReader, type VirtualFileReader } from '../utils/remoteFileReader'
 
 // Extended type union covering all artifact/document types
 export type DocumentType =
@@ -129,9 +130,11 @@ function getModuleLabel(mod: string | null): string | null {
   return MODULE_FOLDERS[mod]?.label || mod.toUpperCase()
 }
 
-async function scanFolder(dirPath: string): Promise<{ mdFiles: string[], yamlFiles: string[], subDirs: string[] }> {
+async function scanFolder(dirPath: string, reader?: VirtualFileReader): Promise<{ mdFiles: string[], yamlFiles: string[], subDirs: string[] }> {
   try {
-    const result = await window.fileAPI.listDirectory(dirPath)
+    const result = reader
+      ? await reader.listDirectory(dirPath)
+      : await window.fileAPI.listDirectory(dirPath)
     const files = result.files || []
     const dirs = result.dirs || []
     return {
@@ -162,6 +165,8 @@ export function useDocuments() {
   const outputFolder = useStore((state) => state.outputFolder)
   const bmadScanResult = useStore((state) => state.bmadScanResult)
   const documentsRevision = useStore((state) => state.documentsRevision)
+  const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
+  const isRemoteProject = useStore((state) => state.isRemoteProject)
   const [folders, setFolders] = useState<DocumentFolder[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -174,6 +179,12 @@ export function useDocuments() {
 
     setLoading(true)
     setError(null)
+
+    // Use remote reader for attached mode (local project viewing remote branch)
+    // Standalone remote projects have a checked-out working tree, so local reader works
+    const reader = (remoteViewingBranch && !isRemoteProject)
+      ? createRemoteBranchReader(projectPath, remoteViewingBranch)
+      : undefined
 
     try {
       const modules = bmadScanResult?.modules || []
@@ -190,12 +201,12 @@ export function useDocuments() {
       }
 
       // Scan the output folder root to discover all subfolders and root-level files
-      const rootScan = await scanFolder(outputBase)
+      const rootScan = await scanFolder(outputBase, reader)
 
       // Scan each known subfolder (from installed modules)
       for (const subDir of rootScan.subDirs) {
         const subDirPath = `${outputBase}/${subDir}`
-        const scan = await scanFolder(subDirPath)
+        const scan = await scanFolder(subDirPath, reader)
         const allFiles: DocumentFile[] = []
 
         // Collect files in this subfolder
@@ -206,7 +217,7 @@ export function useDocuments() {
         // Scan one level deeper for nested subdirs (e.g. test-artifacts/test-design/)
         for (const nestedDir of scan.subDirs) {
           const nestedPath = `${subDirPath}/${nestedDir}`
-          const nestedScan = await scanFolder(nestedPath)
+          const nestedScan = await scanFolder(nestedPath, reader)
           const nestedLabel = generateDisplayName(nestedDir)
           for (const f of [...nestedScan.mdFiles, ...nestedScan.yamlFiles]) {
             allFiles.push(buildDocumentFile(f, `${nestedPath}/${f}`, nestedLabel))
@@ -248,7 +259,7 @@ export function useDocuments() {
       const hasBmmOrGds = modules.some(m => m === 'bmm' || m === 'gds')
       if (hasBmmOrGds) {
         const docsPath = `${projectPath}/docs`
-        const docsScan = await scanFolder(docsPath)
+        const docsScan = await scanFolder(docsPath, reader)
         const docsFiles: DocumentFile[] = []
 
         for (const f of [...docsScan.mdFiles, ...docsScan.yamlFiles]) {
@@ -262,7 +273,7 @@ export function useDocuments() {
         for (const subDir of docsScan.subDirs) {
           if (skipDocsDirs.has(subDir)) continue
           const subPath = `${docsPath}/${subDir}`
-          const subScan = await scanFolder(subPath)
+          const subScan = await scanFolder(subPath, reader)
           const subLabel = generateDisplayName(subDir)
           for (const f of [...subScan.mdFiles, ...subScan.yamlFiles]) {
             docsFiles.push(buildDocumentFile(f, `${subPath}/${f}`, subLabel))
@@ -294,7 +305,7 @@ export function useDocuments() {
     } finally {
       setLoading(false)
     }
-  }, [projectPath, projectType, outputFolder, bmadScanResult, documentsRevision])
+  }, [projectPath, projectType, outputFolder, bmadScanResult, documentsRevision, remoteViewingBranch, isRemoteProject])
 
   useEffect(() => {
     loadDocuments()

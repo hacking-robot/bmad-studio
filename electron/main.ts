@@ -3122,10 +3122,13 @@ ipcMain.handle('git-list-directory-at-ref', async (_, projectPath: string, dirPa
   const files: string[] = []
   const dirs: string[] = []
   for (const entry of entries) {
+    // Strip prefix to return just the filename/dirname (matching filesystem listDirectory behavior)
+    const name = prefix && entry.startsWith(prefix) ? entry.slice(prefix.length) : entry
+    if (!name) continue
     if (dirEntries.has(entry)) {
-      dirs.push(entry)
+      dirs.push(name)
     } else {
-      files.push(entry)
+      files.push(name)
     }
   }
 

@@ -47,11 +47,7 @@ export function createRemoteBranchReader(projectPath: string, ref: string): Virt
     listDirectory: async (absolutePath) => {
       try {
         const relativePath = toRelative(absolutePath)
-        // listDirectoryAtRef will be added to gitAPI by the electron backend task
-        const gitAPIExt = window.gitAPI as typeof window.gitAPI & {
-          listDirectoryAtRef: (projectPath: string, dirPath: string, ref: string) => Promise<{ files?: string[]; dirs?: string[] }>
-        }
-        const result = await gitAPIExt.listDirectoryAtRef(projectPath, relativePath, ref)
+        const result = await window.gitAPI.listDirectoryAtRef(projectPath, relativePath, ref)
         return { files: result.files || [], dirs: result.dirs || [] }
       } catch (err) {
         return { error: err instanceof Error ? err.message : `Failed to list directory at ref ${ref}` }
