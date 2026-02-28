@@ -60,7 +60,7 @@ export default function WelcomeDialog() {
         elevation={0}
         sx={{
           p: 6,
-          maxWidth: 520,
+          maxWidth: 640,
           width: '100%',
           textAlign: 'center',
           border: 1,
