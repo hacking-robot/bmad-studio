@@ -1039,17 +1039,12 @@ function isPathWithinProject(projectPath: string, filePath: string): boolean {
 
 // Helper to run git commands safely using spawnSync with array arguments
 function runGitCommand(args: string[], cwd: string, maxBuffer?: number): { stdout: string; error?: string } {
-  // Remove GPG_TTY from environment so gpg-agent uses GUI pinentry instead of terminal
-  // This prevents blocking when running from Electron (no TTY available)
-  const env = { ...process.env }
-  delete env.GPG_TTY
-  
   const result = spawnSync('git', args, {
     cwd,
     encoding: 'utf-8',
     maxBuffer: maxBuffer || 10 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe'],
-    env
+    env: getAugmentedEnv()
   })
 
   if (result.error) {
