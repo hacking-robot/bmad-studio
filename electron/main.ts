@@ -2280,6 +2280,8 @@ ipcMain.handle('check-environment', async () => {
   // 2. Git
   const gitPath = findBinary('git')
   let gitVersion: string | null = null
+  let gitStatus: 'ok' | 'error' = gitPath ? 'ok' : 'error'
+  let gitDetail: string | undefined = gitPath ? undefined : 'Not found in PATH'
   if (gitPath) {
     try {
       const execFileAsync = promisify(execFile)
@@ -2288,14 +2290,26 @@ ipcMain.handle('check-environment', async () => {
         const match = gitResult.stdout.match(/(\d+\.\d+\.\d+)/)
         if (match) gitVersion = match[1]
       }
-    } catch { /* git --version failed */ }
+    } catch (err: unknown) {
+      // On macOS, /usr/bin/git is an Xcode shim that fails if the license isn't accepted
+      const errMsg = err instanceof Error ? err.message : String(err)
+      const errStderr = (err as { stderr?: string }).stderr || ''
+      const combined = errMsg + errStderr
+      if (combined.includes('xcodebuild') || combined.includes('license')) {
+        gitStatus = 'error'
+        gitDetail = 'Xcode license not accepted — run: sudo xcodebuild -license accept'
+      } else {
+        gitStatus = 'error'
+        gitDetail = 'Found but not working'
+      }
+    }
   }
   items.push({
     id: 'git',
     label: 'Git',
-    status: gitPath ? 'ok' : 'error',
+    status: gitStatus,
     version: gitVersion,
-    detail: gitPath ? undefined : 'Not found in PATH'
+    detail: gitDetail
   })
 
   // 3. Node.js (needed for npx bmad-method install)

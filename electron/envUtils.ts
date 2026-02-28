@@ -21,14 +21,14 @@ function getCommonPaths(): string[] {
   const paths: string[] = []
 
   if (platform() === 'darwin' || platform() === 'linux') {
-    // Standard system paths
-    paths.push('/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin')
-
-    // Homebrew (macOS)
+    // Homebrew paths first (preferred over Xcode shims in /usr/bin)
     // ARM64 (Apple Silicon)
     paths.push('/opt/homebrew/bin', '/opt/homebrew/sbin')
     // Intel
     paths.push('/usr/local/bin', '/usr/local/sbin')
+
+    // Standard system paths (fallback)
+    paths.push('/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin')
 
     // Linux brew
     paths.push(join(home, '.linuxbrew', 'bin'))
