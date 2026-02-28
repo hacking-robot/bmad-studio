@@ -324,6 +324,7 @@ export interface GitAPI {
   listDirectoryAtRef: (projectPath: string, dirPath: string, ref: string) => Promise<{ files: string[]; dirs: string[]; error?: string }>
   cloneRemote: (url: string, targetName: string) => Promise<{ success: boolean; path?: string; defaultBranch?: string; error?: string }>
   checkoutRemoteBranch: (projectPath: string, branch: string) => Promise<{ success: boolean; error?: string }>
+  resetWorkingTree: (projectPath: string) => Promise<{ success: boolean; error?: string }>
   lsRemote: (url: string) => Promise<{ branches: string[]; error?: string }>
   scanBmadAtRef: (projectPath: string, ref: string) => Promise<unknown | null>
 }
@@ -353,6 +354,7 @@ const gitAPI: GitAPI = {
   listDirectoryAtRef: (projectPath, dirPath, ref) => ipcRenderer.invoke('git-list-directory-at-ref', projectPath, dirPath, ref),
   cloneRemote: (url, targetName) => ipcRenderer.invoke('git-clone-remote', url, targetName),
   checkoutRemoteBranch: (projectPath, branch) => ipcRenderer.invoke('git-checkout-remote-branch', projectPath, branch),
+  resetWorkingTree: (projectPath) => ipcRenderer.invoke('git-reset-working-tree', projectPath),
   lsRemote: (url) => ipcRenderer.invoke('git-ls-remote', url),
   scanBmadAtRef: (projectPath, ref) => ipcRenderer.invoke('scan-bmad-at-ref', projectPath, ref)
 }

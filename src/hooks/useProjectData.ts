@@ -280,9 +280,10 @@ export function useProjectDataEffects() {
     if (remoteViewingBranch) {
       ;(async () => {
         try {
-          // For standalone remote projects, checkout the branch so the working tree updates
+          // For standalone remote projects, reset any agent modifications then checkout the branch
           const { isRemoteProject: isRemote } = useStore.getState()
           if (isRemote) {
+            await window.gitAPI.resetWorkingTree(projectPath)
             await window.gitAPI.checkoutRemoteBranch(projectPath, remoteViewingBranch)
           }
           // Scan BMAD (filesystem for remote projects, git ref for attached mode)
@@ -494,8 +495,31 @@ export function useProjectDataEffects() {
     // Skip file watching if wizard is active (wizard has its own watcher)
     if (wizardIsActive) return
 
-    // Skip file watching for remote projects (data comes from git, not filesystem)
-    if (remoteViewingBranch || isRemoteProject) return
+    // Skip file watching for attached remote branch viewing (reads via git show, no filesystem)
+    if (remoteViewingBranch && !isRemoteProject) return
+
+    // For standalone remote projects: watch for changes and auto-revert to keep cache clean
+    // This allows agents to read files for Q&A while preventing permanent modifications
+    if (isRemoteProject) {
+      window.fileAPI.startWatching(projectPath, projectType, outputFolder)
+      useStore.getState().setIsWatching(true)
+      let revertTimer: ReturnType<typeof setTimeout> | null = null
+      const cleanup = window.fileAPI.onFilesChanged(() => {
+        // Debounce: wait for agent to finish writing before reverting
+        if (revertTimer) clearTimeout(revertTimer)
+        revertTimer = setTimeout(() => {
+          window.gitAPI.resetWorkingTree(projectPath).then(() => {
+            console.log('[useProjectData] Auto-reverted remote project changes')
+          })
+        }, 3000)
+      })
+      return () => {
+        cleanup()
+        if (revertTimer) clearTimeout(revertTimer)
+        window.fileAPI.stopWatching()
+        useStore.getState().setIsWatching(false)
+      }
+    }
 
     // Start watching for file changes (all project types including dashboard)
     window.fileAPI.startWatching(projectPath, projectType, outputFolder)

@@ -3172,6 +3172,23 @@ ipcMain.handle('git-clone-remote', async (_, url: string, targetName: string) =>
   }
 })
 
+// Reset working tree to HEAD — reverts all modifications and removes untracked files
+// Used to keep remote project cache clean after agent interactions
+ipcMain.handle('git-reset-working-tree', async (_, projectPath: string) => {
+  try {
+    // Revert all tracked file modifications
+    const checkoutResult = runGitCommand(['checkout', '--', '.'], projectPath)
+    // Remove untracked files and directories
+    const cleanResult = runGitCommand(['clean', '-fd'], projectPath)
+    if (checkoutResult.error && cleanResult.error) {
+      return { success: false, error: checkoutResult.error }
+    }
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Reset failed' }
+  }
+})
+
 // Checkout a remote branch in a cached repo (updates working tree for remote project viewing)
 ipcMain.handle('git-checkout-remote-branch', async (_, projectPath: string, branch: string) => {
   if (!isValidGitRef(branch)) {
