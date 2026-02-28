@@ -50,6 +50,9 @@ export interface RecentProject {
   allowDirectEpicMerge?: boolean;
   disableGitBranching?: boolean;
   colorTheme?: string;
+  isRemote?: boolean;
+  remoteUrl?: string;
+  remoteCachePath?: string;
 }
 
 const MAX_HISTORY_ENTRIES = 50;
@@ -351,6 +354,21 @@ interface AppState {
   setHasUncommittedChanges: (hasChanges: boolean) => void;
   setUnmergedStoryBranches: (branches: string[]) => void;
   setEpicMergeStatusChecked: (checked: boolean) => void;
+
+  // Remote Viewing (NOT persisted — transient session state)
+  remoteViewingBranch: string | null;
+  isRemoteProject: boolean;
+  remoteProjectUrl: string | null;
+  hasGitHubToken: boolean;
+  attachedLocalProjectPath: string | null;
+  isReadOnly: () => boolean;
+  remoteUpdateAvailable: boolean;
+  setRemoteUpdateAvailable: (available: boolean) => void;
+  setRemoteViewingBranch: (branch: string | null) => void;
+  setIsRemoteProject: (remote: boolean) => void;
+  setRemoteProjectUrl: (url: string | null) => void;
+  setHasGitHubToken: (hasToken: boolean) => void;
+  setAttachedLocalProjectPath: (path: string | null) => void;
 
   // Data
   epics: Epic[];
@@ -785,6 +803,9 @@ export const useStore = create<AppState>()(
           selectedChatAgent: null,
           gitDiffPanelOpen: false,
           gitDiffPanelBranch: null,
+          remoteViewingBranch: null,
+          attachedLocalProjectPath: null,
+          remoteUpdateAvailable: false,
         });
       },
       setProjectType: (type) => set({ projectType: type }),
@@ -812,9 +833,31 @@ export const useStore = create<AppState>()(
           return { recentProjects: updated };
         }),
       removeRecentProject: (path) =>
-        set((state) => ({
-          recentProjects: state.recentProjects.filter((p) => p.path !== path),
-        })),
+        set((state) => {
+          // Check if removing the active project (direct match or attached local path)
+          const isActive = path === state.projectPath || path === state.attachedLocalProjectPath
+          return {
+            recentProjects: state.recentProjects.filter((p) => p.path !== path),
+            // If removing the active project, reset all project state to avoid
+            // orphaned remote viewing sessions that could checkout on the real repo
+            ...(isActive ? {
+              projectPath: null,
+              projectType: null,
+              remoteViewingBranch: null,
+              attachedLocalProjectPath: null,
+              remoteUpdateAvailable: false,
+              isRemoteProject: false,
+              remoteProjectUrl: null,
+              epics: [],
+              stories: [],
+              error: null,
+              bmadScanResult: null,
+              scannedWorkflowConfig: null,
+              bmadVersionError: null,
+              selectedEpicId: null,
+            } : {})
+          }
+        }),
 
       // Git state (reactive across components)
       currentBranch: null,
@@ -838,6 +881,24 @@ export const useStore = create<AppState>()(
       },
       setEpicMergeStatusChecked: (checked) =>
         set({ epicMergeStatusChecked: checked }),
+
+      // Remote Viewing (NOT persisted)
+      remoteViewingBranch: null,
+      isRemoteProject: false,
+      remoteProjectUrl: null,
+      hasGitHubToken: false,
+      attachedLocalProjectPath: null,
+      remoteUpdateAvailable: false,
+      setRemoteUpdateAvailable: (available) => set({ remoteUpdateAvailable: available }),
+      isReadOnly: () => {
+        const { remoteViewingBranch, isRemoteProject } = get()
+        return remoteViewingBranch !== null || isRemoteProject
+      },
+      setRemoteViewingBranch: (branch) => set({ remoteViewingBranch: branch, remoteUpdateAvailable: false }),
+      setIsRemoteProject: (remote) => set({ isRemoteProject: remote }),
+      setRemoteProjectUrl: (url) => set({ remoteProjectUrl: url }),
+      setHasGitHubToken: (hasToken) => set({ hasGitHubToken: hasToken }),
+      setAttachedLocalProjectPath: (path) => set({ attachedLocalProjectPath: path }),
 
       // Data
       epics: [],
@@ -1890,6 +1951,23 @@ export const useStore = create<AppState>()(
           if (updatedHistory.some((h, i) => h !== state.agentHistory[i])) {
             state.agentHistory = updatedHistory;
           }
+          // Detect stale cache path from a previous attached remote-view session.
+          // projectPath is persisted but attachedLocalProjectPath is not, so on restart
+          // projectPath can be a cache path like "remote-cache/local-abc123" with no way back.
+          // Restore from recentProjects[0] (the last active project) or clear it.
+          if (state.projectPath && state.projectPath.includes('/remote-cache/local-')) {
+            const lastReal = state.recentProjects.find(p => !p.isRemote)
+            if (lastReal) {
+              console.log('[rehydrate] Stale cache path detected, restoring to:', lastReal.path)
+              state.projectPath = lastReal.path
+              state.projectType = lastReal.projectType
+              state.outputFolder = lastReal.outputFolder || '_bmad-output'
+            } else {
+              console.log('[rehydrate] Stale cache path detected, no recent project to restore — clearing')
+              state.projectPath = null
+              state.projectType = null
+            }
+          }
           // Restore per-project git settings from recentProjects
           if (state.projectPath && state.recentProjects.length > 0) {
             const current = state.recentProjects.find(
@@ -1907,6 +1985,11 @@ export const useStore = create<AppState>()(
                 state.developerMode = current.developerMode;
               if (current.colorTheme)
                 state.colorTheme = current.colorTheme;
+              // Restore remote project state
+              if (current.isRemote) {
+                state.isRemoteProject = true;
+                state.remoteProjectUrl = current.remoteUrl || null;
+              }
             }
           }
           // Set correct initial viewMode based on project type

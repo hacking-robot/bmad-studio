@@ -29,4 +29,8 @@
 |----|------|---|-------|------|
 | #20581 | 5:15 PM | 🔵 | Comprehensive BMAD Version and Module Detection System Analysis | ~440 |
 | #20568 | 5:13 PM | 🔵 | BMAD Scanner Implementation Details | ~349 |
+| #20370 | 2:20 PM | 🟣 | Custom Module Identifier Protocol Added | ~356 |
+| #20366 | 2:19 PM | 🟣 | Custom Module Discovery in BMAD Scanner | ~403 |
+| #20362 | 2:18 PM | 🔵 | BMAD Scanner Main Orchestration Flow | ~479 |
+| #20358 | 2:17 PM | 🔵 | BMAD Scanner Module Discovery Logic | ~427 |
 </claude-mem-context>

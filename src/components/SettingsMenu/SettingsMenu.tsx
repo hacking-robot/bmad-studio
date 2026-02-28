@@ -49,6 +49,9 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings'
+import CloudIcon from '@mui/icons-material/Cloud'
+import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
 import { AI_TOOLS, AITool, CLIDetectionResult, CLAUDE_MODELS, CustomEndpointConfig } from '../../types'
@@ -74,6 +77,10 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const [boardSubAnchor, setBoardSubAnchor] = useState<null | HTMLElement>(null)
   const [gitSubAnchor, setGitSubAnchor] = useState<null | HTMLElement>(null)
   const [branchDialogOpen, setBranchDialogOpen] = useState(false)
+  const [tokenDialogOpen, setTokenDialogOpen] = useState(false)
+  const [tokenValue, setTokenValue] = useState('')
+  const [showTokenValue, setShowTokenValue] = useState(false)
+  const [tokenTestStatus, setTokenTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [cliStatus, setCliStatus] = useState<Record<string, CLIDetectionResult>>({})
   const [detectingCli, setDetectingCli] = useState(false)
   const [availableBranches, setAvailableBranches] = useState<string[]>([])
@@ -131,6 +138,8 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
   const setFullCycleReviewCount = useStore((state) => state.setFullCycleReviewCount)
   const projectPath = useStore((state) => state.projectPath)
 
+  const hasGitHubToken = useStore((state) => state.hasGitHubToken)
+  const setHasGitHubToken = useStore((state) => state.setHasGitHubToken)
   const colorTheme = useStore((state) => state.colorTheme)
   const setColorTheme = useStore((state) => state.setColorTheme)
   const viewMode = useStore((state) => state.viewMode)
@@ -164,6 +173,22 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
       setCustomEndpointForm(customEndpoint)
     }
   }, [toolDialogOpen, customEndpoint])
+
+  // Load token when token dialog opens
+  useEffect(() => {
+    if (tokenDialogOpen) {
+      setTokenTestStatus('idle')
+      setShowTokenValue(false)
+      window.tokenAPI.loadToken().then((result) => {
+        if (result.token) {
+          setTokenValue(result.token)
+          setHasGitHubToken(true)
+        } else {
+          setTokenValue('')
+        }
+      })
+    }
+  }, [tokenDialogOpen, setHasGitHubToken])
 
   // Load branches when branch dialog opens
   useEffect(() => {
@@ -402,6 +427,18 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
               edge="end"
               checked={notificationsEnabled}
               size="small"
+            />
+          </MenuItem>
+        )}
+        {!compact && (
+          <MenuItem onClick={() => { handleClose(); setTokenDialogOpen(true) }}>
+            <ListItemIcon>
+              <CloudIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Remote Viewer"
+              secondary={hasGitHubToken ? 'Token configured' : 'No token'}
+              secondaryTypographyProps={{ variant: 'caption' }}
             />
           </MenuItem>
         )}
@@ -1222,6 +1259,128 @@ export default function SettingsMenu({ compact = false }: SettingsMenuProps) {
             )}
           />
         </DialogContent>
+      </Dialog>
+
+      {/* GitHub Token Dialog */}
+      <Dialog
+        open={tokenDialogOpen}
+        onClose={() => setTokenDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          Remote Viewer Settings
+          <IconButton size="small" onClick={() => setTokenDialogOpen(false)}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            A GitHub Personal Access Token allows viewing private repositories remotely.
+            We recommend a <strong>fine-grained token</strong> with read-only access for best security.
+          </Typography>
+
+          <Box sx={{ mb: 3, pl: 2, borderLeft: '3px solid', borderColor: 'divider' }}>
+            <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.8 }}>
+              <strong>How to create a token:</strong><br />
+              1. Go to <strong>github.com &rarr; Settings &rarr; Developer settings &rarr; Personal access tokens &rarr; Fine-grained tokens</strong><br />
+              2. Click <strong>Generate new token</strong><br />
+              3. Set an expiration (e.g. 90 days)<br />
+              4. Under <strong>Repository access</strong>, select <strong>Only select repositories</strong> and pick the repos you need<br />
+              5. Under <strong>Permissions &rarr; Repository permissions</strong>, set <strong>Contents</strong> to <strong>Read-only</strong><br />
+              6. Click <strong>Generate token</strong> and copy it (starts with <code>github_pat_</code>)<br /><br />
+              <em>Alternatively, classic tokens with the <strong>repo</strong> scope also work but grant broader access.</em>
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField
+              label="GitHub Token"
+              placeholder="github_pat_... or ghp_..."
+              size="small"
+              type={showTokenValue ? 'text' : 'password'}
+              value={tokenValue}
+              onChange={(e) => {
+                setTokenValue(e.target.value)
+                setTokenTestStatus('idle')
+              }}
+              helperText="Fine-grained token (github_pat_...) or classic token (ghp_...)"
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <IconButton
+                        size="small"
+                        onClick={() => setShowTokenValue(!showTokenValue)}
+                        edge="end"
+                      >
+                        {showTokenValue ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                      </IconButton>
+                    </Box>
+                  )
+                }
+              }}
+            />
+
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Button
+                variant="outlined"
+                size="small"
+                disabled={!tokenValue.trim() || tokenTestStatus === 'testing'}
+                startIcon={tokenTestStatus === 'testing' ? <CircularProgress size={14} /> : undefined}
+                onClick={async () => {
+                  setTokenTestStatus('testing')
+                  try {
+                    const result = await window.tokenAPI.testToken(tokenValue, 'https://github.com/octocat/Hello-World.git')
+                    setTokenTestStatus(result.success ? 'success' : 'error')
+                  } catch {
+                    setTokenTestStatus('error')
+                  }
+                }}
+              >
+                Test Token
+              </Button>
+              {tokenTestStatus === 'success' && (
+                <Chip
+                  icon={<CheckCircleIcon sx={{ fontSize: '0.9rem !important' }} />}
+                  label="Valid"
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                  sx={{ height: 24 }}
+                />
+              )}
+              {tokenTestStatus === 'error' && (
+                <Chip
+                  icon={<ErrorIcon sx={{ fontSize: '0.9rem !important' }} />}
+                  label="Invalid"
+                  size="small"
+                  color="error"
+                  variant="outlined"
+                  sx={{ height: 24 }}
+                />
+              )}
+            </Box>
+
+            <Typography variant="caption" color="text.secondary">
+              Token is encrypted and stored locally. It is only used for git operations to access remote repositories.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTokenDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={!tokenValue.trim()}
+            onClick={async () => {
+              await window.tokenAPI.saveToken(tokenValue)
+              setHasGitHubToken(true)
+              setTokenDialogOpen(false)
+            }}
+          >
+            Save Token
+          </Button>
+        </DialogActions>
       </Dialog>
     </>
   )

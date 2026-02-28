@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useCallback, useRef } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import createCache from '@emotion/cache'
 import { CacheProvider } from '@emotion/react'
 import { ThemeProvider, CssBaseline, Box, CircularProgress, IconButton, Tooltip } from '@mui/material'
@@ -30,6 +30,7 @@ import { ProjectWizard } from './components/ProjectWizard'
 import ProjectWorkflowsDialog from './components/ProjectWorkflowsDialog/ProjectWorkflowsDialog'
 import IncompatibleVersionDialog from './components/IncompatibleVersionDialog'
 import { EnvCheckDialog } from './components/EnvCheckDialog'
+import { OpenRemoteDialog } from './components/RemoteBranchViewer'
 
 const AGENT_PANEL_WIDTH = 500
 
@@ -66,6 +67,8 @@ export default function App() {
   const projectType = useStore((state) => state.projectType)
   const chatSidebarWidth = useStore((state) => state.chatSidebarWidth)
   const setChatSidebarWidth = useStore((state) => state.setChatSidebarWidth)
+
+  const [remoteDialogOpen, setRemoteDialogOpen] = useState(false)
 
   // Project data effects — runs once here, not per-component
   useProjectDataEffects()
@@ -140,6 +143,13 @@ export default function App() {
     window.addEventListener('open-help-panel', handleOpen)
     return () => window.removeEventListener('open-help-panel', handleOpen)
   }, [setHelpPanelOpen])
+
+  // Listen for custom event to open remote dialog
+  useEffect(() => {
+    const handleOpen = () => setRemoteDialogOpen(true)
+    window.addEventListener('open-remote-dialog', handleOpen)
+    return () => window.removeEventListener('open-remote-dialog', handleOpen)
+  }, [])
 
   // Chat sidebar resize
   const isResizing = useRef(false)
@@ -228,6 +238,7 @@ export default function App() {
       <NewProjectDialog />
       <IncompatibleVersionDialog />
       <EnvCheckDialog />
+      <OpenRemoteDialog open={remoteDialogOpen} onClose={() => setRemoteDialogOpen(false)} />
       <HelpPanel
         open={helpPanelOpen}
         onClose={() => setHelpPanelOpen(false)}

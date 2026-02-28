@@ -674,7 +674,7 @@ export default function BranchSwitcher() {
         <SearchableDropdown
           items={branchItems}
           selectedId={currentBranch}
-          onSelect={handleBranchSelect}
+          onSelect={(id) => handleBranchSelect(id)}
           placeholder="Search branches..."
           anchorEl={anchorEl}
           open={open}

@@ -4,6 +4,8 @@ import SendIcon from '@mui/icons-material/Send'
 import StopIcon from '@mui/icons-material/Stop'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+import { useStore } from '../../store'
 import { useWorkflow } from '../../hooks/useWorkflow'
 
 interface ChatInputProps {
@@ -20,6 +22,10 @@ export default function ChatInput({ onSend, onCancel, disabled = false, agentId,
   const [message, setMessage] = useState('')
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const isRemoteProject = useStore((state) => state.isRemoteProject)
+  const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
+  const isRemoteView = isRemoteProject || remoteViewingBranch !== null
 
   const { getAgent } = useWorkflow()
   const agent = getAgent(agentId)
@@ -221,13 +227,24 @@ export default function ChatInput({ onSend, onCancel, disabled = false, agentId,
           mt: 1,
           p: 0.75,
           borderRadius: 1,
-          bgcolor: (theme) => alpha(theme.palette.info.main, 0.08),
+          bgcolor: (theme) => alpha(theme.palette[isRemoteView ? 'warning' : 'info'].main, 0.08),
         }}
       >
-        <InfoOutlinedIcon sx={{ fontSize: 14, color: 'info.main', opacity: 0.7 }} />
-        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-          Check the selected git branch before chatting — agents make changes to the current branch
-        </Typography>
+        {isRemoteView ? (
+          <>
+            <WarningAmberIcon sx={{ fontSize: 14, color: 'warning.main', opacity: 0.7 }} />
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+              Read-only project — file changes will be automatically reverted
+            </Typography>
+          </>
+        ) : (
+          <>
+            <InfoOutlinedIcon sx={{ fontSize: 14, color: 'info.main', opacity: 0.7 }} />
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+              Check the selected git branch before chatting — agents make changes to the current branch
+            </Typography>
+          </>
+        )}
       </Box>
 
       {/* Command menu for overflow */}

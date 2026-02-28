@@ -11,10 +11,12 @@ import {
   List,
   ListItemButton,
   ListItemText,
-  IconButton
+  IconButton,
+  Chip
 } from '@mui/material'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import AddIcon from '@mui/icons-material/Add'
+import CloudIcon from '@mui/icons-material/Cloud'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
@@ -24,6 +26,7 @@ import { useStore } from '../../store'
 import logoDark from '../../assets/logo-dark.svg'
 import logoLight from '../../assets/logo-light.svg'
 import { NewProjectForm } from '../NewProjectDialog'
+import { OpenRemoteDialog } from '../RemoteBranchViewer'
 
 export default function WelcomeDialog() {
   const { selectProject, switchToProject } = useProjectData()
@@ -33,6 +36,7 @@ export default function WelcomeDialog() {
   const removeRecentProject = useStore((state) => state.removeRecentProject)
   const [showInfo, setShowInfo] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [remoteDialogOpen, setRemoteDialogOpen] = useState(false)
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
 
   const handleSelectProject = async () => {
@@ -102,6 +106,14 @@ export default function WelcomeDialog() {
             <Button
               variant="outlined"
               size="large"
+              startIcon={<CloudIcon />}
+              onClick={() => setRemoteDialogOpen(true)}
+            >
+              Open Remote
+            </Button>
+            <Button
+              variant="outlined"
+              size="large"
               startIcon={<AddIcon />}
               onClick={() => setNewProjectOpen(true)}
             >
@@ -126,8 +138,16 @@ export default function WelcomeDialog() {
                       sx={{ borderRadius: 1, py: 0.5 }}
                     >
                       <ListItemText
-                        primary={project.name}
-                        secondary={project.path}
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            {project.isRemote && <CloudIcon sx={{ fontSize: 14, color: 'primary.main' }} />}
+                            {project.name}
+                            {project.isRemote && (
+                              <Chip label="Remote" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: '0.6rem', ml: 0.5 }} />
+                            )}
+                          </Box>
+                        }
+                        secondary={project.isRemote ? project.remoteUrl : project.path}
                         primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
                         secondaryTypographyProps={{
                           variant: 'caption',
@@ -161,6 +181,7 @@ export default function WelcomeDialog() {
           )}
 
           <NewProjectForm open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
+          <OpenRemoteDialog open={remoteDialogOpen} onClose={() => setRemoteDialogOpen(false)} />
 
           <Divider sx={{ width: '100%', my: 1 }} />
 

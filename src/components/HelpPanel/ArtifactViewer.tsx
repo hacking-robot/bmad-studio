@@ -16,6 +16,7 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { useThemedSyntax } from '../../hooks/useThemedSyntax'
+
 import { type DocumentFile, getArtifactTypeLabel, getArtifactTypeColor } from '../../hooks/useDocuments'
 
 // Factory function to create code component with theme awareness
@@ -74,7 +75,6 @@ export default function ArtifactViewer({ artifact, onClose }: ArtifactViewerProp
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
   // Load artifact content when artifact changes
   useEffect(() => {
     if (!artifact) {
@@ -86,6 +86,7 @@ export default function ArtifactViewer({ artifact, onClose }: ArtifactViewerProp
       setLoading(true)
       setError(null)
       try {
+        // Both modes now have checked-out working trees
         const result = await window.fileAPI.readFile(artifact.path)
         if (result.error || !result.content) {
           setError(result.error || 'Failed to read file')

@@ -6,15 +6,18 @@ import {
   MenuItem,
   IconButton,
   Divider,
-  InputBase
+  InputBase,
+  Chip
 } from '@mui/material'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import CloseIcon from '@mui/icons-material/Close'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import AddIcon from '@mui/icons-material/Add'
+import CloudIcon from '@mui/icons-material/Cloud'
 import { useStore } from '../../store'
 import { useProjectData } from '../../hooks/useProjectData'
 import { NewProjectForm } from '../NewProjectDialog'
+import { OpenRemoteDialog } from '../RemoteBranchViewer'
 
 export default function ProjectSwitcher() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
@@ -25,12 +28,15 @@ export default function ProjectSwitcher() {
   const triggerRef = useRef<HTMLDivElement>(null)
 
   const projectPath = useStore((state) => state.projectPath)
+  const attachedLocalProjectPath = useStore((state) => state.attachedLocalProjectPath)
   const recentProjects = useStore((state) => state.recentProjects)
   const removeRecentProject = useStore((state) => state.removeRecentProject)
   const { selectProject, switchToProject } = useProjectData()
 
   const open = Boolean(anchorEl)
-  const projectName = projectPath?.split('/').pop() || 'BMad Studio'
+  // Use the real local project path when in attached remote view (projectPath is a cache path)
+  const displayPath = attachedLocalProjectPath || projectPath
+  const projectName = displayPath?.split('/').pop() || 'BMad Studio'
 
   // Filter projects based on search query
   const filteredProjects = recentProjects.filter((project) => {
@@ -86,6 +92,7 @@ export default function ProjectSwitcher() {
   }
 
   const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [remoteDialogOpen, setRemoteDialogOpen] = useState(false)
 
   const handleOpenProject = () => {
     selectProject()
@@ -181,6 +188,10 @@ export default function ProjectSwitcher() {
           <AddIcon sx={{ fontSize: 20, mr: 1.5, color: 'text.secondary' }} />
           <Typography variant="body2">New Project...</Typography>
         </MenuItem>
+        <MenuItem onClick={() => { handleClose(); setRemoteDialogOpen(true) }} sx={{ py: 1.5 }}>
+          <CloudIcon sx={{ fontSize: 20, mr: 1.5, color: 'text.secondary' }} />
+          <Typography variant="body2">Open Remote Project...</Typography>
+        </MenuItem>
 
         {recentProjects.length > 0 && (
           <Box>
@@ -255,9 +266,15 @@ export default function ProjectSwitcher() {
                 }}
               >
                 <Box sx={{ flex: 1, minWidth: 0, mr: 1 }}>
-                  <Typography variant="body2" fontWeight={500}>
-                    {project.name}
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {project.isRemote && <CloudIcon sx={{ fontSize: 14, color: 'primary.main', flexShrink: 0 }} />}
+                    <Typography variant="body2" fontWeight={500} noWrap>
+                      {project.name}
+                    </Typography>
+                    {project.isRemote && (
+                      <Chip label="Remote" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: '0.6rem' }} />
+                    )}
+                  </Box>
                   <Typography
                     variant="caption"
                     color="text.secondary"
@@ -268,7 +285,7 @@ export default function ProjectSwitcher() {
                       whiteSpace: 'nowrap'
                     }}
                   >
-                    {truncatePath(project.path)}
+                    {project.isRemote ? project.remoteUrl : truncatePath(project.path)}
                   </Typography>
                 </Box>
                 <IconButton
@@ -294,6 +311,7 @@ export default function ProjectSwitcher() {
 
     </Box>
     <NewProjectForm open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
+    <OpenRemoteDialog open={remoteDialogOpen} onClose={() => setRemoteDialogOpen(false)} />
     </>
   )
 }

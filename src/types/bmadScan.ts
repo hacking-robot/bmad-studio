@@ -37,5 +37,6 @@ export interface BmadScanResult {
   detectedDeveloperMode: 'ai' | 'human' | null  // detected from workflow file content
   installedIdes: string[]       // e.g. ['claude-code'] or ['crush', 'cursor']
   missingClaudeCommands: boolean // true if .claude/commands/ doesn't exist
+  outputFolder?: string         // detected from _bmad/_memory/config.yaml (e.g. "docs")
   scannedAt: string             // ISO timestamp
 }

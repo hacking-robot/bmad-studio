@@ -1,15 +1,16 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, screen, Notification, nativeImage, net } from 'electron'
 import { join, dirname, basename, resolve } from 'path'
 import { readFile, readdir, stat, writeFile, mkdir } from 'fs/promises'
-import { existsSync, watch, FSWatcher, readdirSync, readFileSync, appendFileSync } from 'fs'
+import { existsSync, watch, FSWatcher, readdirSync, readFileSync, appendFileSync, mkdirSync } from 'fs'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import { spawn as spawnChild, spawnSync, execFile } from 'child_process'
+import { spawn as spawnChild, spawnSync, execFile, StdioOptions } from 'child_process'
 import { promisify } from 'util'
 import { autoUpdater } from 'electron-updater'
 import { agentManager } from './agentManager'
 import { detectTool, detectAllTools, clearDetectionCache } from './cliToolManager'
 import { getAugmentedEnv, findBinary } from './envUtils'
 import { scanBmadProject } from './bmadScanner'
+import { encryptToken, decryptToken, getAuthenticatedUrl } from './tokenManager'
 
 // Set app name (shows in menu bar on macOS)
 app.setName('BMad Studio')
@@ -113,6 +114,8 @@ interface AppSettings {
   statusHistoryByStory: Record<string, StatusChangeEntry[]>
   globalStatusHistory: StatusChangeEntry[]
   lastViewedStatusHistoryAt: number
+  // GitHub token (encrypted)
+  githubTokenEncrypted?: string
 }
 
 const defaultSettings: AppSettings = {
@@ -2996,3 +2999,305 @@ ipcMain.handle('create-project-directory', async (_, parentPath: string, project
     return { success: false, error: error instanceof Error ? error.message : 'Failed to create directory' }
   }
 })
+
+// ============================================================
+// Remote Branch Viewer — IPC handlers
+// ============================================================
+
+// Save encrypted GitHub PAT token to settings
+ipcMain.handle('save-github-token', async (_, token: string) => {
+  try {
+    const encrypted = encryptToken(token)
+    const settings = await loadSettings()
+    settings.githubTokenEncrypted = encrypted
+    await saveSettings(settings)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to save token' }
+  }
+})
+
+// Load decrypted GitHub PAT token from settings
+ipcMain.handle('load-github-token', async () => {
+  try {
+    const settings = await loadSettings()
+    if (!settings.githubTokenEncrypted) return { token: null }
+    const token = decryptToken(settings.githubTokenEncrypted)
+    return { token }
+  } catch (error) {
+    return { token: null, error: error instanceof Error ? error.message : 'Failed to load token' }
+  }
+})
+
+// Test a GitHub token by running git ls-remote against a test URL
+ipcMain.handle('test-github-token', async (_, token: string, testUrl: string) => {
+  if (!testUrl) {
+    return { success: false, error: 'No test URL provided' }
+  }
+
+  try {
+    const authenticatedUrl = testUrl.startsWith('https://')
+      ? getAuthenticatedUrl(testUrl, encryptToken(token))
+      : testUrl
+
+    const result = spawnSync('git', ['ls-remote', '--heads', authenticatedUrl], {
+      encoding: 'utf-8',
+      timeout: 15000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    })
+
+    if (result.status === 0) {
+      return { success: true }
+    }
+    return { success: false, error: result.stderr?.trim() || 'Authentication failed' }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Token test failed' }
+  }
+})
+
+// Check if remote branch has new commits (lightweight staleness check)
+ipcMain.handle('git-check-remote-ahead', async (_, projectPath: string, branch: string) => {
+  try {
+    // Snapshot current ref before fetching
+    const beforeResult = runGitCommand(['rev-parse', branch], projectPath)
+    if (beforeResult.error) return { ahead: false }
+    const beforeHash = beforeResult.stdout.trim()
+
+    // Fetch latest from remote (with token injection for private repos)
+    const settings = await loadSettings()
+    const encrypted = settings.githubTokenEncrypted
+    const urlResult = runGitCommand(['remote', 'get-url', 'origin'], projectPath)
+    const env: Record<string, string | undefined> = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    delete env.GPG_TTY
+
+    if (!urlResult.error && urlResult.stdout.trim().startsWith('https://') && encrypted) {
+      const authUrl = getAuthenticatedUrl(urlResult.stdout.trim(), encrypted)
+      spawnSync('git', ['-c', `url.${authUrl}.insteadOf=${urlResult.stdout.trim()}`, 'fetch', 'origin'], {
+        cwd: projectPath,
+        encoding: 'utf-8',
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 30000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env
+      })
+    } else {
+      runGitCommand(['fetch', 'origin'], projectPath)
+    }
+
+    // Compare ref after fetch
+    const afterResult = runGitCommand(['rev-parse', branch], projectPath)
+    if (afterResult.error) return { ahead: false }
+    const afterHash = afterResult.stdout.trim()
+
+    return { ahead: beforeHash !== afterHash }
+  } catch {
+    return { ahead: false }
+  }
+})
+
+// Fetch remote refs (git fetch <remote> --prune)
+ipcMain.handle('git-fetch', async (_, projectPath: string, remote?: string) => {
+  const remoteArg = remote || 'origin'
+  // Optionally inject token for HTTPS remotes
+  const settings = await loadSettings()
+  const encrypted = settings.githubTokenEncrypted
+
+  // Get the remote URL to potentially inject token
+  const urlResult = runGitCommand(['remote', 'get-url', remoteArg], projectPath)
+  const env: Record<string, string | undefined> = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  delete env.GPG_TTY
+
+  if (!urlResult.error && urlResult.stdout.trim().startsWith('https://') && encrypted) {
+    // Temporarily set the authenticated URL for this fetch
+    const authUrl = getAuthenticatedUrl(urlResult.stdout.trim(), encrypted)
+    const result = spawnSync('git', ['-c', `url.${authUrl}.insteadOf=${urlResult.stdout.trim()}`, 'fetch', remoteArg, '--prune'], {
+      cwd: projectPath,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 60000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env
+    })
+    if (result.error) return { success: false, error: result.error.message }
+    if (result.status !== 0) return { success: false, error: result.stderr?.trim() || 'Fetch failed' }
+    return { success: true }
+  }
+
+  const result = runGitCommand(['fetch', remoteArg, '--prune'], projectPath)
+  if (result.error) return { success: false, error: result.error }
+  return { success: true }
+})
+
+// List remote branches (origin/*)
+ipcMain.handle('git-list-remote-branches', async (_, projectPath: string) => {
+  const result = runGitCommand(['branch', '-r', '--format=%(refname:short)'], projectPath)
+  if (result.error) {
+    return { branches: [], error: result.error }
+  }
+  const branches = result.stdout.trim().split('\n')
+    .filter(Boolean)
+    .filter(b => !b.includes('->') && b.includes('/')) // Exclude symbolic refs (HEAD resolves to bare "origin")
+  return { branches }
+})
+
+// Clone a local repo to cache for attached remote branch viewing
+ipcMain.handle('git-clone-local-to-cache', async (_, localProjectPath: string, cacheKey: string) => {
+  try {
+    const cacheDir = join(app.getPath('userData'), 'remote-cache')
+    mkdirSync(cacheDir, { recursive: true })
+    const absolutePath = join(cacheDir, cacheKey)
+
+    const spawnOpts = { encoding: 'utf-8' as const, maxBuffer: 10 * 1024 * 1024, timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] as StdioOptions }
+
+    if (existsSync(absolutePath)) {
+      // Cache exists — just fetch to update refs
+      const fetchResult = spawnSync('git', ['-C', absolutePath, 'fetch', 'origin'], spawnOpts)
+      if (fetchResult.error) return { success: false, error: fetchResult.error.message }
+      if (fetchResult.status !== 0) return { success: false, error: fetchResult.stderr?.trim() || 'Fetch failed' }
+      return { success: true, path: absolutePath }
+    }
+
+    // Clone using --local for hardlinks (fast, minimal disk usage)
+    const cloneResult = spawnSync('git', [
+      'clone', '--local', '--depth', '1', '--no-single-branch',
+      localProjectPath, absolutePath
+    ], spawnOpts)
+
+    if (cloneResult.error) return { success: false, error: cloneResult.error.message }
+    if (cloneResult.status !== 0) return { success: false, error: cloneResult.stderr?.trim() || 'Clone failed' }
+
+    // Fix origin URL: point to the real remote instead of local path
+    // so "Refresh Board" fetches from GitHub, not the local directory
+    const realUrlResult = spawnSync('git', ['-C', localProjectPath, 'remote', 'get-url', 'origin'], spawnOpts)
+    if (realUrlResult.status === 0 && realUrlResult.stdout.trim()) {
+      const realUrl = realUrlResult.stdout.trim()
+      // Inject token if available
+      const settings = await loadSettings()
+      const encrypted = settings.githubTokenEncrypted
+      const authenticatedUrl = getAuthenticatedUrl(realUrl, encrypted || null)
+      spawnSync('git', ['-C', absolutePath, 'remote', 'set-url', 'origin', authenticatedUrl], spawnOpts)
+    }
+
+    return { success: true, path: absolutePath }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to clone local repo' }
+  }
+})
+
+// Shallow clone a remote repository
+ipcMain.handle('git-clone-remote', async (_, url: string, targetName: string) => {
+  try {
+    // Resolve to absolute cache path
+    const cacheDir = join(app.getPath('userData'), 'remote-cache')
+    mkdirSync(cacheDir, { recursive: true })
+    const absolutePath = join(cacheDir, targetName)
+
+    // Inject token if available
+    const settings = await loadSettings()
+    const encrypted = settings.githubTokenEncrypted
+    const authenticatedUrl = getAuthenticatedUrl(url, encrypted || null)
+
+    const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    const spawnOpts = { encoding: 'utf-8' as const, maxBuffer: 10 * 1024 * 1024, timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] as StdioOptions, env: gitEnv }
+
+    // Shallow clone with all branches — gives a proper working tree with _bmad/, .claude/, etc.
+    // --depth 1 only downloads the tip commit per branch (minimal data)
+    // --no-single-branch fetches all remote branches, not just the default
+    const result = spawnSync('git', [
+      'clone', '--depth', '1', '--no-single-branch',
+      authenticatedUrl, absolutePath
+    ], spawnOpts)
+
+    if (result.error) return { success: false, error: result.error.message }
+    if (result.status !== 0) return { success: false, error: result.stderr?.trim() || 'Clone failed' }
+
+    // Determine default branch from remote HEAD
+    const headResult = spawnSync('git', ['-C', absolutePath, 'symbolic-ref', 'refs/remotes/origin/HEAD', '--short'], spawnOpts)
+    const defaultBranch = headResult.status === 0 ? headResult.stdout.trim() : null
+
+    return { success: true, path: absolutePath, defaultBranch }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to set up remote' }
+  }
+})
+
+// Reset working tree to HEAD — reverts all modifications and removes untracked files
+// Used to keep remote project cache clean after agent interactions
+ipcMain.handle('git-reset-working-tree', async (_, projectPath: string) => {
+  // Safety: only allow reset on cache repos, never a real local project
+  const cacheDir = join(app.getPath('userData'), 'remote-cache')
+  if (!projectPath.startsWith(cacheDir)) {
+    console.warn('[git-reset-working-tree] Blocked: path is not in remote-cache:', projectPath)
+    return { success: false, error: 'Reset blocked: not a cache repo' }
+  }
+  try {
+    // Revert all tracked file modifications
+    const checkoutResult = runGitCommand(['checkout', '--', '.'], projectPath)
+    // Remove untracked files and directories
+    const cleanResult = runGitCommand(['clean', '-fd'], projectPath)
+    if (checkoutResult.error && cleanResult.error) {
+      return { success: false, error: checkoutResult.error }
+    }
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Reset failed' }
+  }
+})
+
+// Checkout a remote branch in a cached repo (updates working tree for remote project viewing)
+ipcMain.handle('git-checkout-remote-branch', async (_, projectPath: string, branch: string) => {
+  // Safety: only allow checkout on cache repos, never a real local project
+  const cacheDir = join(app.getPath('userData'), 'remote-cache')
+  if (!projectPath.startsWith(cacheDir)) {
+    console.warn('[git-checkout-remote-branch] Blocked: path is not in remote-cache:', projectPath)
+    return { success: false, error: 'Checkout blocked: not a cache repo' }
+  }
+  if (!isValidGitRef(branch)) {
+    return { success: false, error: 'Invalid branch name' }
+  }
+  try {
+    // For remote branches like "origin/develop", checkout as detached HEAD
+    const result = runGitCommand(['checkout', branch], projectPath)
+    if (result.error) return { success: false, error: result.error }
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Checkout failed' }
+  }
+})
+
+// List branches from a remote URL without cloning (git ls-remote)
+ipcMain.handle('git-ls-remote', async (_, url: string) => {
+  try {
+    // Inject token if available
+    const settings = await loadSettings()
+    const encrypted = settings.githubTokenEncrypted
+    const authenticatedUrl = getAuthenticatedUrl(url, encrypted || null)
+
+    const result = spawnSync('git', ['ls-remote', '--heads', authenticatedUrl], {
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 30000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    })
+
+    if (result.error) return { branches: [], error: result.error.message }
+    if (result.status !== 0) return { branches: [], error: result.stderr?.trim() || 'ls-remote failed' }
+
+    // Parse output: each line is "<hash>\trefs/heads/<branch>"
+    const branches = result.stdout.trim().split('\n')
+      .filter(Boolean)
+      .map(line => {
+        const parts = line.split('\t')
+        const ref = parts[1] || ''
+        return ref.replace('refs/heads/', '')
+      })
+      .filter(Boolean)
+
+    return { branches }
+  } catch (error) {
+    return { branches: [], error: error instanceof Error ? error.message : 'ls-remote failed' }
+  }
+})
+

@@ -43,6 +43,7 @@ export interface BmadScanResult {
   detectedDeveloperMode: 'ai' | 'human' | null
   installedIdes: string[]
   missingClaudeCommands: boolean
+  outputFolder?: string
   scannedAt: string
 }
 
@@ -613,3 +614,7 @@ export async function scanBmadProject(projectPath: string): Promise<BmadScanResu
     scannedAt: new Date().toISOString()
   }
 }
+
+// --- Remote/ref-based scanning ---
+
+

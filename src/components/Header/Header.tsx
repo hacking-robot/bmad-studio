@@ -24,6 +24,7 @@ import DescriptionIcon from '@mui/icons-material/Description'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import SearchBar from '../SearchBar/SearchBar'
 import EpicFilter from '../EpicFilter/EpicFilter'
 import SettingsMenu from '../SettingsMenu'
@@ -60,6 +61,7 @@ export default function Header() {
   const scannedWorkflowConfig = useStore((state) => state.scannedWorkflowConfig)
   const developerMode = useStore((state) => state.developerMode)
   const bmadScanResult = useStore((state) => state.bmadScanResult)
+  const isReadOnly = useStore((state) => state.isReadOnly())
   const { folders, allFiles, getModuleLabel } = useDocuments()
   const [docsAnchor, setDocsAnchor] = useState<null | HTMLElement>(null)
   const [selectedArtifact, setSelectedArtifact] = useState<DocumentFile | null>(null)
@@ -152,6 +154,22 @@ export default function Header() {
               }}
             />
           )}
+          {isReadOnly && (
+            <Chip
+              icon={<VisibilityIcon sx={{ fontSize: 14 }} />}
+              label="Read-only"
+              size="small"
+              sx={{
+                ml: 0.5,
+                height: 20,
+                bgcolor: 'info.main',
+                color: 'white',
+                fontWeight: 600,
+                fontSize: '0.65rem',
+                '& .MuiChip-icon': { color: 'white' }
+              }}
+            />
+          )}
           {runningChatAgents > 0 && (
             <Chip
               label={`${runningChatAgents} agent${runningChatAgents > 1 ? 's' : ''} working`}
@@ -177,7 +195,7 @@ export default function Header() {
         <ProjectSwitcher />
         <Box sx={{ flexGrow: 1 }} />
 
-        {scannedWorkflowConfig?.projectWorkflows && toolSupportsHeadless && (
+        {scannedWorkflowConfig?.projectWorkflows && toolSupportsHeadless && !isReadOnly && (
           <Tooltip title="Project Workflows">
             <IconButton
               onClick={() => setProjectWorkflowsDialogOpen(true)}
@@ -242,7 +260,7 @@ export default function Header() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <SearchBar />
             <EpicFilter />
-            {showRunEpic && !epicCycle.isRunning && (
+            {showRunEpic && !epicCycle.isRunning && !isReadOnly && (
               <Tooltip title={backlogCount > 0 ? `Run Epic (${backlogCount} backlog)` : 'Epic Cycle'}>
                 <IconButton
                   onClick={() => setEpicCycleDialogOpen(true)}
