@@ -130,15 +130,10 @@ export async function loadProjectData() {
       }
     }
 
-    // Batch data + epic auto-select into a single setState to avoid
-    // an intermediate "All Epics" render with all stories visible
-    const { selectedEpicId } = useStore.getState()
-    const autoSelect = selectedEpicId === null && epics.length > 0
     useStore.setState({
       epics,
       stories,
       lastRefreshed: new Date(),
-      ...(autoSelect ? { selectedEpicId: epics[0].id } : {})
     })
 
     // Get human review settings and status change recording
