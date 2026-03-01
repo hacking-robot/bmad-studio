@@ -55,7 +55,6 @@ export interface ManagedThread {
   toolUsed: boolean
   pendingMessage: { content: string; assistantMsgId: string } | null
   isLoadingAgent: boolean
-  skipReplay: boolean  // When true, silently discard replayed user/assistant messages from --resume
 }
 
 // Semantic events emitted to the renderer
@@ -207,7 +206,6 @@ class ChatStateManager {
         toolUsed: false,
         pendingMessage: null,
         isLoadingAgent: false,
-        skipReplay: false,
       }
       this.threads.set(key, thread)
     }
@@ -233,6 +231,86 @@ class ChatStateManager {
     thread.messageCompleted = false
     thread.toolUsed = false
     return id
+  }
+
+  // Process content blocks from a complete assistant message.
+  // When forceProcess is true, text blocks are always emitted (used for --resume replay recovery).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private processAssistantContent(thread: ManagedThread, projectPath: string, agentId: string, parsed: any, forceProcess: boolean = false) {
+    if (!parsed.message?.content) return
+
+    const alreadyStreamed = !forceProcess && !!thread.streamBuffer
+    console.log('[ChatStateManager] assistant message:', { agentId, alreadyStreamed, bufferLen: thread.streamBuffer.length, blocks: parsed.message.content.length, msgId: thread.currentMessageId })
+
+    // First pass: text blocks — only emit if we haven't streamed content already (or forced)
+    if (!alreadyStreamed) {
+      for (const block of parsed.message.content) {
+        if (block.type === 'text' && block.text) {
+          this.sendToRenderer('chat:activity', { projectPath, agentId, activity: null } as ChatActivityEvent)
+
+          if (!thread.currentMessageId || thread.messageCompleted || thread.toolUsed) {
+            this.rotateCurrentMessage(thread)
+          }
+
+          thread.streamBuffer = thread.streamBuffer ? thread.streamBuffer + block.text : block.text
+          if (thread.currentMessage) thread.currentMessage.content = thread.streamBuffer
+
+          this.sendToRenderer('chat:text-delta', {
+            projectPath, agentId,
+            messageId: thread.currentMessageId,
+            text: block.text,
+            fullContent: thread.streamBuffer,
+          } as ChatTextDeltaEvent)
+        }
+      }
+    }
+
+    // Second pass: tool_use blocks (always processed)
+    let hasToolUse = false
+    for (const block of parsed.message.content) {
+      if (block.type === 'tool_use' && block.name) {
+        hasToolUse = true
+        const input = block.input as Record<string, unknown> | undefined
+        const activity = getToolActivity(block.name, input)
+        this.sendToRenderer('chat:activity', { projectPath, agentId, activity } as ChatActivityEvent)
+
+        // Wizard step detection
+        if ((block.name === 'Read' || block.name === 'read_file') && input) {
+          const filePath = (input.file_path || input.path || '') as string
+          const stepMatch = filePath.match(/step-(\d+)/)
+          if (stepMatch) {
+            this.sendToRenderer('chat:wizard-step', { stepNumber: parseInt(stepMatch[1], 10) } as ChatWizardStepEvent)
+          }
+        }
+
+        if (thread.currentMessageId) {
+          this.sendToRenderer('chat:tool-use', {
+            projectPath, agentId,
+            messageId: thread.currentMessageId,
+            toolName: block.name, toolSummary: activity, toolInput: input,
+          } as ChatToolUseEvent)
+
+          // Track in currentMessage for disk persistence
+          if (thread.currentMessage) {
+            if (!thread.currentMessage.toolCalls) thread.currentMessage.toolCalls = []
+            thread.currentMessage.toolCalls.push({ name: block.name, summary: activity, input })
+          }
+        }
+
+        if (thread.currentMessageId && thread.streamBuffer) {
+          thread.toolUsed = true
+        }
+      }
+    }
+
+    // When this assistant message has tool_use blocks, reset streamBuffer so the
+    // NEXT turn's complete assistant message isn't incorrectly skipped by the
+    // alreadyStreamed check. Without this, streamBuffer carries over from a previous
+    // turn, making alreadyStreamed=true for all subsequent turns and suppressing
+    // their text content (the missing intermediate messages bug).
+    if (hasToolUse) {
+      thread.streamBuffer = ''
+    }
   }
 
   // --- JSONL Disk I/O ---
@@ -409,18 +487,6 @@ class ChatStateManager {
       try {
         const parsed = JSON.parse(line)
 
-        // Skip replayed conversation messages from --resume.
-        // When skipReplay is active, silently discard user/assistant complete messages
-        // until we see actual streaming content (content_block_start/delta) for the new response.
-        if (thread.skipReplay) {
-          if (parsed.type === 'user' || parsed.type === 'assistant') {
-            continue  // Silently discard replayed message
-          }
-          // First non-replay event — new response is starting
-          console.log('[ChatStateManager] Replay skip complete, new response starting:', { agentId, type: parsed.type })
-          thread.skipReplay = false
-        }
-
         // Handle content_block_delta with input_json_delta (wizard step tracking)
         if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta') {
           const partial = parsed.delta.partial_json as string | undefined
@@ -503,69 +569,8 @@ class ChatStateManager {
         }
 
         // Handle assistant message (complete message format with content blocks).
-        // If we already streamed this content via content_block_delta events,
-        // skip the text blocks to avoid doubling. Only process if no content was streamed yet.
         if (parsed.type === 'assistant' && parsed.message?.content) {
-          // First pass: text blocks — only emit if we haven't streamed content already
-          const alreadyStreamed = !!thread.streamBuffer
-          console.log('[ChatStateManager] assistant message:', { agentId, alreadyStreamed, bufferLen: thread.streamBuffer.length, blocks: parsed.message.content.length, msgId: thread.currentMessageId })
-          if (!alreadyStreamed) {
-            for (const block of parsed.message.content) {
-              if (block.type === 'text' && block.text) {
-                this.sendToRenderer('chat:activity', { projectPath, agentId, activity: null } as ChatActivityEvent)
-
-                if (!thread.currentMessageId || thread.messageCompleted || thread.toolUsed) {
-                  this.rotateCurrentMessage(thread)
-                }
-
-                thread.streamBuffer = thread.streamBuffer ? thread.streamBuffer + block.text : block.text
-                if (thread.currentMessage) thread.currentMessage.content = thread.streamBuffer
-
-                this.sendToRenderer('chat:text-delta', {
-                  projectPath, agentId,
-                  messageId: thread.currentMessageId,
-                  text: block.text,
-                  fullContent: thread.streamBuffer,
-                } as ChatTextDeltaEvent)
-              }
-            }
-          }
-
-          // Second pass: tool_use blocks
-          for (const block of parsed.message.content) {
-            if (block.type === 'tool_use' && block.name) {
-              const input = block.input as Record<string, unknown> | undefined
-              const activity = getToolActivity(block.name, input)
-              this.sendToRenderer('chat:activity', { projectPath, agentId, activity } as ChatActivityEvent)
-
-              // Wizard step detection
-              if ((block.name === 'Read' || block.name === 'read_file') && input) {
-                const filePath = (input.file_path || input.path || '') as string
-                const stepMatch = filePath.match(/step-(\d+)/)
-                if (stepMatch) {
-                  this.sendToRenderer('chat:wizard-step', { stepNumber: parseInt(stepMatch[1], 10) } as ChatWizardStepEvent)
-                }
-              }
-
-              if (thread.currentMessageId) {
-                this.sendToRenderer('chat:tool-use', {
-                  projectPath, agentId,
-                  messageId: thread.currentMessageId,
-                  toolName: block.name, toolSummary: activity, toolInput: input,
-                } as ChatToolUseEvent)
-
-                // Track in currentMessage for disk persistence
-                if (thread.currentMessage) {
-                  if (!thread.currentMessage.toolCalls) thread.currentMessage.toolCalls = []
-                  thread.currentMessage.toolCalls.push({ name: block.name, summary: activity, input })
-                }
-              }
-
-              if (thread.currentMessageId && thread.streamBuffer) {
-                thread.toolUsed = true
-              }
-            }
-          }
+          this.processAssistantContent(thread, projectPath, agentId, parsed)
         }
 
         // Handle result — finalize message with stats and persist to JSONL
@@ -691,7 +696,6 @@ class ChatStateManager {
     thread.streamBuffer = ''
     thread.messageCompleted = false
     thread.toolUsed = false
-    thread.skipReplay = false
     thread.isTyping = false
     thread.lastActivity = Date.now()
 
@@ -760,14 +764,8 @@ class ChatStateManager {
       thread.messageCompleted = false
       thread.toolUsed = false
       thread.isLoadingAgent = false
-      thread.skipReplay = false
     }
     this.threads.delete(key)
-  }
-
-  setSkipReplay(projectPath: string, agentId: string, skip: boolean) {
-    const thread = this.getOrCreateThread(projectPath, agentId)
-    thread.skipReplay = skip
   }
 
   setPendingMessage(projectPath: string, agentId: string, content: string, assistantMsgId: string) {

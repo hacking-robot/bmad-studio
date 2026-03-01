@@ -542,11 +542,6 @@ class ChatAgentManager {
         }
       }
 
-      // When resuming a session, tell chatStateManager to skip replayed conversation history
-      if (options.sessionId) {
-        chatStateManager.setSkipReplay(options.projectPath, options.agentId, true)
-      }
-
       const proc = spawn(binaryPath, args, {
         cwd: options.projectPath,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -564,6 +559,14 @@ class ChatAgentManager {
       // Line buffer to handle partial JSON lines split across data chunks
       let msgLineBuffer = ''
 
+      // --resume replay filter: local to this closure, no race conditions.
+      // When --resume is used, Claude CLI replays the full conversation as complete
+      // user/assistant messages before streaming the new response. We track the last
+      // assistant message and only forward it when result arrives (meaning it's the
+      // actual new response, not a replayed turn).
+      let replaySkip = !!options.sessionId
+      let lastReplayAssistantLine = ''
+
       // Handle stdout - capture session ID, route through chatStateManager
       proc.stdout?.on('data', (data: Buffer) => {
         msgLineBuffer += data.toString('utf-8')
@@ -574,7 +577,44 @@ class ChatAgentManager {
         msgLineBuffer = parts.pop() || ''
 
         // Process only complete lines
-        const completeLines = parts.filter(Boolean)
+        let completeLines = parts.filter(Boolean)
+
+        // Filter replay messages when using --resume
+        if (replaySkip) {
+          const filtered: string[] = []
+          for (const line of completeLines) {
+            try {
+              const parsed = JSON.parse(line)
+              if (parsed.type === 'user') {
+                console.log('[ChatAgentManager] Replay skip: discarding user message')
+                continue  // Skip replayed user
+              }
+              if (parsed.type === 'assistant') {
+                console.log('[ChatAgentManager] Replay skip: tracking assistant message')
+                lastReplayAssistantLine = line  // Track, don't forward yet
+                continue
+              }
+              // Non user/assistant: replay is over
+              console.log('[ChatAgentManager] Replay skip ended at type:', parsed.type)
+              replaySkip = false
+              if (parsed.type === 'result' && lastReplayAssistantLine) {
+                // No streaming events came — the tracked assistant IS the new response
+                console.log('[ChatAgentManager] Replay skip: forwarding pending assistant as new response')
+                filtered.push(lastReplayAssistantLine)
+                lastReplayAssistantLine = ''
+              } else if (lastReplayAssistantLine) {
+                // Streaming started — tracked assistant was replay, discard
+                console.log('[ChatAgentManager] Replay skip: discarding replay assistant, streaming started')
+                lastReplayAssistantLine = ''
+              }
+              filtered.push(line)
+            } catch {
+              // Non-JSON line, forward as-is
+              filtered.push(line)
+            }
+          }
+          completeLines = filtered
+        }
 
         for (const line of completeLines) {
           try {
@@ -617,19 +657,44 @@ class ChatAgentManager {
 
         // Flush any remaining data in the line buffer
         if (msgLineBuffer.trim()) {
-          try {
-            const parsed = JSON.parse(msgLineBuffer)
-            if (parsed.type === 'result' && parsed.session_id) {
-              capturedSessionId = parsed.session_id
-            }
-          } catch {
-            // Not JSON, ignore
-          }
-          chatStateManager.handleOutput(
-            options.projectPath, options.agentId,
-            msgLineBuffer + '\n', false
-          )
+          let flushLine = msgLineBuffer
           msgLineBuffer = ''
+
+          // Apply replay filter to flush line
+          if (replaySkip) {
+            try {
+              const parsed = JSON.parse(flushLine)
+              if (parsed.type === 'user' || parsed.type === 'assistant') {
+                if (parsed.type === 'assistant') lastReplayAssistantLine = flushLine
+                flushLine = '' // Skip replay
+              } else {
+                replaySkip = false
+                if (parsed.type === 'result' && lastReplayAssistantLine) {
+                  // Forward pending assistant then this line
+                  chatStateManager.handleOutput(
+                    options.projectPath, options.agentId,
+                    lastReplayAssistantLine + '\n', false
+                  )
+                  lastReplayAssistantLine = ''
+                }
+              }
+            } catch { /* Not JSON, forward as-is */ }
+          }
+
+          if (flushLine) {
+            try {
+              const parsed = JSON.parse(flushLine)
+              if (parsed.type === 'result' && parsed.session_id) {
+                capturedSessionId = parsed.session_id
+              }
+            } catch {
+              // Not JSON, ignore
+            }
+            chatStateManager.handleOutput(
+              options.projectPath, options.agentId,
+              flushLine + '\n', false
+            )
+          }
         }
 
         const wasCancelled = signal === 'SIGTERM' || signal === 'SIGKILL'
