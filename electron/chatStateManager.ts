@@ -488,12 +488,23 @@ class ChatStateManager {
           }
         }
 
+        // Handle user message from --resume replay.
+        // Reset stream buffer so the NEXT assistant message is treated as new content.
+        // Without this, the alreadyStreamed check below would skip the actual response
+        // because a replayed assistant message already populated streamBuffer.
+        if (parsed.type === 'user') {
+          thread.streamBuffer = ''
+          thread.messageCompleted = false
+          thread.toolUsed = false
+        }
+
         // Handle assistant message (complete message format with content blocks).
         // If we already streamed this content via content_block_delta events,
         // skip the text blocks to avoid doubling. Only process if no content was streamed yet.
         if (parsed.type === 'assistant' && parsed.message?.content) {
           // First pass: text blocks — only emit if we haven't streamed content already
           const alreadyStreamed = !!thread.streamBuffer
+          console.log('[ChatStateManager] assistant message:', { agentId, alreadyStreamed, bufferLen: thread.streamBuffer.length, blocks: parsed.message.content.length, msgId: thread.currentMessageId })
           if (!alreadyStreamed) {
             for (const block of parsed.message.content) {
               if (block.type === 'text' && block.text) {
