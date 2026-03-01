@@ -542,6 +542,11 @@ class ChatAgentManager {
         }
       }
 
+      // When resuming a session, tell chatStateManager to skip replayed conversation history
+      if (options.sessionId) {
+        chatStateManager.setSkipReplay(options.projectPath, options.agentId, true)
+      }
+
       const proc = spawn(binaryPath, args, {
         cwd: options.projectPath,
         stdio: ['ignore', 'pipe', 'pipe'],

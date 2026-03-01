@@ -55,6 +55,7 @@ export interface ManagedThread {
   toolUsed: boolean
   pendingMessage: { content: string; assistantMsgId: string } | null
   isLoadingAgent: boolean
+  skipReplay: boolean  // When true, silently discard replayed user/assistant messages from --resume
 }
 
 // Semantic events emitted to the renderer
@@ -206,6 +207,7 @@ class ChatStateManager {
         toolUsed: false,
         pendingMessage: null,
         isLoadingAgent: false,
+        skipReplay: false,
       }
       this.threads.set(key, thread)
     }
@@ -407,6 +409,18 @@ class ChatStateManager {
       try {
         const parsed = JSON.parse(line)
 
+        // Skip replayed conversation messages from --resume.
+        // When skipReplay is active, silently discard user/assistant complete messages
+        // until we see actual streaming content (content_block_start/delta) for the new response.
+        if (thread.skipReplay) {
+          if (parsed.type === 'user' || parsed.type === 'assistant') {
+            continue  // Silently discard replayed message
+          }
+          // First non-replay event — new response is starting
+          console.log('[ChatStateManager] Replay skip complete, new response starting:', { agentId, type: parsed.type })
+          thread.skipReplay = false
+        }
+
         // Handle content_block_delta with input_json_delta (wizard step tracking)
         if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta') {
           const partial = parsed.delta.partial_json as string | undefined
@@ -486,16 +500,6 @@ class ChatStateManager {
               thread.toolUsed = true
             }
           }
-        }
-
-        // Handle user message from --resume replay.
-        // Reset stream buffer so the NEXT assistant message is treated as new content.
-        // Without this, the alreadyStreamed check below would skip the actual response
-        // because a replayed assistant message already populated streamBuffer.
-        if (parsed.type === 'user') {
-          thread.streamBuffer = ''
-          thread.messageCompleted = false
-          thread.toolUsed = false
         }
 
         // Handle assistant message (complete message format with content blocks).
@@ -687,6 +691,7 @@ class ChatStateManager {
     thread.streamBuffer = ''
     thread.messageCompleted = false
     thread.toolUsed = false
+    thread.skipReplay = false
     thread.isTyping = false
     thread.lastActivity = Date.now()
 
@@ -755,8 +760,14 @@ class ChatStateManager {
       thread.messageCompleted = false
       thread.toolUsed = false
       thread.isLoadingAgent = false
+      thread.skipReplay = false
     }
     this.threads.delete(key)
+  }
+
+  setSkipReplay(projectPath: string, agentId: string, skip: boolean) {
+    const thread = this.getOrCreateThread(projectPath, agentId)
+    thread.skipReplay = skip
   }
 
   setPendingMessage(projectPath: string, agentId: string, content: string, assistantMsgId: string) {
