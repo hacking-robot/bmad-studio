@@ -346,6 +346,31 @@ export interface StatusChangeEntry {
   source: StatusChangeSource    // 'user' (drag-drop) or 'external' (file watcher)
 }
 
+// Background project state — preserved when switching away from a project with active work
+// Chat threads are NOT stored here — the backend ChatStateManager owns thread state
+// per projectPath::agentId, and threads are lazily loaded from disk when needed.
+export interface BackgroundProjectState {
+  projectPath: string
+  projectType: ProjectType
+  outputFolder: string
+  fullCycle: import('./fullCycle').FullCycleState
+  epicCycle: import('./fullCycle').EpicCycleState
+  chatThreads: Record<string, AgentThread>
+  stories: Story[]
+  epics: Epic[]
+  // Settings needed by background orchestrator
+  baseBranch: string
+  enableEpicBranches: boolean
+  disableGitBranching: boolean
+  fullCycleReviewCount: number
+  aiTool: AITool
+  claudeModel: ClaudeModel
+  customEndpoint: CustomEndpointConfig | null
+  developerMode: 'ai' | 'human'
+  scannedWorkflowConfig: import('./flow').WorkflowConfig | null
+  bmadScanResult: import('./bmadScan').BmadScanResult | null
+}
+
 // NOTE: BMAD agent definitions are now in src/data/flow-bmm.json and src/data/flow-gds.json
 // Use the useWorkflow hook to access agent data
 

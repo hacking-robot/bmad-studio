@@ -17,6 +17,7 @@ import {
   AgentThread,
   StatusChangeEntry,
   StatusChangeSource,
+  BackgroundProjectState,
 } from "./types";
 import type { BmadScanResult } from "./types/bmadScan";
 import type { WorkflowConfig } from "./types/flow";
@@ -35,7 +36,6 @@ import {
   initialWizardState,
 } from "./types/projectWizard";
 import { getWizardSteps } from "./data/wizardSteps";
-import { flushPendingThreadSave } from "./utils/chatUtils";
 
 export type ViewMode = "board" | "chat" | "dashboard";
 
@@ -517,6 +517,12 @@ interface AppState {
     storyId: string | undefined,
     branchName: string | undefined,
   ) => void;
+  // Restore agent statuses from backend (no write-back to disk)
+  restoreAgentStatuses: (statuses: Record<string, {
+    metadata: { sessionId: string | null; storyId: string | null; branchName: string | null; lastActivity: number };
+    isTyping: boolean;
+    hasMessages: boolean;
+  }>) => void;
 
   // Zoom Level
   zoomLevel: number;
@@ -591,6 +597,15 @@ interface AppState {
   completeEpicCycle: () => void;
   resetEpicCycle: () => void;
   retryEpicCycle: () => void;
+
+  // Background Projects (NOT persisted — runtime only for multi-project state preservation)
+  backgroundProjects: Record<string, BackgroundProjectState>;
+  saveToBackground: () => void;
+  restoreFromBackground: (path: string) => void;
+  removeFromBackground: (path: string) => void;
+  updateBackgroundFullCycle: (path: string, updates: Partial<FullCycleState>) => void;
+  updateBackgroundEpicCycle: (path: string, updates: Partial<EpicCycleState>) => void;
+  updateBackgroundChatThread: (projectPath: string, agentId: string, updater: (thread: AgentThread) => AgentThread) => void;
 
   // Auto-Update (NOT persisted — transient state from electron-updater)
   updateStatus: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
@@ -783,19 +798,7 @@ export const useStore = create<AppState>()(
       projectType: null,
       outputFolder: "_bmad-output",
       setProjectPath: (path) => {
-        const state = get();
-        if (state.projectPath && path !== state.projectPath) {
-          flushPendingThreadSave();
-          for (const [agentId, thread] of Object.entries(state.chatThreads)) {
-            if (thread && (thread as AgentThread).messages.length > 0) {
-              window.chatAPI?.saveThread(
-                state.projectPath,
-                agentId,
-                thread as AgentThread,
-              );
-            }
-          }
-        }
+        // No need to save threads — backend already writes to JSONL during streaming
         set({
           projectPath: path,
           bmadVersionError: null,
@@ -1341,9 +1344,20 @@ export const useStore = create<AppState>()(
             },
           };
         }),
-      setThreadContext: (agentId, storyId, branchName) =>
-        set((state) => {
-          const thread = state.chatThreads[agentId] || {
+      setThreadContext: (agentId, storyId, branchName) => {
+        const state = get();
+        // Persist metadata to disk via backend
+        if (state.projectPath) {
+          const thread = state.chatThreads[agentId];
+          window.chatAPI?.setThreadMetadata(state.projectPath, agentId, {
+            sessionId: thread?.sessionId || null,
+            storyId: storyId || null,
+            branchName: branchName || null,
+            lastActivity: Date.now(),
+          });
+        }
+        set((s) => {
+          const thread = s.chatThreads[agentId] || {
             agentId,
             messages: [],
             lastActivity: Date.now(),
@@ -1354,7 +1368,7 @@ export const useStore = create<AppState>()(
 
           return {
             chatThreads: {
-              ...state.chatThreads,
+              ...s.chatThreads,
               [agentId]: {
                 ...thread,
                 storyId,
@@ -1362,6 +1376,30 @@ export const useStore = create<AppState>()(
               },
             },
           };
+        });
+      },
+      restoreAgentStatuses: (statuses) =>
+        set((state) => {
+          const updated = { ...state.chatThreads }
+          for (const [agentId, status] of Object.entries(statuses)) {
+            const existing = updated[agentId]
+            if (existing && existing.messages.length > 0) continue // Don't overwrite loaded threads
+            // Never restore isTyping=true from disk — the process that was typing
+            // may no longer be running. The live IPC event flow sets isTyping=true
+            // when a process is actually active.
+            updated[agentId] = {
+              agentId,
+              messages: existing?.messages || [],
+              lastActivity: status.metadata.lastActivity || Date.now(),
+              unreadCount: existing?.unreadCount || 0,
+              isTyping: false,
+              isInitialized: !!status.metadata.sessionId,
+              sessionId: status.metadata.sessionId || undefined,
+              storyId: status.metadata.storyId || undefined,
+              branchName: status.metadata.branchName || undefined,
+            }
+          }
+          return { chatThreads: updated }
         }),
 
       // Zoom Level
@@ -1694,6 +1732,118 @@ export const useStore = create<AppState>()(
           };
         }),
 
+      // Background Projects (NOT persisted — runtime only)
+      backgroundProjects: {},
+      saveToBackground: () => {
+        const state = get();
+        if (!state.projectPath || !state.projectType) return;
+        set({
+          backgroundProjects: {
+            ...state.backgroundProjects,
+            [state.projectPath]: {
+              projectPath: state.projectPath,
+              projectType: state.projectType,
+              outputFolder: state.outputFolder,
+              fullCycle: { ...state.fullCycle },
+              epicCycle: { ...state.epicCycle },
+              chatThreads: { ...state.chatThreads },
+              stories: state.stories,
+              epics: state.epics,
+              baseBranch: state.baseBranch,
+              enableEpicBranches: state.enableEpicBranches,
+              disableGitBranching: state.disableGitBranching,
+              fullCycleReviewCount: state.fullCycleReviewCount,
+              aiTool: state.aiTool,
+              claudeModel: state.claudeModel,
+              customEndpoint: state.customEndpoint,
+              developerMode: state.developerMode,
+              scannedWorkflowConfig: state.scannedWorkflowConfig,
+              bmadScanResult: state.bmadScanResult,
+            },
+          },
+        });
+      },
+      restoreFromBackground: (path) => {
+        const state = get();
+        const bg = state.backgroundProjects[path];
+        if (!bg) return;
+        const { [path]: _, ...rest } = state.backgroundProjects;
+        set({
+          backgroundProjects: rest,
+          fullCycle: bg.fullCycle,
+          epicCycle: bg.epicCycle,
+          stories: bg.stories,
+          epics: bg.epics,
+          baseBranch: bg.baseBranch,
+          enableEpicBranches: bg.enableEpicBranches,
+          disableGitBranching: bg.disableGitBranching,
+          fullCycleReviewCount: bg.fullCycleReviewCount,
+          aiTool: bg.aiTool,
+          claudeModel: bg.claudeModel,
+          customEndpoint: bg.customEndpoint,
+          developerMode: bg.developerMode,
+          scannedWorkflowConfig: bg.scannedWorkflowConfig,
+          bmadScanResult: bg.bmadScanResult,
+        });
+      },
+      removeFromBackground: (path) =>
+        set((state) => {
+          const { [path]: _, ...rest } = state.backgroundProjects;
+          return { backgroundProjects: rest };
+        }),
+      updateBackgroundFullCycle: (path, updates) =>
+        set((state) => {
+          const bg = state.backgroundProjects[path];
+          if (!bg) return state;
+          return {
+            backgroundProjects: {
+              ...state.backgroundProjects,
+              [path]: {
+                ...bg,
+                fullCycle: { ...bg.fullCycle, ...updates },
+              },
+            },
+          };
+        }),
+      updateBackgroundEpicCycle: (path, updates) =>
+        set((state) => {
+          const bg = state.backgroundProjects[path];
+          if (!bg) return state;
+          return {
+            backgroundProjects: {
+              ...state.backgroundProjects,
+              [path]: {
+                ...bg,
+                epicCycle: { ...bg.epicCycle, ...updates },
+              },
+            },
+          };
+        }),
+      updateBackgroundChatThread: (projectPath, agentId, updater) =>
+        set((state) => {
+          const bg = state.backgroundProjects[projectPath];
+          if (!bg) return state;
+          const existing = bg.chatThreads[agentId] || {
+            agentId,
+            messages: [],
+            lastActivity: Date.now(),
+            unreadCount: 0,
+            isTyping: false,
+            isInitialized: false,
+          };
+          return {
+            backgroundProjects: {
+              ...state.backgroundProjects,
+              [projectPath]: {
+                ...bg,
+                chatThreads: {
+                  ...bg.chatThreads,
+                  [agentId]: updater(existing),
+                },
+              },
+            },
+          };
+        }),
       // Prerequisites Dialog (NOT persisted)
       // Auto-Update
       updateStatus: 'idle',

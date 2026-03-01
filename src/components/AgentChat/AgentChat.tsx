@@ -71,12 +71,36 @@ export default function AgentChat() {
     }
 
     // Cancel any running process and clear the thread
-    window.chatAPI.cancelMessage(selectedChatAgent).catch(() => {})
+    window.chatAPI.cancelMessage(selectedChatAgent, projectPath || undefined).catch(() => {})
     clearChatThread(selectedChatAgent)
     if (projectPath) {
       window.chatAPI.clearThread(projectPath, selectedChatAgent)
     }
   }, [selectedChatAgent, chatThreads, agents, projectPath, stories, clearChatThread])
+
+  // Load all agent statuses from disk when project changes (restores sessionId, storyId, etc.)
+  useEffect(() => {
+    if (projectPath) {
+      window.chatAPI.loadAllAgentStatuses(projectPath).then(async (statuses) => {
+        if (statuses && Object.keys(statuses).length > 0) {
+          useStore.getState().restoreAgentStatuses(statuses)
+
+          // Verify any restored "typing" agents actually have running processes.
+          // If not, clear the stale typing flag immediately instead of relying on the orphan detector.
+          for (const [agentId, status] of Object.entries(statuses)) {
+            if (status.isTyping) {
+              const isRunning = await window.chatAPI.isAgentRunning(agentId, projectPath)
+              if (!isRunning) {
+                console.log('[AgentChat] Clearing stale typing flag for agent:', agentId)
+                useStore.getState().setChatTyping(agentId, false)
+                useStore.getState().setChatActivity(agentId, undefined)
+              }
+            }
+          }
+        }
+      })
+    }
+  }, [projectPath])
 
   // Select first agent if none selected or current selection invalid for project type
   useEffect(() => {
@@ -86,23 +110,45 @@ export default function AgentChat() {
     }
   }, [selectedChatAgent, setSelectedChatAgent, agents])
 
-  // Load thread from storage when agent is selected
+  // Load thread messages from JSONL storage when agent is selected or project changes.
+  // Uses getState() inside the effect to avoid re-running on every chatThreads mutation.
   useEffect(() => {
-    if (selectedChatAgent) {
-      // Load persisted thread if not already loaded
-      const thread = chatThreads[selectedChatAgent]
-      if (!thread && projectPath) {
-        window.chatAPI.loadThread(projectPath, selectedChatAgent).then((loadedThread) => {
-          if (loadedThread && loadedThread.messages.length > 0) {
-            // Restore thread from storage
-            for (const msg of loadedThread.messages) {
-              useStore.getState().addChatMessage(selectedChatAgent, msg)
-            }
+    if (!selectedChatAgent || !projectPath) return
+
+    window.chatAPI.loadThreadData(projectPath, selectedChatAgent).then((data) => {
+      if (!data || data.messages.length === 0) return
+      const agentId = selectedChatAgent
+
+      // Re-read current state (may have changed while IPC was in-flight)
+      const current = useStore.getState().chatThreads[agentId]
+      const currentMsgs = current?.messages || []
+
+      if (currentMsgs.length === 0) {
+        // No messages yet — load all from disk
+        for (const msg of data.messages) {
+          useStore.getState().addChatMessage(agentId, msg)
+        }
+      } else if (data.messages.length > currentMsgs.length) {
+        // Disk has more messages than Zustand (background agent added some).
+        // Only append messages that aren't already in the thread.
+        const existingIds = new Set(currentMsgs.map(m => m.id))
+        for (const msg of data.messages) {
+          if (!existingIds.has(msg.id)) {
+            useStore.getState().addChatMessage(agentId, msg)
           }
-        })
+        }
       }
-    }
-  }, [selectedChatAgent, chatThreads, projectPath])
+
+      // Always sync metadata from disk (sessionId may have been updated by background agent)
+      if (data.metadata.sessionId) {
+        useStore.getState().setChatSessionId(agentId, data.metadata.sessionId)
+        useStore.getState().setAgentInitialized(agentId, true)
+      }
+      if (data.metadata.storyId || data.metadata.branchName) {
+        useStore.getState().setThreadContext(agentId, data.metadata.storyId || undefined, data.metadata.branchName || undefined)
+      }
+    })
+  }, [selectedChatAgent, projectPath])
 
   const selectedAgent = agents.find((a) => a.id === selectedChatAgent)
 

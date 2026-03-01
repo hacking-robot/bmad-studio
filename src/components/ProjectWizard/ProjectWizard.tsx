@@ -566,7 +566,7 @@ export default function ProjectWizard() {
     // If command couldn't be resolved from scan, open agent chat without a pre-filled command
     updateWizardStep(stepIndex, 'active')
     // Cancel any running process for this agent before clearing
-    window.chatAPI.cancelMessage(agentId).catch(() => {})
+    window.chatAPI.cancelMessage(agentId, projectPath || undefined).catch(() => {})
     clearChatThread(agentId)
     setSelectedChatAgent(agentId)
     setViewMode('chat')

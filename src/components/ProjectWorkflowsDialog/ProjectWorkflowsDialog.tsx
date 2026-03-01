@@ -35,7 +35,7 @@ export default function ProjectWorkflowsDialog() {
   const phaseEntries = Object.entries(phases)
 
   const handleRun = (agentId: string, command: string) => {
-    window.chatAPI.cancelMessage(agentId).catch(() => {})
+    window.chatAPI.cancelMessage(agentId, useStore.getState().projectPath || undefined).catch(() => {})
     clearChatThread(agentId)
     setViewMode('chat')
     setSelectedChatAgent(agentId)

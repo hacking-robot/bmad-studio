@@ -7,6 +7,7 @@ import { spawn as spawnChild, spawnSync, execFile, StdioOptions } from 'child_pr
 import { promisify } from 'util'
 import { autoUpdater } from 'electron-updater'
 import { agentManager } from './agentManager'
+import { chatStateManager } from './chatStateManager'
 import { detectTool, detectAllTools, clearDetectionCache } from './cliToolManager'
 import { getAugmentedEnv, findBinary } from './envUtils'
 import { scanBmadProject } from './bmadScanner'
@@ -1944,58 +1945,12 @@ ipcMain.handle('show-notification', async (_, title: string, body: string) => {
   }
 })
 
-// Chat thread storage (project-scoped via path hash)
-import { createHash } from 'crypto'
-
-function hashProjectPath(projectPath: string): string {
-  return createHash('md5').update(projectPath).digest('hex').slice(0, 12)
-}
-const getChatThreadsDir = (projectPath: string) =>
-  join(app.getPath('userData'), 'chat-threads', hashProjectPath(projectPath))
-const getChatThreadPath = (projectPath: string, agentId: string) =>
-  join(getChatThreadsDir(projectPath), `${agentId}.json`)
-
-async function ensureChatThreadsDir(projectPath: string) {
-  const dir = getChatThreadsDir(projectPath)
-  if (!existsSync(dir)) {
-    await mkdir(dir, { recursive: true })
-  }
-}
-
 // Chat thread IPC handlers
-ipcMain.handle('load-chat-thread', async (_, projectPath: string, agentId: string) => {
-  try {
-    const filePath = getChatThreadPath(projectPath, agentId)
-    if (!existsSync(filePath)) {
-      return null
-    }
-    const content = await readFile(filePath, 'utf-8')
-    return JSON.parse(content)
-  } catch (error) {
-    console.error('Failed to load chat thread:', error)
-    return null
-  }
-})
-
-ipcMain.handle('save-chat-thread', async (_, projectPath: string, agentId: string, thread: unknown) => {
-  try {
-    await ensureChatThreadsDir(projectPath)
-    const filePath = getChatThreadPath(projectPath, agentId)
-    await writeFile(filePath, JSON.stringify(thread, null, 2))
-    return true
-  } catch (error) {
-    console.error('Failed to save chat thread:', error)
-    return false
-  }
-})
 
 ipcMain.handle('clear-chat-thread', async (_, projectPath: string, agentId: string) => {
   try {
-    const filePath = getChatThreadPath(projectPath, agentId)
-    if (existsSync(filePath)) {
-      const { unlink } = await import('fs/promises')
-      await unlink(filePath)
-    }
+    // clearFiles handles .json (legacy), .jsonl, and .meta.json
+    chatStateManager.clearFiles(projectPath, agentId)
     return true
   } catch (error) {
     console.error('Failed to clear chat thread:', error)
@@ -2003,21 +1958,7 @@ ipcMain.handle('clear-chat-thread', async (_, projectPath: string, agentId: stri
   }
 })
 
-ipcMain.handle('list-chat-threads', async (_, projectPath: string) => {
-  try {
-    const dir = getChatThreadsDir(projectPath)
-    if (!existsSync(dir)) {
-      return []
-    }
-    const files = await readdir(dir)
-    return files
-      .filter(f => f.endsWith('.json'))
-      .map(f => f.replace('.json', ''))
-  } catch (error) {
-    console.error('Failed to list chat threads:', error)
-    return []
-  }
-})
+
 
 // Story chat history storage (linked to stories, persisted in project and user data)
 import { homedir } from 'os'
@@ -2186,9 +2127,9 @@ ipcMain.handle('load-project-costs', async (_, projectPath: string, outputFolder
 // Chat agent - simple spawn per message
 import { chatAgentManager } from './agentManager'
 
-// Set mainWindow for chatAgentManager when app is ready
+// Set mainWindow for chatStateManager when app is ready
 app.whenReady().then(() => {
-  chatAgentManager.setMainWindow(mainWindow)
+  chatStateManager.setMainWindow(mainWindow)
 })
 
 ipcMain.handle('chat-load-agent', async (_, options: {
@@ -2200,7 +2141,7 @@ ipcMain.handle('chat-load-agent', async (_, options: {
   customEndpoint?: { name: string; baseUrl: string; apiKey: string; modelName: string } | null
   agentCommand?: string
 }) => {
-  chatAgentManager.setMainWindow(mainWindow)
+  chatStateManager.setMainWindow(mainWindow)
   return chatAgentManager.loadAgent(options)
 })
 
@@ -2212,17 +2153,30 @@ ipcMain.handle('chat-send-message', async (_, options: {
   tool?: AITool
   model?: ClaudeModel
   customEndpoint?: { name: string; baseUrl: string; apiKey: string; modelName: string } | null
+  assistantMsgId?: string
+  userMsgId?: string
 }) => {
-  chatAgentManager.setMainWindow(mainWindow)
+  chatStateManager.setMainWindow(mainWindow)
+  // Persist user message to JSONL before spawning agent
+  if (options.userMsgId) {
+    chatStateManager.appendMessage(options.projectPath, options.agentId, {
+      id: options.userMsgId, role: 'user', content: options.message,
+      timestamp: Date.now(), status: 'complete'
+    })
+  }
+  // Tell the backend which message ID to use for streaming, so it matches the renderer's placeholder
+  if (options.assistantMsgId) {
+    chatStateManager.setCurrentMessageId(options.projectPath, options.agentId, options.assistantMsgId)
+  }
   return chatAgentManager.sendMessage(options)
 })
 
-ipcMain.handle('chat-cancel-message', async (_, agentId: string) => {
-  return chatAgentManager.cancelMessage(agentId)
+ipcMain.handle('chat-cancel-message', async (_, agentId: string, projectPath?: string) => {
+  return chatAgentManager.cancelMessage(agentId, projectPath)
 })
 
-ipcMain.handle('chat-is-agent-running', async (_, agentId: string) => {
-  return chatAgentManager.isRunning(agentId)
+ipcMain.handle('chat-is-agent-running', async (_, agentId: string, projectPath?: string) => {
+  return chatAgentManager.isRunning(agentId, projectPath)
 })
 
 ipcMain.handle('chat-has-session', async () => {
@@ -2239,6 +2193,29 @@ ipcMain.handle('chat-kill-session', async () => {
 
 ipcMain.handle('chat-get-active-sessions', async () => {
   return []
+})
+
+
+// JSONL-backed thread data handlers
+ipcMain.handle('chat-load-thread-data', async (_, projectPath: string, agentId: string) => {
+  const messages = chatStateManager.readMessages(projectPath, agentId)
+  const metadata = chatStateManager.readMetadata(projectPath, agentId)
+  if (!messages.length && !metadata) return null
+  return { messages, metadata: metadata || { sessionId: null, storyId: null, branchName: null, lastActivity: 0 } }
+})
+
+ipcMain.handle('chat-load-all-agent-statuses', async (_, projectPath: string) => {
+  return chatStateManager.readAllAgentStatuses(projectPath)
+})
+
+ipcMain.handle('chat-write-user-message', async (_, projectPath: string, agentId: string, message: unknown) => {
+  chatStateManager.appendMessage(projectPath, agentId, message as import('./chatStateManager').ChatMessage)
+})
+
+ipcMain.handle('chat-set-thread-metadata', async (_, projectPath: string, agentId: string, metadata: unknown) => {
+  const meta = metadata as import('./chatStateManager').ThreadMetadata
+  chatStateManager.writeMetadata(projectPath, agentId, meta)
+  chatStateManager.setThreadContext(projectPath, agentId, meta.storyId, meta.branchName)
 })
 
 // CLI Tool detection IPC handlers

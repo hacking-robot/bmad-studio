@@ -62,7 +62,7 @@ export function useFullCycle() {
     const currentStep = steps[fullCycle.currentStep]
     if (currentStep?.agentId) {
       try {
-        await window.chatAPI.cancelMessage(currentStep.agentId)
+        await window.chatAPI.cancelMessage(currentStep.agentId, useStore.getState().projectPath || undefined)
       } catch {
         // Ignore
       }

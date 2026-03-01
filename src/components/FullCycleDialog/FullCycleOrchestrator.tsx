@@ -115,15 +115,17 @@ export default function FullCycleOrchestrator() {
     const currentThread = useStore.getState().chatThreads[agentId]
     const hasSession = !!currentThread?.sessionId
 
-    // Add user message to the chat thread
+    // Add user message to the chat thread and persist to JSONL
     const userMsgId = `fullcycle-user-${Date.now()}`
-    addChatMessage(agentId, {
+    const userMsg = {
       id: userMsgId,
-      role: 'user',
+      role: 'user' as const,
       content: command,
       timestamp: Date.now(),
-      status: 'complete'
-    })
+      status: 'complete' as const
+    }
+    addChatMessage(agentId, userMsg)
+    window.chatAPI.writeUserMessage(projectPath, agentId, userMsg)
 
     // Add assistant placeholder message
     const assistantMsgId = `fullcycle-assistant-${Date.now()}`
@@ -146,7 +148,7 @@ export default function FullCycleOrchestrator() {
 
       const cleanup = () => {
         unsubExit()
-        unsubAgentLoaded()
+        unsubAgentReady()
         unsubOutput()
         if (cleanupRef.current === cleanup) {
           cleanupRef.current = null
@@ -210,69 +212,36 @@ export default function FullCycleOrchestrator() {
         return /(?:^|\n)\s*(?:1\.|[\[(]1[\])])\s*[*]*\s*(?:fix|update|resolve|apply|auto|correct|repair)/im.test(clean)
       }
 
-      // Subscribe to output for accumulating TEXT content for pattern detection.
-      // Raw chunks are stream-json (newlines escaped as \n), so we must parse
-      // the JSON and extract actual text — otherwise regexes can't match.
-      const unsubOutput = window.chatAPI.onChatOutput((event) => {
+      // Subscribe to semantic text events for pattern detection.
+      // Backend handles stream-JSON parsing — we just get clean text.
+      const unsubOutput = window.chatAPI.onTextDelta((event) => {
         if (event.agentId !== agentId) return
-        if (event.isAgentLoad) return
-        if (!event.chunk) return
-
-        const lines = event.chunk.split('\n').filter(Boolean)
-        for (const line of lines) {
-          try {
-            const parsed = JSON.parse(line)
-            if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-              accumulatedOutput += parsed.delta.text
-            } else if (parsed.type === 'assistant' && parsed.message?.content) {
-              for (const block of parsed.message.content) {
-                if (block.type === 'text' && block.text) {
-                  accumulatedOutput += block.text
-                }
-              }
-            } else if (parsed.type === 'result' && parsed.result) {
-              // Result is the definitive complete response — overwrite
-              accumulatedOutput = parsed.result
-            }
-          } catch {
-            // Not valid JSON line — accumulate raw as fallback
-            accumulatedOutput += line
-          }
-        }
+        if (event.projectPath !== projectPath) return
+        accumulatedOutput = event.fullContent
       })
 
-      // Handle agent loaded (for first message)
+      // Handle agent ready (for first message — success only)
       // Note: The global handler sends the pending message automatically.
-      // This handler just logs status and handles failures.
-      const unsubAgentLoaded = window.chatAPI.onAgentLoaded(async (event) => {
+      // Load failures come through onAgentExit with code !== 0.
+      const unsubAgentReady = window.chatAPI.onAgentReady((event) => {
         if (event.agentId !== agentId) return
+        if (event.projectPath !== projectPath) return
         if (currentRunIdRef.current !== runId) {
           cleanup()
           resolve('error')
           return
         }
 
-        if (event.code === 0 && event.sessionId) {
-          // Agent loaded successfully - global handler will send the pending message
-          appendFullCycleLog(`Agent ${agentId} ready, executing command...`)
-          setChatSessionId(agentId, event.sessionId)
-          setFullCycleSessionId(event.sessionId)
-          currentSessionId = event.sessionId
-          // The global handler's onAgentLoaded sends the pending message
-        } else if (event.code !== 0) {
-          // Agent load failed
-          resolved = true
-          cleanup()
-          setChatTyping(agentId, false)
-          clearAgentState(agentId)
-          appendFullCycleLog(`Agent load failed: ${event.error}`)
-          resolve('error')
-        }
+        appendFullCycleLog(`Agent ${agentId} ready, executing command...`)
+        setChatSessionId(agentId, event.sessionId)
+        setFullCycleSessionId(event.sessionId)
+        currentSessionId = event.sessionId
       })
 
-      // Handle process exit - orchestrator-specific logic for auto-responses
-      const unsubExit = window.chatAPI.onChatExit(async (event) => {
+      // Handle agent exit - orchestrator-specific logic for auto-responses
+      const unsubExit = window.chatAPI.onAgentExit(async (event) => {
         if (event.agentId !== agentId) return
+        if (event.projectPath !== projectPath) return
         if (resolved) return
 
         // Update session ID if provided
@@ -309,15 +278,17 @@ export default function FullCycleOrchestrator() {
         const sendAutoResponse = async (response: string, logMessage: string): Promise<boolean> => {
           appendFullCycleLog(logMessage)
 
-          // Add auto-response message to chat
+          // Add auto-response message to chat and persist to JSONL
           const autoResponseMsgId = `fullcycle-auto-${Date.now()}`
-          addChatMessage(agentId, {
+          const autoResponseMsg = {
             id: autoResponseMsgId,
-            role: 'user',
+            role: 'user' as const,
             content: response,
             timestamp: Date.now(),
-            status: 'complete'
-          })
+            status: 'complete' as const
+          }
+          addChatMessage(agentId, autoResponseMsg)
+          window.chatAPI.writeUserMessage(projectPath, agentId, autoResponseMsg)
 
           // Add new assistant placeholder
           const newAssistantMsgId = `fullcycle-assistant-${Date.now()}`
@@ -349,7 +320,8 @@ export default function FullCycleOrchestrator() {
               sessionId: currentSessionId!,
               tool: aiTool,
               model: aiTool === 'claude-code' ? claudeModel : undefined,
-              customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined
+              customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined,
+              assistantMsgId: newAssistantMsgId,
             })
 
             if (!result.success) {
@@ -531,7 +503,8 @@ export default function FullCycleOrchestrator() {
           sessionId: currentThread.sessionId,
           tool: aiTool,
           model: aiTool === 'claude-code' ? claudeModel : undefined,
-          customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined
+          customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined,
+          assistantMsgId,
         }).catch((err) => {
           if (!resolved) {
             resolved = true

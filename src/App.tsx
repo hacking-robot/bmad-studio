@@ -151,6 +151,22 @@ export default function App() {
     return () => window.removeEventListener('open-remote-dialog', handleOpen)
   }, [])
 
+  // Warn before quit if background projects have active cycles
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const { backgroundProjects, fullCycle } = useStore.getState()
+      const hasActiveBackground = Object.values(backgroundProjects).some(
+        bg => bg.fullCycle.isRunning || bg.epicCycle.isRunning
+      )
+      const hasActiveForeground = fullCycle.isRunning
+      if (hasActiveBackground || hasActiveForeground) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [])
+
   // Chat sidebar resize
   const isResizing = useRef(false)
 

@@ -5,7 +5,7 @@ import { parseEpicsUnified, getAllStories } from '../utils/parseEpicsUnified'
 import { parseStoryContent } from '../utils/parseStory'
 import { getEpicsFullPath, getSprintStatusFullPath, hasBoardModule } from '../utils/projectTypes'
 import { mergeWorkflowConfig } from '../utils/workflowMerge'
-import { flushPendingThreadSave } from '../utils/chatUtils'
+import { initialFullCycleState, initialEpicCycleState } from '../types/fullCycle'
 import { createLocalReader } from '../utils/remoteFileReader'
 import type { BmadScanResult } from '../types/bmadScan'
 
@@ -675,57 +675,112 @@ export function useProjectData() {
   const switchToProject = useCallback((project: import('../store').RecentProject) => {
     if (!project.projectType) return
 
-    // Flush any pending debounced thread save and persist all in-memory threads
-    // before clearing state, so switching back restores them from disk
+    // No need to save threads — backend already writes to JSONL during streaming
     const state = useStore.getState()
-    flushPendingThreadSave()
+
+    // Always save current project to background when switching.
+    // Even projects with only loading agents (no messages yet) need to be saved,
+    // otherwise IPC events arriving after the switch are silently dropped.
     if (state.projectPath) {
-      for (const [agentId, thread] of Object.entries(state.chatThreads)) {
-        if (thread && thread.messages.length > 0) {
-          window.chatAPI.saveThread(state.projectPath, agentId, thread)
-        }
-      }
+      state.saveToBackground()
     }
+
+    // Re-read background projects AFTER save — the `state` variable captured above
+    // is stale after saveToBackground() mutates the store
+    const currentBgProjects = useStore.getState().backgroundProjects
+    const bgState = currentBgProjects[project.path]
 
     // Batch all state updates into a single set() to avoid 9 separate persist cycles
     // Each persist cycle reads/writes the 645KB settings file via IPC
     const filtered = state.recentProjects.filter((p) => p.path !== project.path)
     const updatedRecent = [project, ...filtered].slice(0, 10)
-    useStore.setState({
-      projectPath: project.path,
-      projectType: project.projectType,
-      outputFolder: project.outputFolder || '_bmad-output',
-      developerMode: project.developerMode || 'ai',
-      baseBranch: project.baseBranch || 'main',
-      enableEpicBranches: project.enableEpicBranches ?? false,
-      allowDirectEpicMerge: project.allowDirectEpicMerge ?? false,
-      disableGitBranching: project.disableGitBranching ?? true,
-      colorTheme: project.colorTheme || 'gruvbox-dark',
-      selectedEpicId: null,
-      recentProjects: updatedRecent,
-      chatThreads: {},
-      selectedChatAgent: null,
-      gitDiffPanelOpen: false,
-      gitDiffPanelBranch: null,
-      // Show loading immediately so user sees spinner instead of stale "All Epics" board
-      loading: true,
-      epics: [],
-      stories: [],
-      // Set correct viewMode for the target project type
-      viewMode: project.projectType === 'dashboard' ? 'dashboard' : 'board',
-      // Clear stale scan data so hasBrd computes correctly before new scan completes
-      bmadScanResult: null,
-      scannedWorkflowConfig: null,
-      // Clear remote viewing state when switching projects
-      remoteViewingBranch: null,
-      attachedLocalProjectPath: null,
-      remoteUpdateAvailable: false,
-      // Restore remote project state from recent project entry
-      isRemoteProject: project.isRemote ?? false,
-      remoteProjectUrl: project.remoteUrl ?? null,
-      // Remote projects have no local checkout — set placeholder so UI components render
-      ...(project.isRemote ? { currentBranch: '(remote)' } : {})
-    })
+
+    if (bgState) {
+      // Restore from background — pop from map and apply saved state
+      // Restore chatThreads from background for instant display (status, messages, session IDs).
+      // The loadAllAgentStatuses effect will merge in any in-memory updates from the backend.
+      const { [project.path]: _, ...restBackground } = currentBgProjects
+      useStore.setState({
+        backgroundProjects: restBackground,
+        projectPath: project.path,
+        projectType: project.projectType,
+        outputFolder: bgState.outputFolder,
+        developerMode: bgState.developerMode,
+        baseBranch: bgState.baseBranch,
+        enableEpicBranches: bgState.enableEpicBranches,
+        allowDirectEpicMerge: project.allowDirectEpicMerge ?? false,
+        disableGitBranching: bgState.disableGitBranching,
+        colorTheme: project.colorTheme || 'gruvbox-dark',
+        selectedEpicId: null,
+        recentProjects: updatedRecent,
+        // Restore orchestration state from background
+        fullCycle: bgState.fullCycle,
+        epicCycle: bgState.epicCycle,
+        // Restore chatThreads with live typing/activity state from background.
+        // Background event routing keeps these up-to-date while the project is in the background.
+        chatThreads: { ...bgState.chatThreads },
+        stories: bgState.stories,
+        epics: bgState.epics,
+        aiTool: bgState.aiTool,
+        claudeModel: bgState.claudeModel,
+        customEndpoint: bgState.customEndpoint,
+        fullCycleReviewCount: bgState.fullCycleReviewCount,
+        scannedWorkflowConfig: bgState.scannedWorkflowConfig,
+        bmadScanResult: bgState.bmadScanResult,
+        selectedChatAgent: null,
+        gitDiffPanelOpen: false,
+        gitDiffPanelBranch: null,
+        // Don't show loading — we already have data from background
+        loading: false,
+        viewMode: project.projectType === 'dashboard' ? 'dashboard' : 'board',
+        remoteViewingBranch: null,
+        attachedLocalProjectPath: null,
+        remoteUpdateAvailable: false,
+        isRemoteProject: project.isRemote ?? false,
+        remoteProjectUrl: project.remoteUrl ?? null,
+        ...(project.isRemote ? { currentBranch: '(remote)' } : {}),
+      })
+    } else {
+      // Clean load — no background state, fresh start
+      useStore.setState({
+        projectPath: project.path,
+        projectType: project.projectType,
+        outputFolder: project.outputFolder || '_bmad-output',
+        developerMode: project.developerMode || 'ai',
+        baseBranch: project.baseBranch || 'main',
+        enableEpicBranches: project.enableEpicBranches ?? false,
+        allowDirectEpicMerge: project.allowDirectEpicMerge ?? false,
+        disableGitBranching: project.disableGitBranching ?? true,
+        colorTheme: project.colorTheme || 'gruvbox-dark',
+        selectedEpicId: null,
+        recentProjects: updatedRecent,
+        chatThreads: {},
+        selectedChatAgent: null,
+        gitDiffPanelOpen: false,
+        gitDiffPanelBranch: null,
+        // Show loading immediately so user sees spinner instead of stale "All Epics" board
+        loading: true,
+        epics: [],
+        stories: [],
+        // Reset cycle state for clean project
+        fullCycle: initialFullCycleState,
+        epicCycle: initialEpicCycleState,
+        // Set correct viewMode for the target project type
+        viewMode: project.projectType === 'dashboard' ? 'dashboard' : 'board',
+        // Clear stale scan data so hasBrd computes correctly before new scan completes
+        bmadScanResult: null,
+        scannedWorkflowConfig: null,
+        // Clear remote viewing state when switching projects
+        remoteViewingBranch: null,
+        attachedLocalProjectPath: null,
+        remoteUpdateAvailable: false,
+        // Restore remote project state from recent project entry
+        isRemoteProject: project.isRemote ?? false,
+        remoteProjectUrl: project.remoteUrl ?? null,
+        // Remote projects have no local checkout — set placeholder so UI components render
+        ...(project.isRemote ? { currentBranch: '(remote)' } : {}),
+      })
+    }
   }, [])
 
   return {

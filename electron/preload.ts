@@ -378,33 +378,27 @@ export interface AgentThread {
   isTyping: boolean
   isInitialized: boolean
   sessionId?: string // Claude conversation session ID for --resume
+  storyId?: string
+  branchName?: string
 }
 
-export interface ChatOutputEvent {
-  agentId: string
-  type: 'stdout' | 'stderr'
-  chunk: string
-  timestamp: number
-  isAgentLoad?: boolean
+// JSONL-backed thread data types
+export interface ThreadMetadata {
+  sessionId: string | null
+  storyId: string | null
+  branchName: string | null
+  lastActivity: number
 }
 
-export interface ChatExitEvent {
-  agentId: string
-  code: number | null
-  signal: string | null
-  error?: string
-  timestamp: number
-  sessionId?: string // Session ID captured from this conversation
-  cancelled?: boolean // True if the message was cancelled by user
+export interface ThreadData {
+  messages: ChatMessage[]
+  metadata: ThreadMetadata
 }
 
-export interface ChatAgentLoadedEvent {
-  agentId: string
-  code: number | null
-  signal: string | null
-  error?: string
-  sessionId?: string // Session ID for subsequent messages
-  timestamp: number
+export interface AgentStatus {
+  metadata: ThreadMetadata
+  isTyping: boolean
+  hasMessages: boolean
 }
 
 // Story chat history types (persisted to project and user directories)
@@ -426,12 +420,75 @@ export interface StoryChatHistory {
   lastUpdated: number
 }
 
+// New semantic event types from ChatStateManager
+export interface ChatTextDeltaEvent {
+  projectPath: string
+  agentId: string
+  messageId: string
+  text: string
+  fullContent: string
+}
+
+export interface ChatToolUseEvent {
+  projectPath: string
+  agentId: string
+  messageId: string
+  toolName: string
+  toolSummary: string
+  toolInput?: Record<string, unknown>
+}
+
+export interface ChatMessageCompleteEvent {
+  projectPath: string
+  agentId: string
+  messageId: string
+  stats?: {
+    model: string
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+    totalCostUsd?: number
+    durationMs?: number
+    apiDurationMs?: number
+  }
+  cost?: number
+}
+
+export interface ChatAgentReadyEvent {
+  projectPath: string
+  agentId: string
+  sessionId: string
+}
+
+export interface ChatAgentExitEvent {
+  projectPath: string
+  agentId: string
+  sessionId?: string
+  code: number | null
+  cancelled: boolean
+  error?: string
+}
+
+export interface ChatTypingEvent {
+  projectPath: string
+  agentId: string
+  isTyping: boolean
+}
+
+export interface ChatActivityEvent {
+  projectPath: string
+  agentId: string
+  activity: string | null
+}
+
+export interface ChatWizardStepEvent {
+  stepNumber: number
+}
+
 export interface ChatAPI {
-  // Thread persistence (project-scoped)
-  loadThread: (projectPath: string, agentId: string) => Promise<AgentThread | null>
-  saveThread: (projectPath: string, agentId: string, thread: AgentThread) => Promise<boolean>
+  // Thread cleanup
   clearThread: (projectPath: string, agentId: string) => Promise<boolean>
-  listThreads: (projectPath: string) => Promise<string[]>
   // Story chat history (persisted to project and user directories)
   saveStoryChatHistory: (projectPath: string, storyId: string, history: StoryChatHistory, outputFolder?: string) => Promise<boolean>
   loadStoryChatHistory: (projectPath: string, storyId: string, outputFolder?: string) => Promise<StoryChatHistory | null>
@@ -455,22 +512,31 @@ export interface ChatAPI {
     tool?: AITool // AI tool to use (defaults to claude-code)
     model?: ClaudeModel // Claude model to use (only for claude-code)
     customEndpoint?: CustomEndpointConfig | null // Custom endpoint config (for custom-endpoint tool)
+    assistantMsgId?: string // Placeholder message ID from renderer (so backend uses same ID)
+    userMsgId?: string // User message ID for JSONL persistence
   }) => Promise<{ success: boolean; error?: string }>
   // Cancel an ongoing message/agent load
-  cancelMessage: (agentId: string) => Promise<boolean>
+  cancelMessage: (agentId: string, projectPath?: string) => Promise<boolean>
   // Check if agent has a running process (for crash detection)
-  isAgentRunning: (agentId: string) => Promise<boolean>
-  // Event listeners
-  onChatOutput: (callback: (event: ChatOutputEvent) => void) => () => void
-  onChatExit: (callback: (event: ChatExitEvent) => void) => () => void
-  onAgentLoaded: (callback: (event: ChatAgentLoadedEvent) => void) => () => void
+  isAgentRunning: (agentId: string, projectPath?: string) => Promise<boolean>
+  // JSONL-backed thread data (disk as truth)
+  loadThreadData: (projectPath: string, agentId: string) => Promise<ThreadData | null>
+  loadAllAgentStatuses: (projectPath: string) => Promise<Record<string, AgentStatus>>
+  writeUserMessage: (projectPath: string, agentId: string, message: ChatMessage) => Promise<void>
+  setThreadMetadata: (projectPath: string, agentId: string, metadata: ThreadMetadata) => Promise<void>
+  // Semantic event listeners (from backend ChatStateManager)
+  onTextDelta: (callback: (event: ChatTextDeltaEvent) => void) => () => void
+  onToolUse: (callback: (event: ChatToolUseEvent) => void) => () => void
+  onMessageComplete: (callback: (event: ChatMessageCompleteEvent) => void) => () => void
+  onAgentReady: (callback: (event: ChatAgentReadyEvent) => void) => () => void
+  onAgentExit: (callback: (event: ChatAgentExitEvent) => void) => () => void
+  onTyping: (callback: (event: ChatTypingEvent) => void) => () => void
+  onActivity: (callback: (event: ChatActivityEvent) => void) => () => void
+  onWizardStep: (callback: (event: ChatWizardStepEvent) => void) => () => void
 }
 
 const chatAPI: ChatAPI = {
-  loadThread: (projectPath, agentId) => ipcRenderer.invoke('load-chat-thread', projectPath, agentId),
-  saveThread: (projectPath, agentId, thread) => ipcRenderer.invoke('save-chat-thread', projectPath, agentId, thread),
   clearThread: (projectPath, agentId) => ipcRenderer.invoke('clear-chat-thread', projectPath, agentId),
-  listThreads: (projectPath) => ipcRenderer.invoke('list-chat-threads', projectPath),
   // Story chat history
   saveStoryChatHistory: (projectPath, storyId, history, outputFolder) => ipcRenderer.invoke('save-story-chat-history', projectPath, storyId, history, outputFolder),
   loadStoryChatHistory: (projectPath, storyId, outputFolder) => ipcRenderer.invoke('load-story-chat-history', projectPath, storyId, outputFolder),
@@ -480,30 +546,54 @@ const chatAPI: ChatAPI = {
   // Message sending
   sendMessage: (options) => ipcRenderer.invoke('chat-send-message', options),
   // Cancel message
-  cancelMessage: (agentId) => ipcRenderer.invoke('chat-cancel-message', agentId),
+  cancelMessage: (agentId, projectPath) => ipcRenderer.invoke('chat-cancel-message', agentId, projectPath),
   // Check if agent is running
-  isAgentRunning: (agentId) => ipcRenderer.invoke('chat-is-agent-running', agentId),
-  // Event listeners
-  onChatOutput: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: ChatOutputEvent) => {
-      callback(data)
-    }
-    ipcRenderer.on('chat:output', listener)
-    return () => ipcRenderer.removeListener('chat:output', listener)
+  isAgentRunning: (agentId, projectPath) => ipcRenderer.invoke('chat-is-agent-running', agentId, projectPath),
+  // JSONL-backed thread data (disk as truth)
+  loadThreadData: (projectPath, agentId) => ipcRenderer.invoke('chat-load-thread-data', projectPath, agentId),
+  loadAllAgentStatuses: (projectPath) => ipcRenderer.invoke('chat-load-all-agent-statuses', projectPath),
+  writeUserMessage: (projectPath, agentId, message) => ipcRenderer.invoke('chat-write-user-message', projectPath, agentId, message),
+  setThreadMetadata: (projectPath, agentId, metadata) => ipcRenderer.invoke('chat-set-thread-metadata', projectPath, agentId, metadata),
+  // Semantic event listeners (from backend ChatStateManager)
+  onTextDelta: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ChatTextDeltaEvent) => callback(data)
+    ipcRenderer.on('chat:text-delta', listener)
+    return () => ipcRenderer.removeListener('chat:text-delta', listener)
   },
-  onChatExit: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: ChatExitEvent) => {
-      callback(data)
-    }
-    ipcRenderer.on('chat:exit', listener)
-    return () => ipcRenderer.removeListener('chat:exit', listener)
+  onToolUse: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ChatToolUseEvent) => callback(data)
+    ipcRenderer.on('chat:tool-use', listener)
+    return () => ipcRenderer.removeListener('chat:tool-use', listener)
   },
-  onAgentLoaded: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: ChatAgentLoadedEvent) => {
-      callback(data)
-    }
-    ipcRenderer.on('chat:agent-loaded', listener)
-    return () => ipcRenderer.removeListener('chat:agent-loaded', listener)
+  onMessageComplete: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ChatMessageCompleteEvent) => callback(data)
+    ipcRenderer.on('chat:message-complete', listener)
+    return () => ipcRenderer.removeListener('chat:message-complete', listener)
+  },
+  onAgentReady: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ChatAgentReadyEvent) => callback(data)
+    ipcRenderer.on('chat:agent-ready', listener)
+    return () => ipcRenderer.removeListener('chat:agent-ready', listener)
+  },
+  onAgentExit: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ChatAgentExitEvent) => callback(data)
+    ipcRenderer.on('chat:agent-exit', listener)
+    return () => ipcRenderer.removeListener('chat:agent-exit', listener)
+  },
+  onTyping: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ChatTypingEvent) => callback(data)
+    ipcRenderer.on('chat:typing', listener)
+    return () => ipcRenderer.removeListener('chat:typing', listener)
+  },
+  onActivity: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ChatActivityEvent) => callback(data)
+    ipcRenderer.on('chat:activity', listener)
+    return () => ipcRenderer.removeListener('chat:activity', listener)
+  },
+  onWizardStep: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ChatWizardStepEvent) => callback(data)
+    ipcRenderer.on('chat:wizard-step', listener)
+    return () => ipcRenderer.removeListener('chat:wizard-step', listener)
   }
 }
 

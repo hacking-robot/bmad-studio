@@ -42,7 +42,7 @@ export default function Dashboard() {
   const modules = bmadScanResult?.modules?.filter(m => m !== 'core') || []
 
   const handleRun = (agentId: string, command: string) => {
-    window.chatAPI.cancelMessage(agentId).catch(() => {})
+    window.chatAPI.cancelMessage(agentId, useStore.getState().projectPath || undefined).catch(() => {})
     clearChatThread(agentId)
     setViewMode('chat')
     setSelectedChatAgent(agentId)
