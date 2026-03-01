@@ -466,12 +466,12 @@ class ChatAgentManager {
     }
   ): { success: boolean; error?: string } {
     const tool = options.tool || 'claude-code'
-    
+
     // Check if tool supports headless operation
     if (!supportsHeadless(tool)) {
-      return { 
-        success: false, 
-        error: `${tool} does not support headless CLI operation. Use the IDE directly.` 
+      return {
+        success: false,
+        error: `${tool} does not support headless CLI operation. Use the IDE directly.`
       }
     }
 

@@ -202,6 +202,7 @@ export default function FullCycleOrchestrator() {
   }, [projectType, fullCycleReviewCount])
 
   // Save chat history before clearing - preserves conversation for story card
+  // Preserves sessionId so the next step can reuse the agent session via --resume
   const saveChatHistoryAndClear = useCallback(async (agentId: string, storyId: string) => {
     const cyclePath = cycleProjectPathRef.current
     if (!cyclePath) return
@@ -210,6 +211,9 @@ export default function FullCycleOrchestrator() {
     const thread = getCycleChatThread(agentId)
     const agent = agents.find(a => a.id === agentId)
     const story = stories.find(s => s.id === storyId)
+
+    // Preserve session ID before clearing so next step can reuse via --resume
+    const savedSessionId = thread?.sessionId
 
     // Save to history if thread has messages
     if (thread && thread.messages.length > 0 && agent) {
@@ -231,7 +235,12 @@ export default function FullCycleOrchestrator() {
     chatClear(agentId)
     // Also clear global handler state for this agent
     clearAgentState(agentId)
-  }, [outputFolder, agents, stories, getCycleChatThread, chatClear, clearAgentState, fcAppendLog])
+
+    // Restore session ID so next step can use --resume (single process instead of two)
+    if (savedSessionId) {
+      chatSetSessionId(agentId, savedSessionId)
+    }
+  }, [outputFolder, agents, stories, getCycleChatThread, chatClear, clearAgentState, fcAppendLog, chatSetSessionId])
 
   // Execute an agent step - uses global handler for message processing
   const executeAgentStep = useCallback(async (
@@ -448,7 +457,6 @@ export default function FullCycleOrchestrator() {
           accumulatedOutput = ''
 
           // Send the auto-response
-          await new Promise(r => setTimeout(r, 150))
 
           try {
             const result = await window.chatAPI.sendMessage({
@@ -556,7 +564,7 @@ export default function FullCycleOrchestrator() {
           if (outputLen < 200) {
             fcAppendLog('Waiting for agent to process auto-response...')
             // Wait for any pending output events to settle
-            await new Promise(r => setTimeout(r, 3000))
+            await new Promise(r => setTimeout(r, 1000))
 
             // Re-evaluate with fresh accumulated output
             const freshClean = stripAnsi(accumulatedOutput)
@@ -751,7 +759,7 @@ export default function FullCycleOrchestrator() {
 
           if (step.gitAction === 'commit') {
             // Small delay to ensure filesystem has synced
-            await new Promise(r => setTimeout(r, 500))
+            await new Promise(r => setTimeout(r, 200))
 
             const commitType = step.commitMessage?.startsWith('fix') ? 'fix' : step.commitMessage?.startsWith('docs') ? 'docs' : 'feat'
             const message = `${commitType}(${branchName}): ${step.commitMessage?.replace(/^(fix|docs|feat): /, '') || 'update'}`
@@ -784,7 +792,7 @@ export default function FullCycleOrchestrator() {
               return 'skipped'
             }
 
-            await new Promise(r => setTimeout(r, 500))
+            await new Promise(r => setTimeout(r, 200))
             const preCheckChanges = await window.gitAPI.hasChanges(cyclePath)
             if (currentRunIdRef.current !== runId) return 'error'
 

@@ -298,6 +298,10 @@ export default function StoryCard({ story, isDragging = false, disableDrag = fal
     // Cancel any running process and clear the chat thread for a fresh start
     window.chatAPI.cancelMessage(agentIdParam, projectPath || undefined).catch(() => {})
     clearChatThread(agentIdParam)
+    // Also clear on-disk JSONL so the loadThreadData effect doesn't restore old messages
+    if (projectPath) {
+      window.chatAPI.clearThread(projectPath, agentIdParam)
+    }
     // Switch to chat view
     setViewMode('chat')
     // Select the agent

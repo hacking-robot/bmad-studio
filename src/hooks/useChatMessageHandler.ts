@@ -257,8 +257,6 @@ export function useChatMessageHandler() {
             const { content, assistantMsgId, userMsgId } = loadState.pendingMessage
             loadState.pendingMessage = null
 
-            await new Promise(resolve => setTimeout(resolve, 150))
-
             const currentAiTool = useStore.getState().aiTool
             const currentClaudeModel = useStore.getState().claudeModel
             const currentCustomEndpoint = useStore.getState().customEndpoint
@@ -313,8 +311,6 @@ export function useChatMessageHandler() {
       if (loadState.pendingMessage) {
         const { content, assistantMsgId, userMsgId } = loadState.pendingMessage
         loadState.pendingMessage = null
-
-        await new Promise(resolve => setTimeout(resolve, 150))
 
         const currentAiTool = useStore.getState().aiTool
         const currentClaudeModel = useStore.getState().claudeModel
