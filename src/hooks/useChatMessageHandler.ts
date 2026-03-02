@@ -31,6 +31,7 @@ interface AgentLoadingState {
 export function useChatMessageHandler() {
   const addChatMessage = useStore((state) => state.addChatMessage)
   const updateChatMessage = useStore((state) => state.updateChatMessage)
+  const removeChatMessage = useStore((state) => state.removeChatMessage)
   const setChatTyping = useStore((state) => state.setChatTyping)
   const setChatActivity = useStore((state) => state.setChatActivity)
   const incrementUnread = useStore((state) => state.incrementUnread)
@@ -241,8 +242,22 @@ export function useChatMessageHandler() {
       }
     })
 
+    // --- Message discard (empty placeholder — tool-only turn with no text) ---
+    const unsubMessageDiscard = window.chatAPI.onMessageDiscard((event) => {
+      if (!isCurrentProject(event.projectPath)) {
+        if (isBackgroundProject(event.projectPath)) {
+          updateBackgroundChatThread(event.projectPath, event.agentId, (thread) => ({
+            ...thread,
+            messages: thread.messages.filter(m => m.id !== event.messageId),
+          }))
+        }
+        return
+      }
+      removeChatMessage(event.agentId, event.messageId)
+    })
+
     // --- Agent ready (agent load succeeded) ---
-    const unsubAgentReady = window.chatAPI.onAgentReady(async (event) => {
+    const unsubAgentReady = window.chatAPI.onAgentReady((event) => {
       const isCurrent = isCurrentProject(event.projectPath)
       const isBackground = !isCurrent && isBackgroundProject(event.projectPath)
 
@@ -273,55 +288,11 @@ export function useChatMessageHandler() {
             isInitialized: true,
           }))
 
-          // Clear renderer-side pending message (backend now auto-sends via loadAgent options).
-          // Only send as fallback if the backend didn't auto-send.
+          // Clear renderer-side pending message — backend auto-sends via loadAgent options.
+          // No fallback send needed; the backend handles all failure cases via handleExit.
           const loadState = loadingStatesRef.current.get(event.agentId)
           if (loadState?.pendingMessage) {
-            const { content, assistantMsgId, userMsgId } = loadState.pendingMessage
             loadState.pendingMessage = null
-
-            // Check if the backend already started the sendMessage process
-            const isRunning = await window.chatAPI.isAgentRunning(event.agentId, event.projectPath)
-            if (!isRunning) {
-              // Backend didn't send — fallback to renderer-side send
-              console.log('[useChatMessageHandler] Fallback: sending pending message for background agent:', event.agentId)
-              const currentAiTool = useStore.getState().aiTool
-              const currentClaudeModel = useStore.getState().claudeModel
-              const currentCustomEndpoint = useStore.getState().customEndpoint
-
-              try {
-                const result = await window.chatAPI.sendMessage({
-                  agentId: event.agentId,
-                  projectPath: event.projectPath, // use the background project's path
-                  message: content,
-                  sessionId: event.sessionId,
-                  tool: currentAiTool,
-                  model: currentAiTool === 'claude-code' ? currentClaudeModel : undefined,
-                  customEndpoint: currentAiTool === 'custom-endpoint' ? currentCustomEndpoint : undefined,
-                  assistantMsgId,
-                  userMsgId,
-                })
-
-                if (!result.success) {
-                  updateBackgroundChatThread(event.projectPath, event.agentId, (thread) => ({
-                    ...thread,
-                    messages: thread.messages.map(m =>
-                      m.id === assistantMsgId ? { ...m, content: result.error || 'Failed to send message', status: 'error' as const } : m
-                    ),
-                    isTyping: false,
-                  }))
-                }
-              } catch (error) {
-                console.error('[useChatMessageHandler] Failed to send pending message for background agent:', error)
-                updateBackgroundChatThread(event.projectPath, event.agentId, (thread) => ({
-                  ...thread,
-                  messages: thread.messages.map(m =>
-                    m.id === assistantMsgId ? { ...m, content: error instanceof Error ? error.message : 'Failed to send message', status: 'error' as const } : m
-                  ),
-                  isTyping: false,
-                }))
-              }
-            }
             loadState.isLoadingAgent = false
           }
         return
@@ -333,66 +304,11 @@ export function useChatMessageHandler() {
 
       const loadState = getLoadingState(agentId)
 
-      // The backend now auto-sends the pending message after agent load (via loadAgent options).
-      // Clear the renderer-side copy so we don't double-send.
-      // If the pending message still exists here (legacy code path without backend auto-send),
-      // send it as a fallback.
+      // Clear renderer-side pending message — backend auto-sends via loadAgent options.
+      // No fallback send needed; the backend handles all failure cases via handleExit.
       if (loadState.pendingMessage) {
-        const { content, assistantMsgId, userMsgId } = loadState.pendingMessage
         loadState.pendingMessage = null
-
-        // Check if the backend already auto-sent (it would have started a new process).
-        // Use event.projectPath since that's the key the backend used for the process.
-        const isRunning = await window.chatAPI.isAgentRunning(agentId, event.projectPath)
-        if (!isRunning) {
-          // Backend didn't send (legacy path or auto-send failed) — send from renderer as fallback
-          console.log('[useChatMessageHandler] Fallback: sending pending message from renderer for:', agentId)
-          const currentAiTool = useStore.getState().aiTool
-          const currentClaudeModel = useStore.getState().claudeModel
-          const currentCustomEndpoint = useStore.getState().customEndpoint
-          const currentProjectPath = useStore.getState().projectPath
-          if (!currentProjectPath) {
-            loadState.isLoadingAgent = false
-            setChatTyping(agentId, false)
-            updateChatMessage(agentId, assistantMsgId, {
-              content: 'No project path available',
-              status: 'error',
-            })
-            return
-          }
-
-          try {
-            const result = await window.chatAPI.sendMessage({
-              agentId,
-              projectPath: currentProjectPath,
-              message: content,
-              sessionId,
-              tool: currentAiTool,
-              model: currentAiTool === 'claude-code' ? currentClaudeModel : undefined,
-              customEndpoint: currentAiTool === 'custom-endpoint' ? currentCustomEndpoint : undefined,
-              assistantMsgId,
-              userMsgId,
-            })
-
-            if (!result.success) {
-              updateChatMessage(agentId, assistantMsgId, {
-                content: result.error || 'Failed to send message',
-                status: 'error',
-              })
-              setChatTyping(agentId, false)
-            }
-          } catch (error) {
-            console.error('[useChatMessageHandler] Failed to send pending message:', error)
-            updateChatMessage(agentId, assistantMsgId, {
-              content: error instanceof Error ? error.message : 'Failed to send message',
-              status: 'error',
-            })
-            setChatTyping(agentId, false)
-          }
-        }
       }
-
-      // Clear loading flag (backend's sendMessage process is now tracked in runningProcesses)
       loadState.isLoadingAgent = false
     })
 
@@ -541,6 +457,7 @@ export function useChatMessageHandler() {
       unsubTextDelta()
       unsubToolUse()
       unsubMessageComplete()
+      unsubMessageDiscard()
       unsubAgentReady()
       unsubAgentExit()
       unsubTyping()
@@ -548,7 +465,7 @@ export function useChatMessageHandler() {
       unsubWizardStep()
     }
   }, [
-    addChatMessage, updateChatMessage, setChatTyping, setChatActivity,
+    addChatMessage, updateChatMessage, removeChatMessage, setChatTyping, setChatActivity,
     incrementUnread, setChatSessionId, saveStoryChatHistoryForAgent, getLoadingState,
   ])
 

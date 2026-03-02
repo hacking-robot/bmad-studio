@@ -455,6 +455,12 @@ export interface ChatMessageCompleteEvent {
   cost?: number
 }
 
+export interface ChatMessageDiscardEvent {
+  projectPath: string
+  agentId: string
+  messageId: string
+}
+
 export interface ChatAgentReadyEvent {
   projectPath: string
   agentId: string
@@ -531,6 +537,7 @@ export interface ChatAPI {
   onTextDelta: (callback: (event: ChatTextDeltaEvent) => void) => () => void
   onToolUse: (callback: (event: ChatToolUseEvent) => void) => () => void
   onMessageComplete: (callback: (event: ChatMessageCompleteEvent) => void) => () => void
+  onMessageDiscard: (callback: (event: ChatMessageDiscardEvent) => void) => () => void
   onAgentReady: (callback: (event: ChatAgentReadyEvent) => void) => () => void
   onAgentExit: (callback: (event: ChatAgentExitEvent) => void) => () => void
   onTyping: (callback: (event: ChatTypingEvent) => void) => () => void
@@ -572,6 +579,11 @@ const chatAPI: ChatAPI = {
     const listener = (_event: Electron.IpcRendererEvent, data: ChatMessageCompleteEvent) => callback(data)
     ipcRenderer.on('chat:message-complete', listener)
     return () => ipcRenderer.removeListener('chat:message-complete', listener)
+  },
+  onMessageDiscard: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ChatMessageDiscardEvent) => callback(data)
+    ipcRenderer.on('chat:message-discard', listener)
+    return () => ipcRenderer.removeListener('chat:message-discard', listener)
   },
   onAgentReady: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: ChatAgentReadyEvent) => callback(data)

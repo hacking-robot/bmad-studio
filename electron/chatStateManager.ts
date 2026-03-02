@@ -83,6 +83,12 @@ export interface ChatMessageCompleteEvent {
   cost?: number
 }
 
+export interface ChatMessageDiscardEvent {
+  projectPath: string
+  agentId: string
+  messageId: string
+}
+
 export interface ChatAgentReadyEvent {
   projectPath: string
   agentId: string
@@ -592,19 +598,31 @@ class ChatStateManager {
               apiDurationMs: parsed.duration_api_ms,
             } : undefined
 
-            // Emit message-complete
-            this.sendToRenderer('chat:message-complete', {
-              projectPath, agentId,
-              messageId: thread.currentMessageId,
-              stats,
-              cost: parsed.total_cost_usd,
-            } as ChatMessageCompleteEvent)
+            // Skip empty messages (placeholder that never received text — agent used tools only)
+            const hasContent = !!thread.streamBuffer
+            if (hasContent) {
+              // Emit message-complete
+              this.sendToRenderer('chat:message-complete', {
+                projectPath, agentId,
+                messageId: thread.currentMessageId,
+                stats,
+                cost: parsed.total_cost_usd,
+              } as ChatMessageCompleteEvent)
 
-            // Persist the completed message to JSONL
-            if (thread.currentMessage) {
-              thread.currentMessage.status = 'complete'
-              thread.currentMessage.stats = stats
-              this.appendMessage(projectPath, agentId, thread.currentMessage)
+              // Persist the completed message to JSONL
+              if (thread.currentMessage) {
+                thread.currentMessage.status = 'complete'
+                thread.currentMessage.stats = stats
+                this.appendMessage(projectPath, agentId, thread.currentMessage)
+                thread.currentMessage = null
+              }
+            } else {
+              // Empty message (tool-only turn) — tell renderer to remove the placeholder
+              console.log('[ChatStateManager] Discarding empty message:', { agentId, messageId: thread.currentMessageId })
+              this.sendToRenderer('chat:message-discard', {
+                projectPath, agentId,
+                messageId: thread.currentMessageId,
+              })
               thread.currentMessage = null
             }
           }
@@ -678,7 +696,14 @@ class ChatStateManager {
         thread.currentMessage.status = 'error'
         this.appendMessage(projectPath, agentId, thread.currentMessage)
       }
-      // else: code 0 with no content — agent completed silently, don't persist empty message
+      else {
+        // code 0 with no content — agent completed silently, don't persist empty message
+        // Tell renderer to remove the empty placeholder
+        this.sendToRenderer('chat:message-discard', {
+          projectPath, agentId,
+          messageId: thread.currentMessageId,
+        } as ChatMessageDiscardEvent)
+      }
       thread.currentMessage = null
     }
 

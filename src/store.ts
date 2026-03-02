@@ -494,6 +494,7 @@ interface AppState {
   setChatActivity: (agentId: string, activity: string | undefined) => void;
   markChatRead: (agentId: string) => void;
   incrementUnread: (agentId: string) => void;
+  removeChatMessage: (agentId: string, messageId: string) => void;
   clearChatThread: (agentId: string) => void;
   setAgentInitialized: (agentId: string, initialized: boolean) => void;
   setChatSessionId: (agentId: string, sessionId: string) => void;
@@ -1287,6 +1288,20 @@ export const useStore = create<AppState>()(
               },
             },
           };
+        }),
+      removeChatMessage: (agentId, messageId) =>
+        set((state) => {
+          const thread = state.chatThreads[agentId]
+          if (!thread) return state
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [agentId]: {
+                ...thread,
+                messages: thread.messages.filter(m => m.id !== messageId),
+              },
+            },
+          }
         }),
       clearChatThread: (agentId) =>
         set((state) => ({
