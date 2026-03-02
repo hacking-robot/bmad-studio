@@ -24,57 +24,56 @@ export default function BmadHelpWidget() {
   const projectPath = useStore((state) => state.projectPath)
   const aiTool = useStore((state) => state.aiTool)
   const chatThreads = useStore((state) => state.chatThreads)
-  const clearChatThread = useStore((state) => state.clearChatThread)
 
   const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
   const [isFullSize, setIsFullSize] = useState(false)
   const prevSizeRef = useRef({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
   const isResizing = useRef(false)
+  const sizeRef = useRef(size)
+  sizeRef.current = size
 
   const selectedToolInfo = AI_TOOLS.find(t => t.id === aiTool)
   const toolSupportsHeadless = selectedToolInfo?.cli.supportsHeadless ?? false
 
-  // Visibility guard: only show when BMAD project is loaded with headless-capable tool
-  if (!bmadScanResult || !projectPath || !toolSupportsHeadless) return null
-
-  const thread = chatThreads[AGENT_ID]
-  const unreadCount = thread?.unreadCount || 0
-
-  const handleToggle = () => {
-    const next = !bmadHelpOpen
-    setBmadHelpOpen(next)
-    if (next && thread) {
-      useStore.getState().markChatRead(AGENT_ID)
+  const handleToggle = useCallback(() => {
+    const state = useStore.getState()
+    const next = !state.bmadHelpOpen
+    state.setBmadHelpOpen(next)
+    if (next && state.chatThreads[AGENT_ID]) {
+      state.markChatRead(AGENT_ID)
     }
-  }
+  }, [])
 
-  const handleClear = () => {
-    clearChatThread(AGENT_ID)
-    window.chatAPI.cancelMessage(AGENT_ID, projectPath || undefined)
-  }
+  const handleClear = useCallback(() => {
+    useStore.getState().clearChatThread(AGENT_ID)
+    window.chatAPI.cancelMessage(AGENT_ID, useStore.getState().projectPath || undefined)
+  }, [])
 
-  const handleToggleFullSize = () => {
-    if (isFullSize) {
-      setSize(prevSizeRef.current)
-      setIsFullSize(false)
-    } else {
-      prevSizeRef.current = size
-      setSize({ width: MAX_WIDTH, height: MAX_HEIGHT })
-      setIsFullSize(true)
-    }
-  }
+  const handleToggleFullSize = useCallback(() => {
+    setIsFullSize(prev => {
+      if (prev) {
+        setSize(prevSizeRef.current)
+        return false
+      } else {
+        prevSizeRef.current = sizeRef.current
+        setSize({ width: MAX_WIDTH, height: MAX_HEIGHT })
+        return true
+      }
+    })
+  }, [])
 
   // Resize from top edge (height only)
   const handleTopResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     isResizing.current = true
     const startY = e.clientY
-    const startHeight = size.height
+    const startHeight = sizeRef.current.height
 
-    const onMouseMove = (e: MouseEvent) => {
+    const onMouseMove = (ev: MouseEvent) => {
       if (!isResizing.current) return
-      const newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startHeight - (e.clientY - startY)))
+      const newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startHeight - (ev.clientY - startY)))
       setSize(prev => ({ ...prev, height: newHeight }))
+      setIsFullSize(false)
     }
 
     const onMouseUp = () => {
@@ -89,19 +88,20 @@ export default function BmadHelpWidget() {
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
-  }, [size.height])
+  }, [])
 
   // Resize from left edge (width only)
   const handleLeftResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     isResizing.current = true
     const startX = e.clientX
-    const startWidth = size.width
+    const startWidth = sizeRef.current.width
 
-    const onMouseMove = (e: MouseEvent) => {
+    const onMouseMove = (ev: MouseEvent) => {
       if (!isResizing.current) return
-      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth - (e.clientX - startX)))
+      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth - (ev.clientX - startX)))
       setSize(prev => ({ ...prev, width: newWidth }))
+      setIsFullSize(false)
     }
 
     const onMouseUp = () => {
@@ -116,7 +116,7 @@ export default function BmadHelpWidget() {
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
-  }, [size.width])
+  }, [])
 
   // Resize from top-left corner (both)
   const handleCornerResize = useCallback((e: React.MouseEvent) => {
@@ -124,14 +124,15 @@ export default function BmadHelpWidget() {
     isResizing.current = true
     const startX = e.clientX
     const startY = e.clientY
-    const startWidth = size.width
-    const startHeight = size.height
+    const startWidth = sizeRef.current.width
+    const startHeight = sizeRef.current.height
 
-    const onMouseMove = (e: MouseEvent) => {
+    const onMouseMove = (ev: MouseEvent) => {
       if (!isResizing.current) return
-      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth - (e.clientX - startX)))
-      const newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startHeight - (e.clientY - startY)))
+      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth - (ev.clientX - startX)))
+      const newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startHeight - (ev.clientY - startY)))
       setSize({ width: newWidth, height: newHeight })
+      setIsFullSize(false)
     }
 
     const onMouseUp = () => {
@@ -146,7 +147,13 @@ export default function BmadHelpWidget() {
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
-  }, [size.width, size.height])
+  }, [])
+
+  // Visibility guard: AFTER all hooks
+  if (!bmadScanResult || !projectPath || !toolSupportsHeadless) return null
+
+  const thread = chatThreads[AGENT_ID]
+  const unreadCount = thread?.unreadCount || 0
 
   return (
     <>
