@@ -29,9 +29,10 @@ export default function BmadHelpWidget() {
   const isResizing = useRef(false)
   const sizeRef = useRef(size)
   sizeRef.current = size
+  // Track manually dragged size so toggle restores it instead of jumping to full
+  const manualSizeRef = useRef<{ width: number; height: number } | null>(null)
 
-  // Consider "full size" if both dimensions are at or near max
-  const isFullSize = size.width >= MAX_WIDTH - 20 && size.height >= MAX_HEIGHT - 20
+  const isSmall = size.width <= DEFAULT_WIDTH + 20 && size.height <= DEFAULT_HEIGHT + 20
 
   const selectedToolInfo = AI_TOOLS.find(t => t.id === aiTool)
   const toolSupportsHeadless = selectedToolInfo?.cli.supportsHeadless ?? false
@@ -52,11 +53,14 @@ export default function BmadHelpWidget() {
 
   const handleToggleFullSize = useCallback(() => {
     const cur = sizeRef.current
-    const atMax = cur.width >= MAX_WIDTH - 20 && cur.height >= MAX_HEIGHT - 20
-    if (atMax) {
-      setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
+    const atSmall = cur.width <= DEFAULT_WIDTH + 20 && cur.height <= DEFAULT_HEIGHT + 20
+    if (atSmall) {
+      // Expand to manual size if set, otherwise full size
+      const target = manualSizeRef.current || { width: MAX_WIDTH, height: MAX_HEIGHT }
+      setSize(target)
     } else {
-      setSize({ width: MAX_WIDTH, height: MAX_HEIGHT })
+      // Collapse to default small size
+      setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
     }
   }, [])
 
@@ -76,6 +80,7 @@ export default function BmadHelpWidget() {
 
     const onMouseUp = () => {
       isResizing.current = false
+      manualSizeRef.current = sizeRef.current
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       document.body.style.cursor = ''
@@ -104,6 +109,7 @@ export default function BmadHelpWidget() {
 
     const onMouseUp = () => {
       isResizing.current = false
+      manualSizeRef.current = sizeRef.current
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       document.body.style.cursor = ''
@@ -135,6 +141,7 @@ export default function BmadHelpWidget() {
 
     const onMouseUp = () => {
       isResizing.current = false
+      manualSizeRef.current = sizeRef.current
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       document.body.style.cursor = ''
@@ -222,8 +229,8 @@ export default function BmadHelpWidget() {
             <IconButton size="small" onClick={handleClear} sx={{ color: 'inherit', mr: 0.5 }} title="Clear chat">
               <DeleteOutlineIcon sx={{ fontSize: 16 }} />
             </IconButton>
-            <IconButton size="small" onClick={handleToggleFullSize} sx={{ color: 'inherit', mr: 0.5 }} title={isFullSize ? 'Restore size' : 'Full size'}>
-              {isFullSize ? <CloseFullscreenIcon sx={{ fontSize: 16 }} /> : <OpenInFullIcon sx={{ fontSize: 16 }} />}
+            <IconButton size="small" onClick={handleToggleFullSize} sx={{ color: 'inherit', mr: 0.5 }} title={isSmall ? 'Expand' : 'Collapse'}>
+              {isSmall ? <OpenInFullIcon sx={{ fontSize: 16 }} /> : <CloseFullscreenIcon sx={{ fontSize: 16 }} />}
             </IconButton>
             <IconButton size="small" onClick={() => setBmadHelpOpen(false)} sx={{ color: 'inherit' }}>
               <CloseIcon sx={{ fontSize: 18 }} />
