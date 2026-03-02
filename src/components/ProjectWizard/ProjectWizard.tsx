@@ -155,6 +155,20 @@ export default function ProjectWizard() {
     })
   }, [isActive, projectPath, outputFolder])
 
+  // On mount/restore, auto-select the agent for the current active step so the chat panel
+  // shows the correct agent (especially after background restore which sets selectedChatAgent: null)
+  useEffect(() => {
+    if (!isActive || !stepStatuses.length) return
+    const activeStepIndex = stepStatuses.findIndex(s => s === 'active')
+    if (activeStepIndex >= 0) {
+      const step = ACTIVE_STEPS[activeStepIndex]
+      if (step?.agentId) {
+        setSelectedChatAgent(step.agentId)
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive]) // Only on mount/activation — not on every step change
+
   // On resume, if install step is already done, trigger a BMAD scan so agent commands resolve.
   // The scan normally runs in handleInstallComplete, but on resume it's skipped.
   useEffect(() => {
@@ -566,8 +580,14 @@ export default function ProjectWizard() {
     // If command couldn't be resolved from scan, open agent chat without a pre-filled command
     updateWizardStep(stepIndex, 'active')
     // Cancel any running process for this agent before clearing
-    window.chatAPI.cancelMessage(agentId).catch(() => {})
+    window.chatAPI.cancelMessage(agentId, projectPath || undefined).catch(() => {})
     clearChatThread(agentId)
+    // Clear disk thread (JSONL) to prevent loadThreadData from restoring a stale sessionId.
+    // Without this, the race between loadThreadData and handleSendMessage can cause
+    // sendMessage to --resume a dead session instead of loading fresh, hanging the agent.
+    if (projectPath) {
+      window.chatAPI.clearThread(projectPath, agentId)
+    }
     setSelectedChatAgent(agentId)
     setViewMode('chat')
     if (command) {

@@ -34,6 +34,29 @@ export default function WelcomeDialog() {
   const themeMode = useStore((state) => state.themeMode)
   const recentProjects = useStore((state) => state.recentProjects)
   const removeRecentProject = useStore((state) => state.removeRecentProject)
+  const projectPath = useStore((state) => state.projectPath)
+  const chatThreads = useStore((state) => state.chatThreads)
+  const backgroundProjects = useStore((state) => state.backgroundProjects)
+  const fullCycleRunning = useStore((state) => state.fullCycle.isRunning)
+  const epicCycleRunning = useStore((state) => state.epicCycle.isRunning)
+
+  const getActiveAgentCount = (path: string): number => {
+    if (path === projectPath) {
+      return Object.values(chatThreads).filter(t => t?.isTyping).length
+    }
+    const bg = backgroundProjects[path]
+    if (!bg) return 0
+    return Object.values(bg.chatThreads).filter(t => t?.isTyping).length
+  }
+
+  const hasActiveWork = (path: string): boolean => {
+    if (path === projectPath) {
+      return fullCycleRunning || epicCycleRunning || getActiveAgentCount(path) > 0
+    }
+    const bg = backgroundProjects[path]
+    if (!bg) return false
+    return bg.fullCycle.isRunning || bg.epicCycle.isRunning || getActiveAgentCount(path) > 0
+  }
   const [showInfo, setShowInfo] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [remoteDialogOpen, setRemoteDialogOpen] = useState(false)
@@ -145,10 +168,29 @@ export default function WelcomeDialog() {
                             {project.isRemote && (
                               <Chip label="Remote" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: '0.6rem', ml: 0.5 }} />
                             )}
+                            {project.wizardInProgress && (
+                              <Chip label="Setting up" size="small" variant="outlined" color="warning" sx={{ height: 18, fontSize: '0.6rem', ml: 0.5 }} />
+                            )}
+                            {hasActiveWork(project.path) && (
+                              <>
+                                <Box sx={{
+                                  width: 8, height: 8, borderRadius: '50%', bgcolor: 'warning.main', flexShrink: 0, ml: 0.5,
+                                  animation: 'pulse 1.5s ease-in-out infinite',
+                                  '@keyframes pulse': { '0%, 100%': { opacity: 1 }, '50%': { opacity: 0.4 } },
+                                }} />
+                                {getActiveAgentCount(project.path) > 0 && (
+                                  <Chip
+                                    label={`${getActiveAgentCount(project.path)} agent${getActiveAgentCount(project.path) > 1 ? 's' : ''}`}
+                                    size="small" variant="outlined" color="warning"
+                                    sx={{ height: 18, fontSize: '0.6rem' }}
+                                  />
+                                )}
+                              </>
+                            )}
                           </Box>
                         }
                         secondary={project.isRemote ? project.remoteUrl : project.path}
-                        primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+                        primaryTypographyProps={{ variant: 'body2', fontWeight: 500, component: 'div' as const }}
                         secondaryTypographyProps={{
                           variant: 'caption',
                           noWrap: true,

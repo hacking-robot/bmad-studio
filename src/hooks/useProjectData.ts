@@ -1,13 +1,19 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useStore } from '../store'
 import { parseSprintStatus } from '../utils/parseSprintStatus'
 import { parseEpicsUnified, getAllStories } from '../utils/parseEpicsUnified'
 import { parseStoryContent } from '../utils/parseStory'
 import { getEpicsFullPath, getSprintStatusFullPath, hasBoardModule } from '../utils/projectTypes'
 import { mergeWorkflowConfig } from '../utils/workflowMerge'
-import { flushPendingThreadSave } from '../utils/chatUtils'
+import { initialFullCycleState, initialEpicCycleState } from '../types/fullCycle'
+import { initialWizardState } from '../types/projectWizard'
 import { createLocalReader } from '../utils/remoteFileReader'
 import type { BmadScanResult } from '../types/bmadScan'
+
+// Module-level flag to skip redundant loadProjectData() calls.
+// Set when restoring from background (data already present) or when BMAD scan
+// corrects projectType (which re-triggers the effect but data is already loaded).
+let _skipNextLoad = false
 
 // Module-level functions using getState() — no hook dependency, stable references,
 // safe to call from effects, file watchers, and UI event handlers.
@@ -130,15 +136,10 @@ export async function loadProjectData() {
       }
     }
 
-    // Batch data + epic auto-select into a single setState to avoid
-    // an intermediate "All Epics" render with all stories visible
-    const { selectedEpicId } = useStore.getState()
-    const autoSelect = selectedEpicId === null && epics.length > 0
     useStore.setState({
       epics,
       stories,
       lastRefreshed: new Date(),
-      ...(autoSelect ? { selectedEpicId: epics[0].id } : {})
     })
 
     // Get human review settings and status change recording
@@ -261,10 +262,19 @@ export function useProjectDataEffects() {
   const remoteViewingBranch = useStore((s) => s.remoteViewingBranch)
   const isRemoteProject = useStore((s) => s.isRemoteProject)
 
+  // Track which project config was last loaded to prevent duplicate loads
+  // (StrictMode double-invoke on mount, scan type corrections, etc.)
+  const lastLoadedKeyRef = useRef<string | null>(null)
+
   // Load project data when path changes or after hydration
   // Also re-runs when wizard deactivates (wizardIsActive flips false → triggers scan + load)
   // Also re-runs when remoteViewingBranch changes (to reload data from different ref)
   useEffect(() => {
+    // Capture and clear the skip flag immediately so it never lingers across runs
+    // (e.g., if this run returns early due to wizardIsActive, the flag must not persist)
+    const skipLoad = _skipNextLoad
+    _skipNextLoad = false
+
     if (!_hasHydrated || !projectPath || !projectType) return
     if (wizardIsActive) return
 
@@ -344,60 +354,93 @@ export function useProjectDataEffects() {
       return
     }
 
-    // Check if this is an incomplete project with a saved wizard state
-    // This happens when the app restarts mid-wizard (projectPath persisted but wizard state isn't)
-    window.wizardAPI.loadState(projectPath, outputFolder).then(async (savedState) => {
-      if (savedState && typeof savedState === 'object' && 'isActive' in (savedState as Record<string, unknown>)) {
-        const ws = savedState as import('../types/projectWizard').ProjectWizardState
-        if (ws.isActive) {
-          // Before resuming, check if the project is actually ready (wizard may have completed
-          // but the state file wasn't cleaned up due to a race condition)
-          const wsOutputFolder = ws.outputFolder || outputFolder
-          const sprintPath = `${projectPath}/${wsOutputFolder}/implementation-artifacts/sprint-status.yaml`
-          const epicsPlanningPath = `${projectPath}/${wsOutputFolder}/planning-artifacts/epics.md`
-          const epicsRootPath = `${projectPath}/${wsOutputFolder}/epics.md`
-          try {
-            const [sprintExists, epicsPlanningExists, epicsRootExists] = await Promise.all([
-              window.wizardAPI.checkFileExists(sprintPath),
-              window.wizardAPI.checkFileExists(epicsPlanningPath),
-              window.wizardAPI.checkFileExists(epicsRootPath)
-            ])
-            if (sprintExists && (epicsPlanningExists || epicsRootExists)) {
-              // Project has all required artifacts — wizard is done, clean up stale state
-              console.log('[useProjectData] Wizard state file is stale — artifacts exist, loading project normally')
-              window.wizardAPI.deleteState(projectPath, wsOutputFolder)
-              loadProjectData()
-              return
-            }
-          } catch { /* check failed, resume wizard as fallback */ }
+    // Capture the path this effect run is for — async callbacks must verify it hasn't changed.
+    // Without this guard, a stale async callback from a previous project can overwrite the
+    // current project's state (e.g., resumeWizard for the old project after switching to a new one).
+    const effectProjectPath = projectPath
 
-          // Auto-correct selectedModules from scan (fixes stale wizard state with wrong module)
-          try {
-            const scanResult = await window.fileAPI.scanBmad(projectPath) as BmadScanResult | null
-            if (scanResult) {
-              const detectedModule = scanResult.modules.includes('gds') ? 'gds' : 'bmm'
-              const currentModule = ws.selectedModules?.includes('gds') ? 'gds' : 'bmm'
-              if (detectedModule !== currentModule) {
-                console.log(`[useProjectData] Correcting wizard modules: [${currentModule}] → [${detectedModule}]`)
-                ws.selectedModules = [detectedModule]
+    // Skip redundant load when restoring from background, scan type correction,
+    // or StrictMode double-invoke (same project already loaded in this mount cycle)
+    const loadKey = `${projectPath}:${outputFolder}`
+    const alreadyLoaded = lastLoadedKeyRef.current === loadKey
+    lastLoadedKeyRef.current = loadKey
+
+    if (skipLoad || alreadyLoaded) {
+      // Data already available — skip wizard check + loadProjectData
+    } else {
+      // Check if this is an incomplete project with a saved wizard state
+      // This happens when the app restarts mid-wizard (projectPath persisted but wizard state isn't)
+      window.wizardAPI.loadState(projectPath, outputFolder).then(async (savedState) => {
+        // Guard: if projectPath changed since this effect started, abandon this async chain.
+        // Without this, a stale callback from a previous project can overwrite the current
+        // project's state via resumeWizard (e.g., switching from bmad_tictactoe to a new wizard).
+        if (useStore.getState().projectPath !== effectProjectPath) return
+
+        if (savedState && typeof savedState === 'object' && 'isActive' in (savedState as Record<string, unknown>)) {
+          const ws = savedState as import('../types/projectWizard').ProjectWizardState
+          if (ws.isActive) {
+            // Before resuming, check if the project is actually ready (wizard may have completed
+            // but the state file wasn't cleaned up due to a race condition)
+            const wsOutputFolder = ws.outputFolder || outputFolder
+            const sprintPath = `${projectPath}/${wsOutputFolder}/implementation-artifacts/sprint-status.yaml`
+            const epicsPlanningPath = `${projectPath}/${wsOutputFolder}/planning-artifacts/epics.md`
+            const epicsRootPath = `${projectPath}/${wsOutputFolder}/epics.md`
+            try {
+              const [sprintExists, epicsPlanningExists, epicsRootExists] = await Promise.all([
+                window.wizardAPI.checkFileExists(sprintPath),
+                window.wizardAPI.checkFileExists(epicsPlanningPath),
+                window.wizardAPI.checkFileExists(epicsRootPath)
+              ])
+              if (useStore.getState().projectPath !== effectProjectPath) return
+              if (sprintExists && (epicsPlanningExists || epicsRootExists)) {
+                // Project has all required artifacts — wizard is done, clean up stale state
+                console.log('[useProjectData] Wizard state file is stale — artifacts exist, loading project normally')
+                window.wizardAPI.deleteState(projectPath, wsOutputFolder)
+                loadProjectData()
+                return
               }
-            }
-          } catch { /* scan failed, resume with existing modules */ }
-          // Resume the wizard with its stored output folder (prefer wizard state over store)
-          const { resumeWizard } = useStore.getState()
-          resumeWizard(ws)
-          return
+            } catch { /* check failed, resume wizard as fallback */ }
+
+            // Final staleness check before resuming wizard
+            if (useStore.getState().projectPath !== effectProjectPath) return
+
+            // Auto-correct selectedModules from scan (fixes stale wizard state with wrong module)
+            try {
+              const scanResult = await window.fileAPI.scanBmad(projectPath) as BmadScanResult | null
+              if (scanResult) {
+                const detectedModule = scanResult.modules.includes('gds') ? 'gds' : 'bmm'
+                const currentModule = ws.selectedModules?.includes('gds') ? 'gds' : 'bmm'
+                if (detectedModule !== currentModule) {
+                  console.log(`[useProjectData] Correcting wizard modules: [${currentModule}] → [${detectedModule}]`)
+                  ws.selectedModules = [detectedModule]
+                }
+              }
+            } catch { /* scan failed, resume with existing modules */ }
+
+            // Final staleness check before overwriting project state
+            if (useStore.getState().projectPath !== effectProjectPath) return
+
+            // Resume the wizard with its stored output folder (prefer wizard state over store)
+            const { resumeWizard } = useStore.getState()
+            resumeWizard(ws)
+            return
+          }
         }
-      }
-      // No wizard state — load project data normally
-      loadProjectData()
-    }).catch(() => {
-      // No wizard state file — load normally
-      loadProjectData()
-    })
+        // No wizard state — load project data normally
+        if (useStore.getState().projectPath !== effectProjectPath) return
+        loadProjectData()
+      }).catch(() => {
+        // No wizard state file — load normally
+        if (useStore.getState().projectPath !== effectProjectPath) return
+        loadProjectData()
+      })
+    }
 
     // Scan BMAD project files for agents, workflows, and version info
     window.fileAPI.scanBmad(projectPath).then((scanResult) => {
+      // Guard: if projectPath changed since this effect started, discard stale scan results
+      if (useStore.getState().projectPath !== effectProjectPath) return
+
       const result = scanResult as BmadScanResult | null
       useStore.getState().setBmadScanResult(result)
       if (result) {
@@ -453,6 +496,8 @@ export function useProjectDataEffects() {
         const { projectType: currentProjectType } = useStore.getState()
         if (currentProjectType !== scanDetectedType) {
           console.log(`[useProjectData] Correcting project type: ${currentProjectType} → ${scanDetectedType}`)
+          // Skip the redundant loadProjectData that the effect re-trigger would cause
+          _skipNextLoad = true
           useStore.getState().setProjectType(scanDetectedType)
           // Set initial viewMode for dashboard projects
           if (scanDetectedType === 'dashboard') {
@@ -481,9 +526,11 @@ export function useProjectDataEffects() {
 
     // Load project cost total from ledger
     window.costAPI.loadCosts(projectPath, outputFolder).then((entries) => {
+      if (useStore.getState().projectPath !== effectProjectPath) return
       const total = entries.reduce((sum: number, e: { totalCostUsd?: number }) => sum + (e.totalCostUsd || 0), 0)
       useStore.getState().setProjectCostTotal(total)
     }).catch(() => {
+      if (useStore.getState().projectPath !== effectProjectPath) return
       useStore.getState().setProjectCostTotal(0)
     })
 
@@ -675,57 +722,117 @@ export function useProjectData() {
   const switchToProject = useCallback((project: import('../store').RecentProject) => {
     if (!project.projectType) return
 
-    // Flush any pending debounced thread save and persist all in-memory threads
-    // before clearing state, so switching back restores them from disk
+    // No need to save threads — backend already writes to JSONL during streaming
     const state = useStore.getState()
-    flushPendingThreadSave()
+
+    // Always save current project to background when switching.
+    // Even projects with only loading agents (no messages yet) need to be saved,
+    // otherwise IPC events arriving after the switch are silently dropped.
     if (state.projectPath) {
-      for (const [agentId, thread] of Object.entries(state.chatThreads)) {
-        if (thread && thread.messages.length > 0) {
-          window.chatAPI.saveThread(state.projectPath, agentId, thread)
-        }
-      }
+      state.saveToBackground()
     }
+
+    // Re-read background projects AFTER save — the `state` variable captured above
+    // is stale after saveToBackground() mutates the store
+    const currentBgProjects = useStore.getState().backgroundProjects
+    const bgState = currentBgProjects[project.path]
 
     // Batch all state updates into a single set() to avoid 9 separate persist cycles
     // Each persist cycle reads/writes the 645KB settings file via IPC
     const filtered = state.recentProjects.filter((p) => p.path !== project.path)
     const updatedRecent = [project, ...filtered].slice(0, 10)
-    useStore.setState({
-      projectPath: project.path,
-      projectType: project.projectType,
-      outputFolder: project.outputFolder || '_bmad-output',
-      developerMode: project.developerMode || 'ai',
-      baseBranch: project.baseBranch || 'main',
-      enableEpicBranches: project.enableEpicBranches ?? false,
-      allowDirectEpicMerge: project.allowDirectEpicMerge ?? false,
-      disableGitBranching: project.disableGitBranching ?? true,
-      colorTheme: project.colorTheme || 'gruvbox-dark',
-      selectedEpicId: null,
-      recentProjects: updatedRecent,
-      chatThreads: {},
-      selectedChatAgent: null,
-      gitDiffPanelOpen: false,
-      gitDiffPanelBranch: null,
-      // Show loading immediately so user sees spinner instead of stale "All Epics" board
-      loading: true,
-      epics: [],
-      stories: [],
-      // Set correct viewMode for the target project type
-      viewMode: project.projectType === 'dashboard' ? 'dashboard' : 'board',
-      // Clear stale scan data so hasBrd computes correctly before new scan completes
-      bmadScanResult: null,
-      scannedWorkflowConfig: null,
-      // Clear remote viewing state when switching projects
-      remoteViewingBranch: null,
-      attachedLocalProjectPath: null,
-      remoteUpdateAvailable: false,
-      // Restore remote project state from recent project entry
-      isRemoteProject: project.isRemote ?? false,
-      remoteProjectUrl: project.remoteUrl ?? null,
-      // Remote projects have no local checkout — set placeholder so UI components render
-      ...(project.isRemote ? { currentBranch: '(remote)' } : {})
-    })
+
+    if (bgState) {
+      // Restore from background — skip the redundant loadProjectData() that the effect would trigger
+      _skipNextLoad = true
+      // Restore chatThreads from background for instant display (status, messages, session IDs).
+      // The loadAllAgentStatuses effect will merge in any in-memory updates from the backend.
+      const { [project.path]: _, ...restBackground } = currentBgProjects
+      useStore.setState({
+        backgroundProjects: restBackground,
+        projectPath: project.path,
+        projectType: project.projectType,
+        outputFolder: bgState.outputFolder,
+        developerMode: bgState.developerMode,
+        baseBranch: bgState.baseBranch,
+        enableEpicBranches: bgState.enableEpicBranches,
+        allowDirectEpicMerge: project.allowDirectEpicMerge ?? false,
+        disableGitBranching: bgState.disableGitBranching,
+        colorTheme: project.colorTheme || 'gruvbox-dark',
+        selectedEpicId: null,
+        recentProjects: updatedRecent,
+        // Restore orchestration state from background
+        fullCycle: bgState.fullCycle,
+        epicCycle: bgState.epicCycle,
+        // Restore chatThreads with live typing/activity state from background.
+        // Background event routing keeps these up-to-date while the project is in the background.
+        chatThreads: { ...bgState.chatThreads },
+        stories: bgState.stories,
+        epics: bgState.epics,
+        aiTool: bgState.aiTool,
+        claudeModel: bgState.claudeModel,
+        customEndpoint: bgState.customEndpoint,
+        fullCycleReviewCount: bgState.fullCycleReviewCount,
+        scannedWorkflowConfig: bgState.scannedWorkflowConfig,
+        bmadScanResult: bgState.bmadScanResult,
+        selectedChatAgent: null,
+        gitDiffPanelOpen: false,
+        gitDiffPanelBranch: null,
+        // Don't show loading — we already have data from background
+        loading: false,
+        viewMode: project.projectType === 'dashboard' ? 'dashboard' : 'board',
+        remoteViewingBranch: null,
+        attachedLocalProjectPath: null,
+        remoteUpdateAvailable: false,
+        isRemoteProject: project.isRemote ?? false,
+        remoteProjectUrl: project.remoteUrl ?? null,
+        ...(project.isRemote ? { currentBranch: '(remote)' } : {}),
+        // Restore wizard state from background if it was active, otherwise clear it
+        projectWizard: bgState.projectWizard ?? initialWizardState,
+      })
+    } else {
+      // Clean load — no background state, fresh start
+      useStore.setState({
+        projectPath: project.path,
+        projectType: project.projectType,
+        outputFolder: project.outputFolder || '_bmad-output',
+        developerMode: project.developerMode || 'ai',
+        baseBranch: project.baseBranch || 'main',
+        enableEpicBranches: project.enableEpicBranches ?? false,
+        allowDirectEpicMerge: project.allowDirectEpicMerge ?? false,
+        disableGitBranching: project.disableGitBranching ?? true,
+        colorTheme: project.colorTheme || 'gruvbox-dark',
+        selectedEpicId: null,
+        recentProjects: updatedRecent,
+        chatThreads: {},
+        selectedChatAgent: null,
+        gitDiffPanelOpen: false,
+        gitDiffPanelBranch: null,
+        // Show loading immediately so user sees spinner instead of stale "All Epics" board
+        loading: true,
+        epics: [],
+        stories: [],
+        // Reset cycle state for clean project
+        fullCycle: initialFullCycleState,
+        epicCycle: initialEpicCycleState,
+        // Set correct viewMode for the target project type
+        viewMode: project.projectType === 'dashboard' ? 'dashboard' : 'board',
+        // Clear stale scan data so hasBrd computes correctly before new scan completes
+        bmadScanResult: null,
+        scannedWorkflowConfig: null,
+        // Clear remote viewing state when switching projects
+        remoteViewingBranch: null,
+        attachedLocalProjectPath: null,
+        remoteUpdateAvailable: false,
+        // Restore remote project state from recent project entry
+        isRemoteProject: project.isRemote ?? false,
+        remoteProjectUrl: project.remoteUrl ?? null,
+        // Remote projects have no local checkout — set placeholder so UI components render
+        ...(project.isRemote ? { currentBranch: '(remote)' } : {}),
+        // Clear wizard state from previous project (effect will resume if target has wizard state)
+        projectWizard: initialWizardState,
+      })
+    }
   }, [])
 
   return {

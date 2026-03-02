@@ -61,45 +61,84 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
   const agent = agents.find((a) => a.id === agentId)
 
   // Get global handler context for registering pending messages
-  const { setPendingMessage, setCurrentMessageId, clearAgentState } = useChatMessageHandlerContext()
+  const { setPendingMessage, setCurrentMessageId, clearAgentState, isAgentLoading } = useChatMessageHandlerContext()
 
-  // Sync isTyping state with actual process status on mount/agent change
-  // This detects crashed processes that didn't send proper exit events
+  // Detect orphaned processes — runs whenever isTyping becomes true (or is true on mount).
+  // Checks at 3s and confirms at 6s. The isAgentLoading guard prevents false positives
+  // during the agent-load → sendMessage handoff gap.
+  const orphanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
-    async function syncAgentStatus() {
-      const currentThread = useStore.getState().chatThreads[agentId]
-      const isTypingInStore = currentThread?.isTyping || false
-
-      // If store says we're typing, verify with main process
-      if (isTypingInStore) {
-        const isActuallyRunning = await window.chatAPI.isAgentRunning(agentId)
-
-        if (!isActuallyRunning) {
-          console.log('[ChatThread] Detected crashed/orphaned agent:', agentId)
-          setChatTyping(agentId, false)
-          setChatActivity(agentId, undefined)
-
-          // Find and update any pending/streaming message to show error
-          const messages = currentThread?.messages || []
-          const pendingMsg = messages.find(m => m.status === 'pending' || m.status === 'streaming')
-          if (pendingMsg) {
-            const errorContent = pendingMsg.content
-              ? pendingMsg.content + '\n\n*[Process terminated unexpectedly]*'
-              : '*[Process terminated unexpectedly]*'
-            updateChatMessage(agentId, pendingMsg.id, {
-              content: errorContent,
-              status: 'error'
-            })
-          }
-
-          // Clear global handler state for this agent
-          clearAgentState(agentId)
-        }
-      }
+    // Clear any existing timer when typing state changes
+    if (orphanTimerRef.current) {
+      clearTimeout(orphanTimerRef.current)
+      orphanTimerRef.current = null
     }
 
-    syncAgentStatus()
-  }, [agentId, setChatTyping, setChatActivity, updateChatMessage, clearAgentState])
+    if (!isTyping) return
+
+    const checkOrphan = async (): Promise<boolean> => {
+      // Re-read state — if the exit handler already ran, isTyping will be false
+      const currentThread = useStore.getState().chatThreads[agentId]
+      if (!currentThread?.isTyping) return false
+
+      // Skip if agent is in loading phase (includes the gap between agent-ready and sendMessage)
+      if (isAgentLoading(agentId)) return false
+
+      const isActuallyRunning = await window.chatAPI.isAgentRunning(agentId, projectPath || undefined)
+
+      if (!isActuallyRunning) {
+        // Final check — state may have changed during the IPC round-trip
+        const recheckThread = useStore.getState().chatThreads[agentId]
+        if (!recheckThread?.isTyping) return false
+        if (isAgentLoading(agentId)) return false
+        return true // genuinely orphaned
+      }
+      return false
+    }
+
+    const cleanupOrphan = () => {
+      console.log('[ChatThread] Detected crashed/orphaned agent:', agentId)
+      setChatTyping(agentId, false)
+      setChatActivity(agentId, undefined)
+
+      // Find and update any pending/streaming message to show error
+      const recheckThread = useStore.getState().chatThreads[agentId]
+      const msgs = recheckThread?.messages || []
+      const pendingMsg = msgs.find(m => m.status === 'pending' || m.status === 'streaming')
+      if (pendingMsg) {
+        const errorContent = pendingMsg.content
+          ? pendingMsg.content + '\n\n*[Process terminated unexpectedly]*'
+          : '*[Process terminated unexpectedly]*'
+        updateChatMessage(agentId, pendingMsg.id, {
+          content: errorContent,
+          status: 'error'
+        })
+      }
+
+      clearAgentState(agentId)
+    }
+
+    // First check at 3s — if orphaned, confirming check at 6s
+    orphanTimerRef.current = setTimeout(async () => {
+      const maybeOrphaned = await checkOrphan()
+      if (!maybeOrphaned) return
+
+      // Second check 3s later to confirm (avoids false positives from transient gaps)
+      orphanTimerRef.current = setTimeout(async () => {
+        const confirmedOrphaned = await checkOrphan()
+        if (!confirmedOrphaned) return
+        cleanupOrphan()
+      }, 3000)
+    }, 3000)
+
+    return () => {
+      if (orphanTimerRef.current) {
+        clearTimeout(orphanTimerRef.current)
+        orphanTimerRef.current = null
+      }
+    }
+  }, [isTyping, agentId, projectPath, setChatTyping, setChatActivity, updateChatMessage, clearAgentState, isAgentLoading])
 
 
   const handleSendMessage = useCallback(async (content: string) => {
@@ -137,9 +176,9 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
 
     if (!hasSession) {
       // First message - need to load the agent first, then send the message
-      console.log('[ChatThread] No session, loading agent first...')
-      // Register pending message with global handler
-      setPendingMessage(agentId, content.trim(), assistantMsgId)
+      console.log('[ChatThread] No session, loading agent first...', { agentId, projectPath, storeProjectPath: useStore.getState().projectPath })
+      // Register pending message with global handler for isAgentLoading guard (orphan detector)
+      setPendingMessage(agentId, content.trim(), assistantMsgId, userMsgId)
 
       try {
         const currentProjectType = useStore.getState().projectType || 'bmm'
@@ -148,6 +187,8 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
         const currentCustomEndpoint = useStore.getState().customEndpoint
         // Pass the resolved agent command from workflow config (first command is the invocation command)
         const agentCommand = agent?.commands?.[0]
+        // Include pending message in loadAgent call so the backend auto-sends after load.
+        // This eliminates the fragile renderer round-trip through onAgentReady.
         const result = await window.chatAPI.loadAgent({
           agentId,
           projectPath,
@@ -155,7 +196,10 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
           tool: currentAiTool,
           model: currentAiTool === 'claude-code' ? currentClaudeModel : undefined,
           customEndpoint: currentAiTool === 'custom-endpoint' ? currentCustomEndpoint : undefined,
-          agentCommand
+          agentCommand,
+          pendingMessage: content.trim(),
+          pendingAssistantMsgId: assistantMsgId,
+          pendingUserMsgId: userMsgId,
         })
 
         if (!result.success) {
@@ -166,7 +210,7 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
           setChatTyping(agentId, false)
           clearAgentState(agentId)
         }
-        // If successful, the global handler's onAgentLoaded will send the pending message
+        // If successful, the global handler's onAgentReady will send the pending message
       } catch (error) {
         updateChatMessage(agentId, assistantMsgId, {
           content: error instanceof Error ? error.message : 'Failed to load agent',
@@ -191,7 +235,9 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
           sessionId: currentSessionId,
           tool: currentAiTool,
           model: currentAiTool === 'claude-code' ? currentClaudeModel : undefined,
-          customEndpoint: currentAiTool === 'custom-endpoint' ? currentCustomEndpoint : undefined
+          customEndpoint: currentAiTool === 'custom-endpoint' ? currentCustomEndpoint : undefined,
+          assistantMsgId,
+          userMsgId,
         })
 
         if (!result.success) {
@@ -215,26 +261,28 @@ export default function ChatThread({ agentId }: ChatThreadProps) {
 
   const handleCancel = useCallback(async () => {
     try {
-      const result = await window.chatAPI.cancelMessage(agentId)
+      const result = await window.chatAPI.cancelMessage(agentId, projectPath || undefined)
       if (result) {
         console.log('[ChatThread] Cancelled message for agent:', agentId)
-        // Find the current streaming/pending message and update it
-        const currentMessages = useStore.getState().chatThreads[agentId]?.messages || []
-        const pendingMsg = currentMessages.find(m => m.status === 'pending' || m.status === 'streaming')
-        if (pendingMsg) {
-          const currentContent = pendingMsg.content || ''
-          updateChatMessage(agentId, pendingMsg.id, {
-            content: currentContent + (currentContent ? '\n\n' : '') + '*[Response cancelled]*',
-            status: 'complete'
-          })
-        }
-        setChatTyping(agentId, false)
-        clearAgentState(agentId)
       }
     } catch (error) {
       console.error('[ChatThread] Failed to cancel:', error)
     }
-  }, [agentId, setChatTyping, updateChatMessage, clearAgentState])
+    // Always clear typing when user explicitly clicks stop, regardless of cancel result.
+    // The process may have already exited but the exit event hasn't arrived yet,
+    // or the composite key lookup may fail during project restore scenarios.
+    const currentMessages = useStore.getState().chatThreads[agentId]?.messages || []
+    const pendingMsg = currentMessages.find(m => m.status === 'pending' || m.status === 'streaming')
+    if (pendingMsg) {
+      const currentContent = pendingMsg.content || ''
+      updateChatMessage(agentId, pendingMsg.id, {
+        content: currentContent + (currentContent ? '\n\n' : '') + '*[Response cancelled]*',
+        status: 'complete'
+      })
+    }
+    setChatTyping(agentId, false)
+    clearAgentState(agentId)
+  }, [agentId, projectPath, setChatTyping, updateChatMessage, clearAgentState])
 
   // Scroll to bottom when typing starts only if already at bottom (handles wizard flow where thread is freshly created)
   useEffect(() => {

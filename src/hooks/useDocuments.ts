@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useStore } from '../store'
 import type { VirtualFileReader } from '../utils/remoteFileReader'
 
@@ -307,7 +307,7 @@ export function useDocuments() {
   }, [loadDocuments])
 
   // Flat list of all files across all folders
-  const allFiles = folders.flatMap(f => f.files)
+  const allFiles = useMemo(() => folders.flatMap(f => f.files), [folders])
 
   return {
     folders,

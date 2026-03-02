@@ -3,6 +3,7 @@ import { EventEmitter } from 'events'
 import { BrowserWindow } from 'electron'
 import { getAugmentedEnv, findBinary } from './envUtils'
 import { buildArgs, getToolConfig, supportsHeadless, ClaudeModel, CustomEndpointConfig } from './cliToolManager'
+import { chatStateManager } from './chatStateManager'
 
 // Supported AI tools
 type AITool = 'claude-code' | 'custom-endpoint' | 'cursor' | 'windsurf' | 'roo-code' | 'aider'
@@ -233,21 +234,25 @@ export const agentManager = new AgentManager()
 // Uses --resume with session ID for conversation continuity
 
 class ChatAgentManager {
-  private mainWindow: BrowserWindow | null = null
-  private runningProcesses: Map<string, ChildProcess> = new Map() // Track running processes by agentId
+  private runningProcesses: Map<string, { proc: ChildProcess; projectPath: string }> = new Map()
 
-  setMainWindow(window: BrowserWindow | null) {
-    this.mainWindow = window
+  // Composite key for process isolation across projects
+  private compositeKey(projectPath: string, agentId: string): string {
+    return `${projectPath}::${agentId}`
   }
 
-  private sendToRenderer(channel: string, data: unknown) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(channel, data)
+  // Find a process entry by agentId suffix (when projectPath is unknown)
+  private findByAgentId(agentId: string): { key: string; entry: { proc: ChildProcess; projectPath: string } } | null {
+    for (const [key, entry] of this.runningProcesses) {
+      if (key.endsWith(`::${agentId}`)) return { key, entry }
     }
+    return null
   }
 
   // Load a BMAD agent - spawns the AI tool with just the agent command
   // Returns session ID via chat:exit event for subsequent messages (Claude only)
+  // If pendingMessage is provided, automatically sends it after agent load completes,
+  // eliminating the fragile renderer round-trip through chat:agent-ready.
   loadAgent(
     options: {
       agentId: string
@@ -257,6 +262,9 @@ class ChatAgentManager {
       model?: ClaudeModel
       customEndpoint?: CustomEndpointConfig | null
       agentCommand?: string // Pre-resolved agent command from scan data (preferred over hardcoded format)
+      pendingMessage?: string // Message to auto-send after agent load succeeds
+      pendingAssistantMsgId?: string // Placeholder message ID for the auto-sent message
+      pendingUserMsgId?: string // User message ID for JSONL persistence
     }
   ): { success: boolean; error?: string } {
     const tool = options.tool || 'claude-code'
@@ -274,12 +282,13 @@ class ChatAgentManager {
       return { success: false, error: `Unknown tool: ${tool}` }
     }
 
-    // Kill any existing process for this agent to prevent stale close events
-    const existingProc = this.runningProcesses.get(options.agentId)
-    if (existingProc) {
+    // Kill any existing process for this agent+project to prevent stale close events
+    const key = this.compositeKey(options.projectPath, options.agentId)
+    const existing = this.runningProcesses.get(key)
+    if (existing) {
       console.log('[ChatAgentManager] Killing existing process for agent before new load:', options.agentId)
-      try { existingProc.kill('SIGTERM') } catch { /* ignore */ }
-      this.runningProcesses.delete(options.agentId)
+      try { existing.proc.kill('SIGTERM') } catch { /* ignore */ }
+      this.runningProcesses.delete(key)
     }
 
     try {
@@ -344,7 +353,7 @@ class ChatAgentManager {
       console.log('[ChatAgentManager] Agent load process spawned, PID:', proc.pid)
 
       // Track running process for potential cancellation
-      this.runningProcesses.set(options.agentId, proc)
+      this.runningProcesses.set(key, { proc, projectPath: options.projectPath })
 
       // Track session ID from response
       let capturedSessionId: string | undefined
@@ -352,7 +361,7 @@ class ChatAgentManager {
       // Line buffer to handle partial JSON lines split across data chunks
       let loadLineBuffer = ''
 
-      // Handle stdout - capture session ID
+      // Handle stdout - capture session ID, route through chatStateManager
       proc.stdout?.on('data', (data: Buffer) => {
         loadLineBuffer += data.toString('utf-8')
 
@@ -377,28 +386,19 @@ class ChatAgentManager {
           }
         }
 
-        // Send complete lines to renderer for display
+        // Route through chatStateManager (handles both semantic + old event emission)
         if (completeLines.length > 0) {
-          this.sendToRenderer('chat:output', {
-            agentId: options.agentId,
-            type: 'stdout',
-            chunk: completeLines.join('\n') + '\n',
-            timestamp: Date.now(),
-            isAgentLoad: true
-          })
+          chatStateManager.handleOutput(
+            options.projectPath, options.agentId,
+            completeLines.join('\n') + '\n', true
+          )
         }
       })
 
       // Handle stderr
       proc.stderr?.on('data', (data: Buffer) => {
         const chunk = data.toString('utf-8')
-        this.sendToRenderer('chat:output', {
-          agentId: options.agentId,
-          type: 'stderr',
-          chunk,
-          timestamp: Date.now(),
-          isAgentLoad: true
-        })
+        chatStateManager.handleStderr(options.projectPath, options.agentId, chunk, true)
       })
 
       // Use 'close' instead of 'exit' to ensure all stdio streams are fully consumed
@@ -406,8 +406,8 @@ class ChatAgentManager {
       proc.on('close', (code, signal) => {
         // Guard against stale close events from old processes that were replaced.
         // If another process has taken over this agentId, ignore this event.
-        const currentProc = this.runningProcesses.get(options.agentId)
-        if (currentProc && currentProc !== proc) {
+        const currentEntry = this.runningProcesses.get(key)
+        if (currentEntry && currentEntry.proc !== proc) {
           console.log('[ChatAgentManager] Ignoring stale agent-load close event for:', options.agentId)
           return
         }
@@ -422,40 +422,65 @@ class ChatAgentManager {
           } catch {
             // Not JSON, ignore
           }
-          this.sendToRenderer('chat:output', {
-            agentId: options.agentId,
-            type: 'stdout',
-            chunk: loadLineBuffer + '\n',
-            timestamp: Date.now(),
-            isAgentLoad: true
-          })
+          chatStateManager.handleOutput(
+            options.projectPath, options.agentId,
+            loadLineBuffer + '\n', true
+          )
           loadLineBuffer = ''
         }
 
         console.log('[ChatAgentManager] Agent load completed:', { agentId: options.agentId, code, signal, sessionId: capturedSessionId })
-        this.runningProcesses.delete(options.agentId)
-        this.sendToRenderer('chat:agent-loaded', {
-          agentId: options.agentId,
-          code,
-          signal,
-          sessionId: capturedSessionId,
-          timestamp: Date.now()
-        })
+        this.runningProcesses.delete(key)
+        // Route through chatStateManager (emits both new + old events)
+        chatStateManager.handleAgentLoaded(
+          options.projectPath, options.agentId, code,
+          capturedSessionId, undefined
+        )
+
+        // Auto-send pending message after successful agent load.
+        // This eliminates the fragile renderer round-trip (setPendingMessage → onAgentReady → sendMessage)
+        // that was prone to race conditions when GlobalChatHandler remounted or project paths changed.
+        if (code === 0 && capturedSessionId && options.pendingMessage && options.pendingAssistantMsgId) {
+          console.log('[ChatAgentManager] Auto-sending pending message after agent load:', options.agentId)
+          // Persist user message to JSONL (mirroring chat-send-message IPC handler)
+          if (options.pendingUserMsgId) {
+            chatStateManager.appendMessage(options.projectPath, options.agentId, {
+              id: options.pendingUserMsgId, role: 'user', content: options.pendingMessage,
+              timestamp: Date.now(), status: 'complete'
+            })
+          }
+          // Set current message ID so streaming output uses the renderer's placeholder ID
+          chatStateManager.setCurrentMessageId(options.projectPath, options.agentId, options.pendingAssistantMsgId)
+          const sendResult = this.sendMessage({
+            agentId: options.agentId,
+            projectPath: options.projectPath,
+            message: options.pendingMessage,
+            sessionId: capturedSessionId,
+            tool: options.tool,
+            model: options.model,
+            customEndpoint: options.customEndpoint,
+          })
+          if (!sendResult.success) {
+            console.error('[ChatAgentManager] Auto-send failed:', sendResult.error)
+            // Emit error to renderer so it can show the failure
+            chatStateManager.handleExit(
+              options.projectPath, options.agentId,
+              -1, null, capturedSessionId, false
+            )
+          }
+        }
       })
 
       // Handle errors
       proc.on('error', (error) => {
         console.error('[ChatAgentManager] Agent load error:', error)
         // Only send error if this process is still the current one
-        const currentProc = this.runningProcesses.get(options.agentId)
-        if (currentProc && currentProc !== proc) return
-        this.sendToRenderer('chat:agent-loaded', {
-          agentId: options.agentId,
-          code: -1,
-          signal: null,
-          error: error.message,
-          timestamp: Date.now()
-        })
+        const currentEntry = this.runningProcesses.get(key)
+        if (currentEntry && currentEntry.proc !== proc) return
+        chatStateManager.handleAgentLoaded(
+          options.projectPath, options.agentId, -1,
+          undefined, error.message
+        )
       })
 
       return { success: true }
@@ -479,12 +504,12 @@ class ChatAgentManager {
     }
   ): { success: boolean; error?: string } {
     const tool = options.tool || 'claude-code'
-    
+
     // Check if tool supports headless operation
     if (!supportsHeadless(tool)) {
-      return { 
-        success: false, 
-        error: `${tool} does not support headless CLI operation. Use the IDE directly.` 
+      return {
+        success: false,
+        error: `${tool} does not support headless CLI operation. Use the IDE directly.`
       }
     }
 
@@ -493,12 +518,13 @@ class ChatAgentManager {
       return { success: false, error: `Unknown tool: ${tool}` }
     }
 
-    // Kill any existing process for this agent to prevent stale close events
-    const existingProc = this.runningProcesses.get(options.agentId)
-    if (existingProc) {
+    // Kill any existing process for this agent+project to prevent stale close events
+    const key = this.compositeKey(options.projectPath, options.agentId)
+    const existing = this.runningProcesses.get(key)
+    if (existing) {
       console.log('[ChatAgentManager] Killing existing process for agent before new message:', options.agentId)
-      try { existingProc.kill('SIGTERM') } catch { /* ignore */ }
-      this.runningProcesses.delete(options.agentId)
+      try { existing.proc.kill('SIGTERM') } catch { /* ignore */ }
+      this.runningProcesses.delete(key)
     }
 
     try {
@@ -563,7 +589,7 @@ class ChatAgentManager {
       console.log('[ChatAgentManager] Process spawned, PID:', proc.pid)
 
       // Track running process for potential cancellation
-      this.runningProcesses.set(options.agentId, proc)
+      this.runningProcesses.set(key, { proc, projectPath: options.projectPath })
 
       // Track session ID from response
       let capturedSessionId: string | undefined
@@ -571,7 +597,15 @@ class ChatAgentManager {
       // Line buffer to handle partial JSON lines split across data chunks
       let msgLineBuffer = ''
 
-      // Handle stdout - also capture session ID from result message
+      // --resume replay filter: local to this closure, no race conditions.
+      // When --resume is used, Claude CLI replays the full conversation as complete
+      // user/assistant messages before streaming the new response. We track the last
+      // assistant message and only forward it when result arrives (meaning it's the
+      // actual new response, not a replayed turn).
+      let replaySkip = !!options.sessionId
+      let lastReplayAssistantLine = ''
+
+      // Handle stdout - capture session ID, route through chatStateManager
       proc.stdout?.on('data', (data: Buffer) => {
         msgLineBuffer += data.toString('utf-8')
 
@@ -581,7 +615,44 @@ class ChatAgentManager {
         msgLineBuffer = parts.pop() || ''
 
         // Process only complete lines
-        const completeLines = parts.filter(Boolean)
+        let completeLines = parts.filter(Boolean)
+
+        // Filter replay messages when using --resume
+        if (replaySkip) {
+          const filtered: string[] = []
+          for (const line of completeLines) {
+            try {
+              const parsed = JSON.parse(line)
+              if (parsed.type === 'user') {
+                console.log('[ChatAgentManager] Replay skip: discarding user message')
+                continue  // Skip replayed user
+              }
+              if (parsed.type === 'assistant') {
+                console.log('[ChatAgentManager] Replay skip: tracking assistant message')
+                lastReplayAssistantLine = line  // Track, don't forward yet
+                continue
+              }
+              // Non user/assistant: replay is over
+              console.log('[ChatAgentManager] Replay skip ended at type:', parsed.type)
+              replaySkip = false
+              if (parsed.type === 'result' && lastReplayAssistantLine) {
+                // No streaming events came — the tracked assistant IS the new response
+                console.log('[ChatAgentManager] Replay skip: forwarding pending assistant as new response')
+                filtered.push(lastReplayAssistantLine)
+                lastReplayAssistantLine = ''
+              } else if (lastReplayAssistantLine) {
+                // Streaming started — tracked assistant was replay, discard
+                console.log('[ChatAgentManager] Replay skip: discarding replay assistant, streaming started')
+                lastReplayAssistantLine = ''
+              }
+              filtered.push(line)
+            } catch {
+              // Non-JSON line, forward as-is
+              filtered.push(line)
+            }
+          }
+          completeLines = filtered
+        }
 
         for (const line of completeLines) {
           try {
@@ -597,82 +668,92 @@ class ChatAgentManager {
           }
         }
 
-        // Send complete lines to renderer
+        // Route through chatStateManager (handles both semantic + old event emission)
         if (completeLines.length > 0) {
-          this.sendToRenderer('chat:output', {
-            agentId: options.agentId,
-            type: 'stdout',
-            chunk: completeLines.join('\n') + '\n',
-            timestamp: Date.now()
-          })
+          chatStateManager.handleOutput(
+            options.projectPath, options.agentId,
+            completeLines.join('\n') + '\n', false
+          )
         }
       })
 
       // Handle stderr
       proc.stderr?.on('data', (data: Buffer) => {
         const chunk = data.toString('utf-8')
-        this.sendToRenderer('chat:output', {
-          agentId: options.agentId,
-          type: 'stderr',
-          chunk,
-          timestamp: Date.now()
-        })
+        chatStateManager.handleStderr(options.projectPath, options.agentId, chunk, false)
       })
 
       // Use 'close' instead of 'exit' to ensure all stdio streams are fully consumed
       // before processing. 'exit' can fire while stdout still has buffered data.
       proc.on('close', (code, signal) => {
         // Guard against stale close events from old processes that were replaced.
-        const currentProc = this.runningProcesses.get(options.agentId)
-        if (currentProc && currentProc !== proc) {
+        const currentEntry = this.runningProcesses.get(key)
+        if (currentEntry && currentEntry.proc !== proc) {
           console.log('[ChatAgentManager] Ignoring stale message close event for:', options.agentId)
           return
         }
 
         // Flush any remaining data in the line buffer
         if (msgLineBuffer.trim()) {
-          try {
-            const parsed = JSON.parse(msgLineBuffer)
-            if (parsed.type === 'result' && parsed.session_id) {
-              capturedSessionId = parsed.session_id
-            }
-          } catch {
-            // Not JSON, ignore
-          }
-          this.sendToRenderer('chat:output', {
-            agentId: options.agentId,
-            type: 'stdout',
-            chunk: msgLineBuffer + '\n',
-            timestamp: Date.now()
-          })
+          let flushLine = msgLineBuffer
           msgLineBuffer = ''
+
+          // Apply replay filter to flush line
+          if (replaySkip) {
+            try {
+              const parsed = JSON.parse(flushLine)
+              if (parsed.type === 'user' || parsed.type === 'assistant') {
+                if (parsed.type === 'assistant') lastReplayAssistantLine = flushLine
+                flushLine = '' // Skip replay
+              } else {
+                replaySkip = false
+                if (parsed.type === 'result' && lastReplayAssistantLine) {
+                  // Forward pending assistant then this line
+                  chatStateManager.handleOutput(
+                    options.projectPath, options.agentId,
+                    lastReplayAssistantLine + '\n', false
+                  )
+                  lastReplayAssistantLine = ''
+                }
+              }
+            } catch { /* Not JSON, forward as-is */ }
+          }
+
+          if (flushLine) {
+            try {
+              const parsed = JSON.parse(flushLine)
+              if (parsed.type === 'result' && parsed.session_id) {
+                capturedSessionId = parsed.session_id
+              }
+            } catch {
+              // Not JSON, ignore
+            }
+            chatStateManager.handleOutput(
+              options.projectPath, options.agentId,
+              flushLine + '\n', false
+            )
+          }
         }
 
         const wasCancelled = signal === 'SIGTERM' || signal === 'SIGKILL'
         console.log('[ChatAgentManager] Process closed:', { agentId: options.agentId, code, signal, sessionId: capturedSessionId, wasCancelled })
-        this.runningProcesses.delete(options.agentId)
-        this.sendToRenderer('chat:exit', {
-          agentId: options.agentId,
-          code,
-          signal,
-          sessionId: capturedSessionId,
-          cancelled: wasCancelled,
-          timestamp: Date.now()
-        })
+        this.runningProcesses.delete(key)
+        // Route through chatStateManager (emits both new + old events)
+        chatStateManager.handleExit(
+          options.projectPath, options.agentId,
+          code, signal, capturedSessionId, wasCancelled
+        )
       })
 
       // Handle errors
       proc.on('error', (error) => {
         console.error('[ChatAgentManager] Process error:', error)
-        const currentProc = this.runningProcesses.get(options.agentId)
-        if (currentProc && currentProc !== proc) return
-        this.sendToRenderer('chat:exit', {
-          agentId: options.agentId,
-          code: -1,
-          signal: null,
-          error: error.message,
-          timestamp: Date.now()
-        })
+        const currentEntry = this.runningProcesses.get(key)
+        if (currentEntry && currentEntry.proc !== proc) return
+        chatStateManager.handleExit(
+          options.projectPath, options.agentId,
+          -1, null, undefined, false
+        )
       })
 
       return { success: true }
@@ -683,17 +764,37 @@ class ChatAgentManager {
   }
 
   // Cancel an ongoing message/agent load for a specific agent
-  cancelMessage(agentId: string): boolean {
-    const proc = this.runningProcesses.get(agentId)
-    if (!proc) {
+  // When projectPath is provided, uses composite key for precision;
+  // otherwise searches by agentId suffix (backwards-compatible)
+  cancelMessage(agentId: string, projectPath?: string): boolean {
+    if (projectPath) {
+      const key = this.compositeKey(projectPath, agentId)
+      const entry = this.runningProcesses.get(key)
+      if (!entry) {
+        console.log('[ChatAgentManager] No running process to cancel for agent:', agentId)
+        return false
+      }
+      try {
+        console.log('[ChatAgentManager] Cancelling process for agent:', agentId, 'PID:', entry.proc.pid)
+        entry.proc.kill('SIGTERM')
+        this.runningProcesses.delete(key)
+        return true
+      } catch (error) {
+        console.error('[ChatAgentManager] Failed to cancel process:', error)
+        return false
+      }
+    }
+
+    // Fallback: search by agentId suffix
+    const found = this.findByAgentId(agentId)
+    if (!found) {
       console.log('[ChatAgentManager] No running process to cancel for agent:', agentId)
       return false
     }
-
     try {
-      console.log('[ChatAgentManager] Cancelling process for agent:', agentId, 'PID:', proc.pid)
-      proc.kill('SIGTERM')
-      this.runningProcesses.delete(agentId)
+      console.log('[ChatAgentManager] Cancelling process for agent:', agentId, 'PID:', found.entry.proc.pid)
+      found.entry.proc.kill('SIGTERM')
+      this.runningProcesses.delete(found.key)
       return true
     } catch (error) {
       console.error('[ChatAgentManager] Failed to cancel process:', error)
@@ -702,8 +803,11 @@ class ChatAgentManager {
   }
 
   // Check if an agent has a running process
-  isRunning(agentId: string): boolean {
-    return this.runningProcesses.has(agentId)
+  isRunning(agentId: string, projectPath?: string): boolean {
+    if (projectPath) {
+      return this.runningProcesses.has(this.compositeKey(projectPath, agentId))
+    }
+    return this.findByAgentId(agentId) !== null
   }
 
   // These methods are no longer needed but kept for API compatibility
@@ -721,9 +825,9 @@ class ChatAgentManager {
 
   killAll(): void {
     // Kill all running processes
-    for (const [, proc] of this.runningProcesses) {
+    for (const [, entry] of this.runningProcesses) {
       try {
-        proc.kill('SIGTERM')
+        entry.proc.kill('SIGTERM')
       } catch {
         // Ignore errors during cleanup
       }

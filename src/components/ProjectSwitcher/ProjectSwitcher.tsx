@@ -31,7 +31,31 @@ export default function ProjectSwitcher() {
   const attachedLocalProjectPath = useStore((state) => state.attachedLocalProjectPath)
   const recentProjects = useStore((state) => state.recentProjects)
   const removeRecentProject = useStore((state) => state.removeRecentProject)
+  const backgroundProjects = useStore((state) => state.backgroundProjects)
+  const chatThreads = useStore((state) => state.chatThreads)
+  const fullCycleRunning = useStore((state) => state.fullCycle.isRunning)
+  const epicCycleRunning = useStore((state) => state.epicCycle.isRunning)
   const { selectProject, switchToProject } = useProjectData()
+
+  // Count active agents for a project (background or current)
+  const getActiveAgentCount = (path: string): number => {
+    if (path === projectPath) {
+      return Object.values(chatThreads).filter(t => t?.isTyping).length
+    }
+    const bg = backgroundProjects[path]
+    if (!bg) return 0
+    return Object.values(bg.chatThreads).filter(t => t?.isTyping).length
+  }
+
+  // Check if a project has any active work (cycles or agents)
+  const hasActiveWork = (path: string): boolean => {
+    if (path === projectPath) {
+      return fullCycleRunning || epicCycleRunning || getActiveAgentCount(path) > 0
+    }
+    const bg = backgroundProjects[path]
+    if (!bg) return false
+    return bg.fullCycle.isRunning || bg.epicCycle.isRunning || getActiveAgentCount(path) > 0
+  }
 
   const open = Boolean(anchorEl)
   // Use the real local project path when in attached remote view (projectPath is a cache path)
@@ -273,6 +297,37 @@ export default function ProjectSwitcher() {
                     </Typography>
                     {project.isRemote && (
                       <Chip label="Remote" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: '0.6rem' }} />
+                    )}
+                    {project.wizardInProgress && (
+                      <Chip label="Setting up" size="small" variant="outlined" color="warning" sx={{ height: 18, fontSize: '0.6rem' }} />
+                    )}
+                    {/* Pulsing dot + agent count for projects with active work */}
+                    {hasActiveWork(project.path) && (
+                      <>
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: 'warning.main',
+                            flexShrink: 0,
+                            animation: 'pulse 1.5s ease-in-out infinite',
+                            '@keyframes pulse': {
+                              '0%, 100%': { opacity: 1 },
+                              '50%': { opacity: 0.4 },
+                            },
+                          }}
+                        />
+                        {getActiveAgentCount(project.path) > 0 && (
+                          <Chip
+                            label={`${getActiveAgentCount(project.path)} agent${getActiveAgentCount(project.path) > 1 ? 's' : ''}`}
+                            size="small"
+                            variant="outlined"
+                            color="warning"
+                            sx={{ height: 18, fontSize: '0.6rem' }}
+                          />
+                        )}
+                      </>
                     )}
                   </Box>
                   <Typography

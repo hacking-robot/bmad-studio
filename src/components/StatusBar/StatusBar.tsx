@@ -62,6 +62,7 @@ export default function StatusBar() {
   const remoteViewingBranch = useStore((state) => state.remoteViewingBranch)
   const isRemoteProject = useStore((state) => state.isRemoteProject)
   const remoteProjectUrl = useStore((state) => state.remoteProjectUrl)
+  const backgroundProjects = useStore((state) => state.backgroundProjects)
 
   // Auto-update state from global store
   const updateStatus = useStore((state) => state.updateStatus)
@@ -105,6 +106,13 @@ export default function StatusBar() {
     const epic = epics.find(e => e.id === selectedEpicId)
     return epic ? epic.name : 'Unknown Epic'
   }, [epics, selectedEpicId])
+
+  // Count active background projects
+  const activeBackgroundCount = useMemo(() => {
+    return Object.values(backgroundProjects).filter(
+      bg => bg.fullCycle.isRunning || bg.epicCycle.isRunning
+    ).length
+  }, [backgroundProjects])
 
   // Format status counts for display (only show non-zero counts for main statuses)
   const statusDisplay = useMemo(() => {
@@ -181,6 +189,30 @@ export default function StatusBar() {
             <Typography variant="caption" color="text.secondary" sx={{ cursor: 'help' }}>
               {developerMode === 'human' ? 'Manual Dev' : 'AI Driven'}
             </Typography>
+          </Tooltip>
+        )}
+
+        {/* Background projects indicator */}
+        {activeBackgroundCount > 0 && (
+          <Tooltip title={`${activeBackgroundCount} background project${activeBackgroundCount > 1 ? 's' : ''} with active cycles`}>
+            <Chip
+              size="small"
+              label={`${activeBackgroundCount} bg`}
+              color="warning"
+              variant="outlined"
+              sx={{
+                height: 20,
+                fontSize: '0.65rem',
+                fontWeight: 500,
+                cursor: 'help',
+                '& .MuiChip-label': { px: 0.5 },
+                animation: 'pulse 1.5s ease-in-out infinite',
+                '@keyframes pulse': {
+                  '0%, 100%': { opacity: 1 },
+                  '50%': { opacity: 0.6 },
+                },
+              }}
+            />
           </Tooltip>
         )}
 

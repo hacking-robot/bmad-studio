@@ -42,8 +42,13 @@ export default function Dashboard() {
   const modules = bmadScanResult?.modules?.filter(m => m !== 'core') || []
 
   const handleRun = (agentId: string, command: string) => {
-    window.chatAPI.cancelMessage(agentId).catch(() => {})
+    const currentPath = useStore.getState().projectPath
+    window.chatAPI.cancelMessage(agentId, currentPath || undefined).catch(() => {})
     clearChatThread(agentId)
+    // Also clear on-disk JSONL so the loadThreadData effect doesn't restore old messages
+    if (currentPath) {
+      window.chatAPI.clearThread(currentPath, agentId)
+    }
     setViewMode('chat')
     setSelectedChatAgent(agentId)
     setPendingChatMessage({

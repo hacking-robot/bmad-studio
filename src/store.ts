@@ -17,6 +17,7 @@ import {
   AgentThread,
   StatusChangeEntry,
   StatusChangeSource,
+  BackgroundProjectState,
 } from "./types";
 import type { BmadScanResult } from "./types/bmadScan";
 import type { WorkflowConfig } from "./types/flow";
@@ -35,7 +36,6 @@ import {
   initialWizardState,
 } from "./types/projectWizard";
 import { getWizardSteps } from "./data/wizardSteps";
-import { flushPendingThreadSave } from "./utils/chatUtils";
 
 export type ViewMode = "board" | "chat" | "dashboard";
 
@@ -53,6 +53,7 @@ export interface RecentProject {
   isRemote?: boolean;
   remoteUrl?: string;
   remoteCachePath?: string;
+  wizardInProgress?: boolean;
 }
 
 const MAX_HISTORY_ENTRIES = 50;
@@ -493,6 +494,7 @@ interface AppState {
   setChatActivity: (agentId: string, activity: string | undefined) => void;
   markChatRead: (agentId: string) => void;
   incrementUnread: (agentId: string) => void;
+  removeChatMessage: (agentId: string, messageId: string) => void;
   clearChatThread: (agentId: string) => void;
   setAgentInitialized: (agentId: string, initialized: boolean) => void;
   setChatSessionId: (agentId: string, sessionId: string) => void;
@@ -517,6 +519,12 @@ interface AppState {
     storyId: string | undefined,
     branchName: string | undefined,
   ) => void;
+  // Restore agent statuses from backend (no write-back to disk)
+  restoreAgentStatuses: (statuses: Record<string, {
+    metadata: { sessionId: string | null; storyId: string | null; branchName: string | null; lastActivity: number };
+    isTyping: boolean;
+    hasMessages: boolean;
+  }>) => void;
 
   // Zoom Level
   zoomLevel: number;
@@ -591,6 +599,15 @@ interface AppState {
   completeEpicCycle: () => void;
   resetEpicCycle: () => void;
   retryEpicCycle: () => void;
+
+  // Background Projects (NOT persisted — runtime only for multi-project state preservation)
+  backgroundProjects: Record<string, BackgroundProjectState>;
+  saveToBackground: () => void;
+  restoreFromBackground: (path: string) => void;
+  removeFromBackground: (path: string) => void;
+  updateBackgroundFullCycle: (path: string, updates: Partial<FullCycleState>) => void;
+  updateBackgroundEpicCycle: (path: string, updates: Partial<EpicCycleState>) => void;
+  updateBackgroundChatThread: (projectPath: string, agentId: string, updater: (thread: AgentThread) => AgentThread) => void;
 
   // Auto-Update (NOT persisted — transient state from electron-updater)
   updateStatus: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
@@ -783,19 +800,7 @@ export const useStore = create<AppState>()(
       projectType: null,
       outputFolder: "_bmad-output",
       setProjectPath: (path) => {
-        const state = get();
-        if (state.projectPath && path !== state.projectPath) {
-          flushPendingThreadSave();
-          for (const [agentId, thread] of Object.entries(state.chatThreads)) {
-            if (thread && (thread as AgentThread).messages.length > 0) {
-              window.chatAPI?.saveThread(
-                state.projectPath,
-                agentId,
-                thread as AgentThread,
-              );
-            }
-          }
-        }
+        // No need to save threads — backend already writes to JSONL during streaming
         set({
           projectPath: path,
           bmadVersionError: null,
@@ -1284,6 +1289,20 @@ export const useStore = create<AppState>()(
             },
           };
         }),
+      removeChatMessage: (agentId, messageId) =>
+        set((state) => {
+          const thread = state.chatThreads[agentId]
+          if (!thread) return state
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [agentId]: {
+                ...thread,
+                messages: thread.messages.filter(m => m.id !== messageId),
+              },
+            },
+          }
+        }),
       clearChatThread: (agentId) =>
         set((state) => ({
           chatThreads: {
@@ -1341,9 +1360,20 @@ export const useStore = create<AppState>()(
             },
           };
         }),
-      setThreadContext: (agentId, storyId, branchName) =>
-        set((state) => {
-          const thread = state.chatThreads[agentId] || {
+      setThreadContext: (agentId, storyId, branchName) => {
+        const state = get();
+        // Persist metadata to disk via backend
+        if (state.projectPath) {
+          const thread = state.chatThreads[agentId];
+          window.chatAPI?.setThreadMetadata(state.projectPath, agentId, {
+            sessionId: thread?.sessionId || null,
+            storyId: storyId || null,
+            branchName: branchName || null,
+            lastActivity: Date.now(),
+          });
+        }
+        set((s) => {
+          const thread = s.chatThreads[agentId] || {
             agentId,
             messages: [],
             lastActivity: Date.now(),
@@ -1354,7 +1384,7 @@ export const useStore = create<AppState>()(
 
           return {
             chatThreads: {
-              ...state.chatThreads,
+              ...s.chatThreads,
               [agentId]: {
                 ...thread,
                 storyId,
@@ -1362,6 +1392,30 @@ export const useStore = create<AppState>()(
               },
             },
           };
+        });
+      },
+      restoreAgentStatuses: (statuses) =>
+        set((state) => {
+          const updated = { ...state.chatThreads }
+          for (const [agentId, status] of Object.entries(statuses)) {
+            const existing = updated[agentId]
+            if (existing && existing.messages.length > 0) continue // Don't overwrite loaded threads
+            // Never restore isTyping=true from disk — the process that was typing
+            // may no longer be running. The live IPC event flow sets isTyping=true
+            // when a process is actually active.
+            updated[agentId] = {
+              agentId,
+              messages: existing?.messages || [],
+              lastActivity: status.metadata.lastActivity || Date.now(),
+              unreadCount: existing?.unreadCount || 0,
+              isTyping: false,
+              isInitialized: !!status.metadata.sessionId,
+              sessionId: status.metadata.sessionId || undefined,
+              storyId: status.metadata.storyId || undefined,
+              branchName: status.metadata.branchName || undefined,
+            }
+          }
+          return { chatThreads: updated }
         }),
 
       // Zoom Level
@@ -1694,6 +1748,119 @@ export const useStore = create<AppState>()(
           };
         }),
 
+      // Background Projects (NOT persisted — runtime only)
+      backgroundProjects: {},
+      saveToBackground: () => {
+        const state = get();
+        if (!state.projectPath || !state.projectType) return;
+        set({
+          backgroundProjects: {
+            ...state.backgroundProjects,
+            [state.projectPath]: {
+              projectPath: state.projectPath,
+              projectType: state.projectType,
+              outputFolder: state.outputFolder,
+              fullCycle: { ...state.fullCycle },
+              epicCycle: { ...state.epicCycle },
+              chatThreads: { ...state.chatThreads },
+              stories: state.stories,
+              epics: state.epics,
+              baseBranch: state.baseBranch,
+              enableEpicBranches: state.enableEpicBranches,
+              disableGitBranching: state.disableGitBranching,
+              fullCycleReviewCount: state.fullCycleReviewCount,
+              aiTool: state.aiTool,
+              claudeModel: state.claudeModel,
+              customEndpoint: state.customEndpoint,
+              developerMode: state.developerMode,
+              scannedWorkflowConfig: state.scannedWorkflowConfig,
+              bmadScanResult: state.bmadScanResult,
+              ...(state.projectWizard.isActive ? { projectWizard: { ...state.projectWizard } } : {}),
+            },
+          },
+        });
+      },
+      restoreFromBackground: (path) => {
+        const state = get();
+        const bg = state.backgroundProjects[path];
+        if (!bg) return;
+        const { [path]: _, ...rest } = state.backgroundProjects;
+        set({
+          backgroundProjects: rest,
+          fullCycle: bg.fullCycle,
+          epicCycle: bg.epicCycle,
+          stories: bg.stories,
+          epics: bg.epics,
+          baseBranch: bg.baseBranch,
+          enableEpicBranches: bg.enableEpicBranches,
+          disableGitBranching: bg.disableGitBranching,
+          fullCycleReviewCount: bg.fullCycleReviewCount,
+          aiTool: bg.aiTool,
+          claudeModel: bg.claudeModel,
+          customEndpoint: bg.customEndpoint,
+          developerMode: bg.developerMode,
+          scannedWorkflowConfig: bg.scannedWorkflowConfig,
+          bmadScanResult: bg.bmadScanResult,
+        });
+      },
+      removeFromBackground: (path) =>
+        set((state) => {
+          const { [path]: _, ...rest } = state.backgroundProjects;
+          return { backgroundProjects: rest };
+        }),
+      updateBackgroundFullCycle: (path, updates) =>
+        set((state) => {
+          const bg = state.backgroundProjects[path];
+          if (!bg) return state;
+          return {
+            backgroundProjects: {
+              ...state.backgroundProjects,
+              [path]: {
+                ...bg,
+                fullCycle: { ...bg.fullCycle, ...updates },
+              },
+            },
+          };
+        }),
+      updateBackgroundEpicCycle: (path, updates) =>
+        set((state) => {
+          const bg = state.backgroundProjects[path];
+          if (!bg) return state;
+          return {
+            backgroundProjects: {
+              ...state.backgroundProjects,
+              [path]: {
+                ...bg,
+                epicCycle: { ...bg.epicCycle, ...updates },
+              },
+            },
+          };
+        }),
+      updateBackgroundChatThread: (projectPath, agentId, updater) =>
+        set((state) => {
+          const bg = state.backgroundProjects[projectPath];
+          if (!bg) return state;
+          const existing = bg.chatThreads[agentId] || {
+            agentId,
+            messages: [],
+            lastActivity: Date.now(),
+            unreadCount: 0,
+            isTyping: false,
+            isInitialized: false,
+          };
+          return {
+            backgroundProjects: {
+              ...state.backgroundProjects,
+              [projectPath]: {
+                ...bg,
+                chatThreads: {
+                  ...bg.chatThreads,
+                  [agentId]: updater(existing),
+                },
+              },
+            },
+          };
+        }),
       // Prerequisites Dialog (NOT persisted)
       // Auto-Update
       updateStatus: 'idle',
@@ -1733,12 +1900,23 @@ export const useStore = create<AppState>()(
         const steps = getWizardSteps(
           primary as "bmm" | "gds" | "dashboard",
         );
+        const projectName = projectPath.split("/").pop() || "Unknown";
+        const resolvedOutput = outputFolder || "_bmad-output";
+        // Add to recent projects so user can exit wizard and resume later
+        get().addRecentProject({
+          path: projectPath,
+          projectType: primary as ProjectType,
+          name: projectName,
+          outputFolder: resolvedOutput,
+          developerMode,
+          wizardInProgress: true,
+        });
         set({
           projectWizard: {
             ...initialWizardState,
             isActive: true,
             projectPath,
-            outputFolder: outputFolder || "_bmad-output",
+            outputFolder: resolvedOutput,
             developerMode,
             selectedModules: modules,
             customContentPaths: customContentPaths?.length ? customContentPaths : undefined,
@@ -1749,7 +1927,7 @@ export const useStore = create<AppState>()(
           // Set project path/type so AgentChat can function during wizard
           projectPath,
           projectType: primary as ProjectType,
-          outputFolder: outputFolder || "_bmad-output",
+          outputFolder: resolvedOutput,
           developerMode: developerMode || "ai",
           // Clear stale scan data from previous project so old agents don't show
           bmadScanResult: null,
@@ -1820,12 +1998,15 @@ export const useStore = create<AppState>()(
         set({
           projectWizard: initialWizardState,
         }),
-      cancelWizard: () =>
+      cancelWizard: () => {
+        // Save current state to background so wizard + agents can be resumed
+        get().saveToBackground();
         set({
           projectWizard: initialWizardState,
           projectPath: null,
           projectType: null,
-        }),
+        });
+      },
       resumeWizard: (wizardState) =>
         set({
           projectWizard: { ...wizardState, error: null },
@@ -1837,6 +2018,7 @@ export const useStore = create<AppState>()(
           developerMode: wizardState.developerMode || "ai",
           bmadScanResult: null,
           scannedWorkflowConfig: null,
+          loading: false,
         }),
       goToWizardStep: (stepIndex) =>
         set((state) => ({

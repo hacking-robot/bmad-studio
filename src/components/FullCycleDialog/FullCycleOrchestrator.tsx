@@ -3,8 +3,9 @@ import { useStore } from '../../store'
 import { useWorkflow } from '../../hooks/useWorkflow'
 import { useChatMessageHandlerContext } from '../../hooks/useChatMessageHandler'
 import { saveStoryChatHistoryImmediate } from '../../utils/chatUtils'
-import { buildFullCycleSteps, FullCycleStep } from '../../types/fullCycle'
+import { buildFullCycleSteps, FullCycleStep, FullCycleState } from '../../types/fullCycle'
 import { transformCommand } from '../../utils/commandTransform'
+import type { AgentThread, ChatMessage } from '../../types'
 
 /**
  * FullCycleOrchestrator - Runs the full cycle automation in the background
@@ -15,9 +16,12 @@ import { transformCommand } from '../../utils/commandTransform'
  *
  * Message handling is delegated to the GlobalChatHandler. This component
  * only handles orchestration logic like detecting questions and auto-responding.
+ *
+ * Project-aware: When the user switches to a different project while a cycle
+ * is running, state updates are routed to backgroundProjects instead of the
+ * foreground state, ensuring the cycle's progress is preserved correctly.
  */
 export default function FullCycleOrchestrator() {
-  const projectPath = useStore((state) => state.projectPath)
   const projectType = useStore((state) => state.projectType)
   const outputFolder = useStore((state) => state.outputFolder)
   const stories = useStore((state) => state.stories)
@@ -34,30 +38,162 @@ export default function FullCycleOrchestrator() {
   const setCurrentBranch = useStore((state) => state.setCurrentBranch)
   const setHasUncommittedChanges = useStore((state) => state.setHasUncommittedChanges)
 
-  // Chat state (use useStore.getState() for chatThreads to get latest after clear)
-  const addChatMessage = useStore((state) => state.addChatMessage)
-  const setChatTyping = useStore((state) => state.setChatTyping)
-  const setThreadContext = useStore((state) => state.setThreadContext)
-  const setChatSessionId = useStore((state) => state.setChatSessionId)
-  const clearChatThread = useStore((state) => state.clearChatThread)
-
-  // Full cycle state
+  // Full cycle state (for watching triggers only — updates go through routing helpers)
   const fullCycle = useStore((state) => state.fullCycle)
-  const updateFullCycleStep = useStore((state) => state.updateFullCycleStep)
-  const appendFullCycleLog = useStore((state) => state.appendFullCycleLog)
-  const setFullCycleError = useStore((state) => state.setFullCycleError)
-  const completeFullCycle = useStore((state) => state.completeFullCycle)
-  const setFullCycleSessionId = useStore((state) => state.setFullCycleSessionId)
-  const skipFullCycleStep = useStore((state) => state.skipFullCycleStep)
-  const advanceFullCycleStep = useStore((state) => state.advanceFullCycleStep)
 
   // Get global handler context for registering message IDs
   const { setPendingMessage, setCurrentMessageId, clearAgentState } = useChatMessageHandlerContext()
 
-  // Track the current run
+  // Track the current run and its originating project
   const currentRunIdRef = useRef<string | null>(null)
+  const cycleProjectPathRef = useRef<string | null>(null)
   const isProcessingRef = useRef(false)
   const cleanupRef = useRef<(() => void) | null>(null)
+
+  // --- Project-aware routing helpers ---
+  // These check whether the cycle's project is still the foreground project.
+  // If not, updates are routed to backgroundProjects to keep the cycle's state correct.
+
+  const updateCycleFC = useCallback((updater: (fc: FullCycleState) => FullCycleState) => {
+    const cyclePath = cycleProjectPathRef.current
+    if (!cyclePath) return
+    useStore.setState(state => {
+      if (cyclePath === state.projectPath) {
+        return { fullCycle: updater(state.fullCycle) }
+      }
+      const bg = state.backgroundProjects[cyclePath]
+      if (!bg) return state
+      return {
+        backgroundProjects: {
+          ...state.backgroundProjects,
+          [cyclePath]: { ...bg, fullCycle: updater(bg.fullCycle) },
+        },
+      }
+    })
+  }, [])
+
+  const defaultThread: AgentThread = {
+    agentId: '', messages: [], lastActivity: Date.now(),
+    unreadCount: 0, isTyping: false, isInitialized: false,
+  }
+
+  const updateCycleChat = useCallback((agentId: string, updater: (thread: AgentThread) => AgentThread) => {
+    const cyclePath = cycleProjectPathRef.current
+    if (!cyclePath) return
+    useStore.setState(state => {
+      if (cyclePath === state.projectPath) {
+        const thread = state.chatThreads[agentId] || { ...defaultThread, agentId }
+        return { chatThreads: { ...state.chatThreads, [agentId]: updater(thread) } }
+      }
+      const bg = state.backgroundProjects[cyclePath]
+      if (!bg) return state
+      const thread = bg.chatThreads[agentId] || { ...defaultThread, agentId }
+      return {
+        backgroundProjects: {
+          ...state.backgroundProjects,
+          [cyclePath]: { ...bg, chatThreads: { ...bg.chatThreads, [agentId]: updater(thread) } },
+        },
+      }
+    })
+  }, [])
+
+  // Read the cycle's chat thread (foreground or background)
+  const getCycleChatThread = useCallback((agentId: string): AgentThread | undefined => {
+    const cyclePath = cycleProjectPathRef.current
+    if (!cyclePath) return undefined
+    const state = useStore.getState()
+    if (cyclePath === state.projectPath) return state.chatThreads[agentId]
+    return state.backgroundProjects[cyclePath]?.chatThreads[agentId]
+  }, [])
+
+  // Convenience wrappers matching the old store action signatures
+  const fcAppendLog = useCallback((log: string) => {
+    updateCycleFC(fc => ({ ...fc, logs: [...fc.logs, log] }))
+  }, [updateCycleFC])
+
+  const fcUpdateStep = useCallback((step: number, name: string, type: string) => {
+    updateCycleFC(fc => {
+      const newStatuses = [...fc.stepStatuses]
+      newStatuses[step] = 'running'
+      return { ...fc, currentStep: step, stepName: name, stepType: type as FullCycleState['stepType'], stepStatus: 'running', stepStatuses: newStatuses, stepStartTime: Date.now() }
+    })
+  }, [updateCycleFC])
+
+  const fcAdvance = useCallback(() => {
+    updateCycleFC(fc => {
+      const newStatuses = [...fc.stepStatuses]
+      if (fc.currentStep < newStatuses.length) newStatuses[fc.currentStep] = 'completed'
+      return { ...fc, currentStep: fc.currentStep + 1, stepStatus: 'completed', stepStatuses: newStatuses }
+    })
+  }, [updateCycleFC])
+
+  const fcSkip = useCallback((stepIndex: number) => {
+    updateCycleFC(fc => {
+      const newStatuses = [...fc.stepStatuses]
+      newStatuses[stepIndex] = 'skipped'
+      return { ...fc, currentStep: stepIndex + 1, stepStatus: 'skipped', stepStatuses: newStatuses }
+    })
+  }, [updateCycleFC])
+
+  const fcSetError = useCallback((error: string) => {
+    updateCycleFC(fc => {
+      const newStatuses = [...fc.stepStatuses]
+      if (fc.currentStep < newStatuses.length) newStatuses[fc.currentStep] = 'error'
+      return { ...fc, error, stepStatus: 'error', stepStatuses: newStatuses }
+    })
+  }, [updateCycleFC])
+
+  const fcComplete = useCallback(() => {
+    updateCycleFC(fc => ({
+      ...fc,
+      isRunning: false,
+      stepStatus: 'completed',
+      stepStatuses: fc.stepStatuses.map(s => s === 'running' ? 'completed' : s),
+    }))
+  }, [updateCycleFC])
+
+  const fcSetSessionId = useCallback((sessionId: string) => {
+    updateCycleFC(fc => ({ ...fc, sessionId }))
+  }, [updateCycleFC])
+
+  const chatAddMessage = useCallback((agentId: string, msg: ChatMessage) => {
+    const maxMsgs = useStore.getState().maxThreadMessages
+    updateCycleChat(agentId, thread => ({
+      ...thread,
+      messages: [...thread.messages, msg].slice(-maxMsgs),
+      lastActivity: Date.now(),
+    }))
+  }, [updateCycleChat])
+
+  const chatSetTyping = useCallback((agentId: string, isTyping: boolean) => {
+    updateCycleChat(agentId, thread => ({ ...thread, isTyping }))
+  }, [updateCycleChat])
+
+  const chatSetSessionId = useCallback((agentId: string, sessionId: string) => {
+    updateCycleChat(agentId, thread => ({ ...thread, sessionId }))
+  }, [updateCycleChat])
+
+  const chatSetContext = useCallback((agentId: string, storyId: string | undefined, branchName: string | undefined) => {
+    const cyclePath = cycleProjectPathRef.current
+    if (cyclePath) {
+      const thread = getCycleChatThread(agentId)
+      window.chatAPI?.setThreadMetadata(cyclePath, agentId, {
+        sessionId: thread?.sessionId || null,
+        storyId: storyId || null,
+        branchName: branchName || null,
+        lastActivity: Date.now(),
+      })
+    }
+    updateCycleChat(agentId, thread => ({ ...thread, storyId, branchName }))
+  }, [updateCycleChat, getCycleChatThread])
+
+  const chatClear = useCallback((agentId: string) => {
+    updateCycleChat(agentId, () => ({
+      agentId, messages: [], lastActivity: Date.now(),
+      unreadCount: 0, isTyping: false, isInitialized: false,
+      sessionId: undefined,
+    }))
+  }, [updateCycleChat])
 
   // Get steps based on project type and review count
   const getSteps = useCallback((): FullCycleStep[] => {
@@ -66,18 +202,23 @@ export default function FullCycleOrchestrator() {
   }, [projectType, fullCycleReviewCount])
 
   // Save chat history before clearing - preserves conversation for story card
+  // Preserves sessionId so the next step can reuse the agent session via --resume
   const saveChatHistoryAndClear = useCallback(async (agentId: string, storyId: string) => {
-    if (!projectPath) return
+    const cyclePath = cycleProjectPathRef.current
+    if (!cyclePath) return
 
-    // Read directly from store to get latest state
-    const thread = useStore.getState().chatThreads[agentId]
+    // Read from the cycle's project (foreground or background)
+    const thread = getCycleChatThread(agentId)
     const agent = agents.find(a => a.id === agentId)
     const story = stories.find(s => s.id === storyId)
+
+    // Preserve session ID before clearing so next step can reuse via --resume
+    const savedSessionId = thread?.sessionId
 
     // Save to history if thread has messages
     if (thread && thread.messages.length > 0 && agent) {
       await saveStoryChatHistoryImmediate(
-        projectPath,
+        cyclePath,
         storyId,
         story?.title || storyId,
         agentId,
@@ -87,14 +228,19 @@ export default function FullCycleOrchestrator() {
         thread.branchName,
         outputFolder
       )
-      appendFullCycleLog(`Saved ${agentId} chat to history`)
+      fcAppendLog(`Saved ${agentId} chat to history`)
     }
 
     // Clear the thread
-    clearChatThread(agentId)
+    chatClear(agentId)
     // Also clear global handler state for this agent
     clearAgentState(agentId)
-  }, [projectPath, outputFolder, agents, stories, clearChatThread, clearAgentState, appendFullCycleLog])
+
+    // Restore session ID so next step can use --resume (single process instead of two)
+    if (savedSessionId) {
+      chatSetSessionId(agentId, savedSessionId)
+    }
+  }, [outputFolder, agents, stories, getCycleChatThread, chatClear, clearAgentState, fcAppendLog, chatSetSessionId])
 
   // Execute an agent step - uses global handler for message processing
   const executeAgentStep = useCallback(async (
@@ -104,30 +250,33 @@ export default function FullCycleOrchestrator() {
     branchName: string,
     runId: string
   ): Promise<'success' | 'error'> => {
-    if (!projectPath) return 'error'
+    const cyclePath = cycleProjectPathRef.current
+    if (!cyclePath) return 'error'
 
-    appendFullCycleLog(`Sending to ${agentId}: ${command}`)
+    fcAppendLog(`Sending to ${agentId}: ${command}`)
 
     // Set context for this agent's thread
-    setThreadContext(agentId, storyId, branchName)
+    chatSetContext(agentId, storyId, branchName)
 
-    // Get current session (if any) - read directly from store to get latest state after clear
-    const currentThread = useStore.getState().chatThreads[agentId]
+    // Get current session (if any) from the cycle's project
+    const currentThread = getCycleChatThread(agentId)
     const hasSession = !!currentThread?.sessionId
 
-    // Add user message to the chat thread
+    // Add user message to the chat thread and persist to JSONL
     const userMsgId = `fullcycle-user-${Date.now()}`
-    addChatMessage(agentId, {
+    const userMsg: ChatMessage = {
       id: userMsgId,
       role: 'user',
       content: command,
       timestamp: Date.now(),
       status: 'complete'
-    })
+    }
+    chatAddMessage(agentId, userMsg)
+    window.chatAPI.writeUserMessage(cyclePath, agentId, userMsg)
 
     // Add assistant placeholder message
     const assistantMsgId = `fullcycle-assistant-${Date.now()}`
-    addChatMessage(agentId, {
+    chatAddMessage(agentId, {
       id: assistantMsgId,
       role: 'assistant',
       content: '',
@@ -136,7 +285,7 @@ export default function FullCycleOrchestrator() {
     })
 
     // Set typing indicator
-    setChatTyping(agentId, true)
+    chatSetTyping(agentId, true)
 
     return new Promise<'success' | 'error'>((resolve) => {
       let resolved = false
@@ -146,7 +295,7 @@ export default function FullCycleOrchestrator() {
 
       const cleanup = () => {
         unsubExit()
-        unsubAgentLoaded()
+        unsubAgentReady()
         unsubOutput()
         if (cleanupRef.current === cleanup) {
           cleanupRef.current = null
@@ -210,76 +359,43 @@ export default function FullCycleOrchestrator() {
         return /(?:^|\n)\s*(?:1\.|[\[(]1[\])])\s*[*]*\s*(?:fix|update|resolve|apply|auto|correct|repair)/im.test(clean)
       }
 
-      // Subscribe to output for accumulating TEXT content for pattern detection.
-      // Raw chunks are stream-json (newlines escaped as \n), so we must parse
-      // the JSON and extract actual text — otherwise regexes can't match.
-      const unsubOutput = window.chatAPI.onChatOutput((event) => {
+      // Subscribe to semantic text events for pattern detection.
+      // Backend handles stream-JSON parsing — we just get clean text.
+      const unsubOutput = window.chatAPI.onTextDelta((event) => {
         if (event.agentId !== agentId) return
-        if (event.isAgentLoad) return
-        if (!event.chunk) return
-
-        const lines = event.chunk.split('\n').filter(Boolean)
-        for (const line of lines) {
-          try {
-            const parsed = JSON.parse(line)
-            if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-              accumulatedOutput += parsed.delta.text
-            } else if (parsed.type === 'assistant' && parsed.message?.content) {
-              for (const block of parsed.message.content) {
-                if (block.type === 'text' && block.text) {
-                  accumulatedOutput += block.text
-                }
-              }
-            } else if (parsed.type === 'result' && parsed.result) {
-              // Result is the definitive complete response — overwrite
-              accumulatedOutput = parsed.result
-            }
-          } catch {
-            // Not valid JSON line — accumulate raw as fallback
-            accumulatedOutput += line
-          }
-        }
+        if (event.projectPath !== cyclePath) return
+        accumulatedOutput = event.fullContent
       })
 
-      // Handle agent loaded (for first message)
+      // Handle agent ready (for first message — success only)
       // Note: The global handler sends the pending message automatically.
-      // This handler just logs status and handles failures.
-      const unsubAgentLoaded = window.chatAPI.onAgentLoaded(async (event) => {
+      // Load failures come through onAgentExit with code !== 0.
+      const unsubAgentReady = window.chatAPI.onAgentReady((event) => {
         if (event.agentId !== agentId) return
+        if (event.projectPath !== cyclePath) return
         if (currentRunIdRef.current !== runId) {
           cleanup()
           resolve('error')
           return
         }
 
-        if (event.code === 0 && event.sessionId) {
-          // Agent loaded successfully - global handler will send the pending message
-          appendFullCycleLog(`Agent ${agentId} ready, executing command...`)
-          setChatSessionId(agentId, event.sessionId)
-          setFullCycleSessionId(event.sessionId)
-          currentSessionId = event.sessionId
-          // The global handler's onAgentLoaded sends the pending message
-        } else if (event.code !== 0) {
-          // Agent load failed
-          resolved = true
-          cleanup()
-          setChatTyping(agentId, false)
-          clearAgentState(agentId)
-          appendFullCycleLog(`Agent load failed: ${event.error}`)
-          resolve('error')
-        }
+        fcAppendLog(`Agent ${agentId} ready, executing command...`)
+        chatSetSessionId(agentId, event.sessionId)
+        fcSetSessionId(event.sessionId)
+        currentSessionId = event.sessionId
       })
 
-      // Handle process exit - orchestrator-specific logic for auto-responses
-      const unsubExit = window.chatAPI.onChatExit(async (event) => {
+      // Handle agent exit - orchestrator-specific logic for auto-responses
+      const unsubExit = window.chatAPI.onAgentExit(async (event) => {
         if (event.agentId !== agentId) return
+        if (event.projectPath !== cyclePath) return
         if (resolved) return
 
         // Update session ID if provided
         if (event.sessionId) {
           currentSessionId = event.sessionId
-          setChatSessionId(agentId, event.sessionId)
-          setFullCycleSessionId(event.sessionId)
+          chatSetSessionId(agentId, event.sessionId)
+          fcSetSessionId(event.sessionId)
         }
 
         if (currentRunIdRef.current !== runId) {
@@ -292,7 +408,7 @@ export default function FullCycleOrchestrator() {
         if (event.cancelled) {
           resolved = true
           cleanup()
-          appendFullCycleLog(`${agentId} cancelled`)
+          fcAppendLog(`${agentId} cancelled`)
           resolve('error')
           return
         }
@@ -300,28 +416,30 @@ export default function FullCycleOrchestrator() {
         if (event.code !== 0 && event.code !== null) {
           resolved = true
           cleanup()
-          appendFullCycleLog(`${agentId} failed with code: ${event.code}`)
+          fcAppendLog(`${agentId} failed with code: ${event.code}`)
           resolve('error')
           return
         }
 
         // Helper to send an auto-response
         const sendAutoResponse = async (response: string, logMessage: string): Promise<boolean> => {
-          appendFullCycleLog(logMessage)
+          fcAppendLog(logMessage)
 
-          // Add auto-response message to chat
+          // Add auto-response message to chat and persist to JSONL
           const autoResponseMsgId = `fullcycle-auto-${Date.now()}`
-          addChatMessage(agentId, {
+          const autoResponseMsg: ChatMessage = {
             id: autoResponseMsgId,
             role: 'user',
             content: response,
             timestamp: Date.now(),
             status: 'complete'
-          })
+          }
+          chatAddMessage(agentId, autoResponseMsg)
+          window.chatAPI.writeUserMessage(cyclePath, agentId, autoResponseMsg)
 
           // Add new assistant placeholder
           const newAssistantMsgId = `fullcycle-assistant-${Date.now()}`
-          addChatMessage(agentId, {
+          chatAddMessage(agentId, {
             id: newAssistantMsgId,
             role: 'assistant',
             content: '',
@@ -339,35 +457,35 @@ export default function FullCycleOrchestrator() {
           accumulatedOutput = ''
 
           // Send the auto-response
-          await new Promise(r => setTimeout(r, 150))
 
           try {
             const result = await window.chatAPI.sendMessage({
               agentId,
-              projectPath,
+              projectPath: cyclePath,
               message: response,
               sessionId: currentSessionId!,
               tool: aiTool,
               model: aiTool === 'claude-code' ? claudeModel : undefined,
-              customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined
+              customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined,
+              assistantMsgId: newAssistantMsgId,
             })
 
             if (!result.success) {
               resolved = true
               cleanup()
               clearAgentState(agentId)
-              appendFullCycleLog(`Failed to send auto-response: ${result.error}`)
+              fcAppendLog(`Failed to send auto-response: ${result.error}`)
               resolve('error')
               return false
             } else {
-              appendFullCycleLog(`Auto-response sent, waiting for agent to complete...`)
+              fcAppendLog(`Auto-response sent, waiting for agent to complete...`)
               return true
             }
           } catch (err) {
             resolved = true
             cleanup()
             clearAgentState(agentId)
-            appendFullCycleLog(`Failed to send auto-response: ${err}`)
+            fcAppendLog(`Failed to send auto-response: ${err}`)
             resolve('error')
             return false
           }
@@ -379,7 +497,7 @@ export default function FullCycleOrchestrator() {
         if (isCommitQuestion(cleanOutput)) {
           resolved = true
           cleanup()
-          appendFullCycleLog(`${agentId} completed (commit handled by app)`)
+          fcAppendLog(`${agentId} completed (commit handled by app)`)
           resolve('success')
           return
         }
@@ -388,7 +506,7 @@ export default function FullCycleOrchestrator() {
         if (isBmadMenu(cleanOutput)) {
           resolved = true
           cleanup()
-          appendFullCycleLog(`${agentId} completed (BMAD menu detected, step done)`)
+          fcAppendLog(`${agentId} completed (BMAD menu detected, step done)`)
           resolve('success')
           return
         }
@@ -413,7 +531,7 @@ export default function FullCycleOrchestrator() {
         if (isWhatNextPrompt) {
           resolved = true
           cleanup()
-          appendFullCycleLog(`${agentId} completed (step work done, skipping follow-up prompt)`)
+          fcAppendLog(`${agentId} completed (step work done, skipping follow-up prompt)`)
           resolve('success')
           return
         }
@@ -433,7 +551,7 @@ export default function FullCycleOrchestrator() {
         if (endsWithCompletion) {
           resolved = true
           cleanup()
-          appendFullCycleLog(`${agentId} completed successfully`)
+          fcAppendLog(`${agentId} completed successfully`)
           resolve('success')
           return
         }
@@ -444,9 +562,9 @@ export default function FullCycleOrchestrator() {
         if (autoResponseSentAt > 0) {
           const outputLen = cleanOutput.trim().length
           if (outputLen < 200) {
-            appendFullCycleLog('Waiting for agent to process auto-response...')
+            fcAppendLog('Waiting for agent to process auto-response...')
             // Wait for any pending output events to settle
-            await new Promise(r => setTimeout(r, 3000))
+            await new Promise(r => setTimeout(r, 1000))
 
             // Re-evaluate with fresh accumulated output
             const freshClean = stripAnsi(accumulatedOutput)
@@ -466,14 +584,14 @@ export default function FullCycleOrchestrator() {
               autoResponseSentAt = 0
               resolved = true
               cleanup()
-              appendFullCycleLog(`${agentId} completed successfully after auto-response`)
+              fcAppendLog(`${agentId} completed successfully after auto-response`)
               resolve('success')
               return
             }
 
             // Still minimal output - resolve but log the situation
             autoResponseSentAt = 0
-            appendFullCycleLog(`Agent produced minimal output after auto-response (${stripAnsi(accumulatedOutput).trim().length} chars)`)
+            fcAppendLog(`Agent produced minimal output after auto-response (${stripAnsi(accumulatedOutput).trim().length} chars)`)
           }
           autoResponseSentAt = 0
         }
@@ -481,7 +599,7 @@ export default function FullCycleOrchestrator() {
         // No question detected, mark as complete
         resolved = true
         cleanup()
-        appendFullCycleLog(`${agentId} completed successfully`)
+        fcAppendLog(`${agentId} completed successfully`)
         resolve('success')
       })
 
@@ -490,7 +608,7 @@ export default function FullCycleOrchestrator() {
       // Start the process
       if (!hasSession) {
         // First message - need to load agent first
-        appendFullCycleLog(`Loading ${agentId} agent...`)
+        fcAppendLog(`Loading ${agentId} agent...`)
 
         // Register pending message with global handler
         setPendingMessage(agentId, command, assistantMsgId)
@@ -501,68 +619,72 @@ export default function FullCycleOrchestrator() {
 
         window.chatAPI.loadAgent({
           agentId,
-          projectPath,
+          projectPath: cyclePath,
           projectType: projectType || 'bmm',
           tool: aiTool,
           model: aiTool === 'claude-code' ? claudeModel : undefined,
           customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined,
-          agentCommand
+          agentCommand,
+          pendingMessage: command,
+          pendingAssistantMsgId: assistantMsgId,
         }).catch((err) => {
           if (!resolved) {
             resolved = true
             cleanup()
-            setChatTyping(agentId, false)
+            chatSetTyping(agentId, false)
             clearAgentState(agentId)
-            appendFullCycleLog(`Failed to load agent: ${err}`)
+            fcAppendLog(`Failed to load agent: ${err}`)
             resolve('error')
           }
         })
       } else {
         // Have session - send message directly
-        appendFullCycleLog(`Using existing session, executing command...`)
+        fcAppendLog(`Using existing session, executing command...`)
 
         // Register message ID with global handler for streaming
         setCurrentMessageId(agentId, assistantMsgId)
 
         window.chatAPI.sendMessage({
           agentId,
-          projectPath,
+          projectPath: cyclePath,
           message: command,
-          sessionId: currentThread.sessionId,
+          sessionId: currentThread!.sessionId,
           tool: aiTool,
           model: aiTool === 'claude-code' ? claudeModel : undefined,
-          customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined
+          customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined,
+          assistantMsgId,
         }).catch((err) => {
           if (!resolved) {
             resolved = true
             cleanup()
-            setChatTyping(agentId, false)
+            chatSetTyping(agentId, false)
             clearAgentState(agentId)
-            appendFullCycleLog(`Failed to send: ${err}`)
+            fcAppendLog(`Failed to send: ${err}`)
             resolve('error')
           }
         })
       }
     })
   }, [
-    projectPath,
     projectType,
     aiTool,
     claudeModel,
-    appendFullCycleLog,
-    addChatMessage,
-    setChatTyping,
-    setThreadContext,
-    setChatSessionId,
-    setFullCycleSessionId,
+    fcAppendLog,
+    chatAddMessage,
+    chatSetTyping,
+    chatSetContext,
+    chatSetSessionId,
+    fcSetSessionId,
     setPendingMessage,
     setCurrentMessageId,
-    clearAgentState
+    clearAgentState,
+    getCycleChatThread,
   ])
 
   // Execute a single step
   const executeStep = useCallback(async (stepIndex: number, runId: string, storyId: string): Promise<'success' | 'skipped' | 'error'> => {
-    if (!projectPath) return 'error'
+    const cyclePath = cycleProjectPathRef.current
+    if (!cyclePath) return 'error'
     if (currentRunIdRef.current !== runId) return 'error'
 
     const steps = getSteps()
@@ -572,15 +694,15 @@ export default function FullCycleOrchestrator() {
 
     const branchName = story.id
 
-    appendFullCycleLog(`\n--- Step ${stepIndex + 1}/${steps.length}: ${step.name} ---`)
-    updateFullCycleStep(stepIndex, step.name, step.type)
+    fcAppendLog(`\n--- Step ${stepIndex + 1}/${steps.length}: ${step.name} ---`)
+    fcUpdateStep(stepIndex, step.name, step.type)
 
     try {
       switch (step.type) {
         case 'agent': {
           // Skip create-story if file already exists
           if (step.id === 'create-story' && story.filePath) {
-            appendFullCycleLog('Story file already exists, skipping creation')
+            fcAppendLog('Story file already exists, skipping creation')
             return 'skipped'
           }
 
@@ -588,7 +710,7 @@ export default function FullCycleOrchestrator() {
           if (step.id === 'implement') {
             const skipStatuses = ['in-progress', 'review', 'human-review']
             if (skipStatuses.includes(story.status)) {
-              appendFullCycleLog(`Story is in ${story.status}, skipping implementation`)
+              fcAppendLog(`Story is in ${story.status}, skipping implementation`)
               return 'skipped'
             }
           }
@@ -609,112 +731,112 @@ export default function FullCycleOrchestrator() {
           if (step.gitAction === 'create-branch') {
             // Skip branch creation when git branching is disabled
             if (disableGitBranching) {
-              appendFullCycleLog('Git branching disabled, skipping branch creation')
+              fcAppendLog('Git branching disabled, skipping branch creation')
               return 'skipped'
             }
 
-            appendFullCycleLog(`Creating branch: ${branchName}`)
+            fcAppendLog(`Creating branch: ${branchName}`)
 
             const fromBranch = enableEpicBranches ? undefined : baseBranch
-            const result = await window.gitAPI.createBranch(projectPath, branchName, fromBranch)
+            const result = await window.gitAPI.createBranch(cyclePath, branchName, fromBranch)
 
             if (currentRunIdRef.current !== runId) return 'error'
 
             if (result.alreadyExists) {
-              appendFullCycleLog(`Branch ${branchName} already exists, checking out`)
-              const checkoutResult = await window.gitAPI.checkoutBranch(projectPath, branchName)
+              fcAppendLog(`Branch ${branchName} already exists, checking out`)
+              const checkoutResult = await window.gitAPI.checkoutBranch(cyclePath, branchName)
               if (!checkoutResult.success) {
-                appendFullCycleLog(`Failed to checkout: ${checkoutResult.error}`)
+                fcAppendLog(`Failed to checkout: ${checkoutResult.error}`)
                 return 'error'
               }
             } else if (!result.success) {
-              appendFullCycleLog(`Failed to create branch: ${result.error}`)
+              fcAppendLog(`Failed to create branch: ${result.error}`)
               return 'error'
             }
 
             setCurrentBranch(branchName)
-            appendFullCycleLog('Branch ready')
+            fcAppendLog('Branch ready')
             return 'success'
           }
 
           if (step.gitAction === 'commit') {
             // Small delay to ensure filesystem has synced
-            await new Promise(r => setTimeout(r, 500))
+            await new Promise(r => setTimeout(r, 200))
 
             const commitType = step.commitMessage?.startsWith('fix') ? 'fix' : step.commitMessage?.startsWith('docs') ? 'docs' : 'feat'
             const message = `${commitType}(${branchName}): ${step.commitMessage?.replace(/^(fix|docs|feat): /, '') || 'update'}`
 
-            appendFullCycleLog(`Committing: ${message}`)
+            fcAppendLog(`Committing: ${message}`)
             // Attempt commit directly - git add . forces content check, avoiding
             // racy git issues where stat cache misses recent writes
-            const result = await window.gitAPI.commit(projectPath, message, true)
+            const result = await window.gitAPI.commit(cyclePath, message, true)
 
             if (currentRunIdRef.current !== runId) return 'error'
 
             if (!result.success) {
               if (result.error?.includes('Nothing to commit') || result.error?.includes('nothing to commit')) {
-                appendFullCycleLog('No changes to commit, skipping')
+                fcAppendLog('No changes to commit, skipping')
                 return 'skipped'
               }
-              appendFullCycleLog(`Failed to commit: ${result.error}`)
+              fcAppendLog(`Failed to commit: ${result.error}`)
               return 'error'
             }
 
             setHasUncommittedChanges(false)
-            appendFullCycleLog('Committed successfully')
+            fcAppendLog('Committed successfully')
             return 'success'
           }
 
           if (step.gitAction === 'merge') {
             // Skip merge when git branching is disabled (already on base branch)
             if (disableGitBranching) {
-              appendFullCycleLog('Git branching disabled, skipping merge')
+              fcAppendLog('Git branching disabled, skipping merge')
               return 'skipped'
             }
 
-            await new Promise(r => setTimeout(r, 500))
-            const preCheckChanges = await window.gitAPI.hasChanges(projectPath)
+            await new Promise(r => setTimeout(r, 200))
+            const preCheckChanges = await window.gitAPI.hasChanges(cyclePath)
             if (currentRunIdRef.current !== runId) return 'error'
 
             if (preCheckChanges.hasChanges) {
-              appendFullCycleLog('Found uncommitted changes, committing before merge...')
+              fcAppendLog('Found uncommitted changes, committing before merge...')
               const safetyCommit = await window.gitAPI.commit(
-                projectPath,
+                cyclePath,
                 `chore(${branchName}): auto-commit before merge`,
                 true
               )
               if (!safetyCommit.success) {
-                appendFullCycleLog(`Failed to commit changes: ${safetyCommit.error}`)
+                fcAppendLog(`Failed to commit changes: ${safetyCommit.error}`)
                 return 'error'
               }
               setHasUncommittedChanges(false)
             }
 
-            appendFullCycleLog(`Checking out ${baseBranch}...`)
-            const checkoutResult = await window.gitAPI.checkoutBranch(projectPath, baseBranch)
+            fcAppendLog(`Checking out ${baseBranch}...`)
+            const checkoutResult = await window.gitAPI.checkoutBranch(cyclePath, baseBranch)
             if (currentRunIdRef.current !== runId) return 'error'
 
             if (!checkoutResult.success) {
-              appendFullCycleLog(`Failed to checkout ${baseBranch}: ${checkoutResult.error}`)
+              fcAppendLog(`Failed to checkout ${baseBranch}: ${checkoutResult.error}`)
               return 'error'
             }
 
             setCurrentBranch(baseBranch)
 
-            appendFullCycleLog(`Merging ${branchName} into ${baseBranch}...`)
-            const mergeResult = await window.gitAPI.mergeBranch(projectPath, branchName)
+            fcAppendLog(`Merging ${branchName} into ${baseBranch}...`)
+            const mergeResult = await window.gitAPI.mergeBranch(cyclePath, branchName)
             if (currentRunIdRef.current !== runId) return 'error'
 
             if (!mergeResult.success) {
               if (mergeResult.hasConflicts) {
-                appendFullCycleLog(`Merge conflicts detected - manual resolution required`)
+                fcAppendLog(`Merge conflicts detected - manual resolution required`)
               } else {
-                appendFullCycleLog(`Failed to merge: ${mergeResult.error}`)
+                fcAppendLog(`Failed to merge: ${mergeResult.error}`)
               }
               return 'error'
             }
 
-            appendFullCycleLog(`Successfully merged ${branchName} into ${baseBranch}`)
+            fcAppendLog(`Successfully merged ${branchName} into ${baseBranch}`)
             return 'success'
           }
 
@@ -723,18 +845,18 @@ export default function FullCycleOrchestrator() {
 
         case 'status': {
           if (story.filePath) {
-            appendFullCycleLog('Updating story status to done')
+            fcAppendLog('Updating story status to done')
             const result = await window.fileAPI.updateStoryStatus(story.filePath, 'done')
 
             if (currentRunIdRef.current !== runId) return 'error'
 
             if (!result.success) {
-              appendFullCycleLog(`Failed to update status: ${result.error}`)
+              fcAppendLog(`Failed to update status: ${result.error}`)
               return 'error'
             }
-            appendFullCycleLog('Story marked as done')
+            fcAppendLog('Story marked as done')
           } else {
-            appendFullCycleLog('No story file to update status')
+            fcAppendLog('No story file to update status')
           }
           return 'success'
         }
@@ -743,11 +865,10 @@ export default function FullCycleOrchestrator() {
           return 'success'
       }
     } catch (error) {
-      appendFullCycleLog(`Error: ${error}`)
+      fcAppendLog(`Error: ${error}`)
       return 'error'
     }
   }, [
-    projectPath,
     stories,
     aiTool,
     baseBranch,
@@ -755,8 +876,8 @@ export default function FullCycleOrchestrator() {
     disableGitBranching,
     getSteps,
     executeAgentStep,
-    appendFullCycleLog,
-    updateFullCycleStep,
+    fcAppendLog,
+    fcUpdateStep,
     setCurrentBranch,
     setHasUncommittedChanges,
     saveChatHistoryAndClear
@@ -770,7 +891,7 @@ export default function FullCycleOrchestrator() {
       if (currentRunIdRef.current !== runId) return
 
       if (stepStatuses[i] === 'completed' || stepStatuses[i] === 'skipped') {
-        appendFullCycleLog(`Skipping ${steps[i]?.name} (already ${stepStatuses[i]})`)
+        fcAppendLog(`Skipping ${steps[i]?.name} (already ${stepStatuses[i]})`)
         continue
       }
 
@@ -779,20 +900,20 @@ export default function FullCycleOrchestrator() {
       if (currentRunIdRef.current !== runId) return
 
       if (result === 'error') {
-        setFullCycleError(`Step "${steps[i]?.name}" failed`)
+        fcSetError(`Step "${steps[i]?.name}" failed`)
         return
       } else if (result === 'skipped') {
-        skipFullCycleStep(i)
+        fcSkip(i)
       } else {
-        advanceFullCycleStep()
+        fcAdvance()
       }
     }
 
     if (currentRunIdRef.current === runId) {
-      appendFullCycleLog('\n=== Full cycle complete! ===')
-      completeFullCycle()
+      fcAppendLog('\n=== Full cycle complete! ===')
+      fcComplete()
     }
-  }, [getSteps, executeStep, skipFullCycleStep, advanceFullCycleStep, setFullCycleError, appendFullCycleLog, completeFullCycle])
+  }, [getSteps, executeStep, fcSkip, fcAdvance, fcSetError, fcAppendLog, fcComplete])
 
   // Watch for new full cycle runs to start (or retry)
   useEffect(() => {
@@ -802,9 +923,13 @@ export default function FullCycleOrchestrator() {
     if (isProcessingRef.current) return
     // Prevent full cycle in read-only mode
     if (useStore.getState().isReadOnly()) {
-      setFullCycleError('Cannot run full cycle in read-only mode')
+      fcSetError('Cannot run full cycle in read-only mode')
       return
     }
+
+    // Capture the project path for this cycle — all state updates and IPC calls
+    // will use this path, even if the user switches to a different project.
+    cycleProjectPathRef.current = useStore.getState().projectPath
 
     currentRunIdRef.current = `${fullCycle.storyId}-${Date.now()}`
     isProcessingRef.current = true
@@ -816,12 +941,13 @@ export default function FullCycleOrchestrator() {
     runAllSteps(runId, storyId, startFromStep, stepStatuses).finally(() => {
       isProcessingRef.current = false
     })
-  }, [fullCycle.isRunning, fullCycle.currentStep, fullCycle.error, fullCycle.storyId, fullCycle.stepStatuses, runAllSteps])
+  }, [fullCycle.isRunning, fullCycle.currentStep, fullCycle.error, fullCycle.storyId, fullCycle.stepStatuses, runAllSteps, fcSetError])
 
   // Reset run ID when cycle completes or is cancelled
   useEffect(() => {
     if (!fullCycle.isRunning) {
       currentRunIdRef.current = null
+      cycleProjectPathRef.current = null
     }
   }, [fullCycle.isRunning])
 
