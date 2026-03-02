@@ -14,7 +14,7 @@ const MIN_WIDTH = 320
 const MIN_HEIGHT = 300
 const MAX_WIDTH = 800
 const MAX_HEIGHT = 900
-const DEFAULT_WIDTH = 380
+const DEFAULT_WIDTH = 480
 const DEFAULT_HEIGHT = 500
 
 export default function BmadHelpWidget() {
