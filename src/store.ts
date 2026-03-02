@@ -627,6 +627,10 @@ interface AppState {
   ) => void;
   setEnvCheckLoading: (loading: boolean) => void;
 
+  // BMAD Help Widget
+  bmadHelpOpen: boolean;
+  setBmadHelpOpen: (open: boolean) => void;
+
   // Project Workflows Dialog
   projectWorkflowsDialogOpen: boolean;
   setProjectWorkflowsDialogOpen: (open: boolean) => void;
@@ -1876,6 +1880,10 @@ export const useStore = create<AppState>()(
       setEnvCheckDialogOpen: (open) => set({ envCheckDialogOpen: open }),
       setEnvCheckResults: (results) => set({ envCheckResults: results }),
       setEnvCheckLoading: (loading) => set({ envCheckLoading: loading }),
+
+      // BMAD Help Widget
+      bmadHelpOpen: false,
+      setBmadHelpOpen: (open) => set({ bmadHelpOpen: open }),
 
       // Project Workflows Dialog
       projectWorkflowsDialogOpen: false,

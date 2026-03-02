@@ -31,6 +31,7 @@ import ProjectWorkflowsDialog from './components/ProjectWorkflowsDialog/ProjectW
 import IncompatibleVersionDialog from './components/IncompatibleVersionDialog'
 import { EnvCheckDialog } from './components/EnvCheckDialog'
 import { OpenRemoteDialog } from './components/RemoteBranchViewer'
+import { BmadHelpWidget } from './components/BmadHelpWidget'
 
 const AGENT_PANEL_WIDTH = 500
 
@@ -277,6 +278,7 @@ export default function App() {
                 <AgentChat />
               </Box>
             </Box>
+            <BmadHelpWidget />
           </GlobalChatHandler>
         ) : !projectPath ? (
           <WelcomeDialog />
@@ -431,6 +433,7 @@ export default function App() {
               </>
             )}
             <ProjectWorkflowsDialog />
+            <BmadHelpWidget />
           </GlobalChatHandler>
         )}
       </Box>
