@@ -145,10 +145,13 @@ export default function WelcomeDialog() {
                             {project.isRemote && (
                               <Chip label="Remote" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: '0.6rem', ml: 0.5 }} />
                             )}
+                            {project.wizardInProgress && (
+                              <Chip label="Setting up" size="small" variant="outlined" color="warning" sx={{ height: 18, fontSize: '0.6rem', ml: 0.5 }} />
+                            )}
                           </Box>
                         }
                         secondary={project.isRemote ? project.remoteUrl : project.path}
-                        primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+                        primaryTypographyProps={{ variant: 'body2', fontWeight: 500, component: 'div' as const }}
                         secondaryTypographyProps={{
                           variant: 'caption',
                           noWrap: true,

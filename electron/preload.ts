@@ -502,6 +502,9 @@ export interface ChatAPI {
     model?: ClaudeModel // Claude model to use (only for claude-code)
     customEndpoint?: CustomEndpointConfig | null // Custom endpoint config (for custom-endpoint tool)
     agentCommand?: string // Pre-resolved agent command from scan data
+    pendingMessage?: string // Message to auto-send after agent load succeeds
+    pendingAssistantMsgId?: string // Placeholder message ID for the auto-sent response
+    pendingUserMsgId?: string // User message ID for JSONL persistence
   }) => Promise<{ success: boolean; error?: string }>
   // Message sending - spawns new process per message, uses --resume for conversation continuity
   sendMessage: (options: {

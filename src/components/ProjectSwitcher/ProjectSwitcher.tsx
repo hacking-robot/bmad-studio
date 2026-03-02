@@ -298,6 +298,9 @@ export default function ProjectSwitcher() {
                     {project.isRemote && (
                       <Chip label="Remote" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: '0.6rem' }} />
                     )}
+                    {project.wizardInProgress && (
+                      <Chip label="Setting up" size="small" variant="outlined" color="warning" sx={{ height: 18, fontSize: '0.6rem' }} />
+                    )}
                     {/* Pulsing dot + agent count for projects with active work */}
                     {hasActiveWork(project.path) && (
                       <>

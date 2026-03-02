@@ -2140,6 +2140,9 @@ ipcMain.handle('chat-load-agent', async (_, options: {
   model?: ClaudeModel
   customEndpoint?: { name: string; baseUrl: string; apiKey: string; modelName: string } | null
   agentCommand?: string
+  pendingMessage?: string
+  pendingAssistantMsgId?: string
+  pendingUserMsgId?: string
 }) => {
   chatStateManager.setMainWindow(mainWindow)
   return chatAgentManager.loadAgent(options)

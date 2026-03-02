@@ -624,7 +624,9 @@ export default function FullCycleOrchestrator() {
           tool: aiTool,
           model: aiTool === 'claude-code' ? claudeModel : undefined,
           customEndpoint: aiTool === 'custom-endpoint' ? customEndpoint : undefined,
-          agentCommand
+          agentCommand,
+          pendingMessage: command,
+          pendingAssistantMsgId: assistantMsgId,
         }).catch((err) => {
           if (!resolved) {
             resolved = true

@@ -369,6 +369,7 @@ export interface BackgroundProjectState {
   developerMode: 'ai' | 'human'
   scannedWorkflowConfig: import('./flow').WorkflowConfig | null
   bmadScanResult: import('./bmadScan').BmadScanResult | null
+  projectWizard?: import('./projectWizard').ProjectWizardState
 }
 
 // NOTE: BMAD agent definitions are now in src/data/flow-bmm.json and src/data/flow-gds.json

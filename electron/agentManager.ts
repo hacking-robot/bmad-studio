@@ -251,6 +251,8 @@ class ChatAgentManager {
 
   // Load a BMAD agent - spawns the AI tool with just the agent command
   // Returns session ID via chat:exit event for subsequent messages (Claude only)
+  // If pendingMessage is provided, automatically sends it after agent load completes,
+  // eliminating the fragile renderer round-trip through chat:agent-ready.
   loadAgent(
     options: {
       agentId: string
@@ -260,6 +262,9 @@ class ChatAgentManager {
       model?: ClaudeModel
       customEndpoint?: CustomEndpointConfig | null
       agentCommand?: string // Pre-resolved agent command from scan data (preferred over hardcoded format)
+      pendingMessage?: string // Message to auto-send after agent load succeeds
+      pendingAssistantMsgId?: string // Placeholder message ID for the auto-sent message
+      pendingUserMsgId?: string // User message ID for JSONL persistence
     }
   ): { success: boolean; error?: string } {
     const tool = options.tool || 'claude-code'
@@ -431,6 +436,39 @@ class ChatAgentManager {
           options.projectPath, options.agentId, code,
           capturedSessionId, undefined
         )
+
+        // Auto-send pending message after successful agent load.
+        // This eliminates the fragile renderer round-trip (setPendingMessage → onAgentReady → sendMessage)
+        // that was prone to race conditions when GlobalChatHandler remounted or project paths changed.
+        if (code === 0 && capturedSessionId && options.pendingMessage && options.pendingAssistantMsgId) {
+          console.log('[ChatAgentManager] Auto-sending pending message after agent load:', options.agentId)
+          // Persist user message to JSONL (mirroring chat-send-message IPC handler)
+          if (options.pendingUserMsgId) {
+            chatStateManager.appendMessage(options.projectPath, options.agentId, {
+              id: options.pendingUserMsgId, role: 'user', content: options.pendingMessage,
+              timestamp: Date.now(), status: 'complete'
+            })
+          }
+          // Set current message ID so streaming output uses the renderer's placeholder ID
+          chatStateManager.setCurrentMessageId(options.projectPath, options.agentId, options.pendingAssistantMsgId)
+          const sendResult = this.sendMessage({
+            agentId: options.agentId,
+            projectPath: options.projectPath,
+            message: options.pendingMessage,
+            sessionId: capturedSessionId,
+            tool: options.tool,
+            model: options.model,
+            customEndpoint: options.customEndpoint,
+          })
+          if (!sendResult.success) {
+            console.error('[ChatAgentManager] Auto-send failed:', sendResult.error)
+            // Emit error to renderer so it can show the failure
+            chatStateManager.handleExit(
+              options.projectPath, options.agentId,
+              -1, null, capturedSessionId, false
+            )
+          }
+        }
       })
 
       // Handle errors

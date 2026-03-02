@@ -98,6 +98,22 @@ export default function AgentChat() {
             }
           }
         }
+
+        // Also check Zustand chatThreads for stale typing flags from background restore.
+        // When a process exits while the project is in background, the disk status gets
+        // isTyping: false but the Zustand state (restored from backgroundProjects) may
+        // still have isTyping: true. The disk loop above skips these since disk says false.
+        const threads = useStore.getState().chatThreads
+        for (const [agentId, thread] of Object.entries(threads)) {
+          if (thread.isTyping) {
+            const isRunning = await window.chatAPI.isAgentRunning(agentId, projectPath)
+            if (!isRunning) {
+              console.log('[AgentChat] Clearing stale background typing flag for agent:', agentId)
+              useStore.getState().setChatTyping(agentId, false)
+              useStore.getState().setChatActivity(agentId, undefined)
+            }
+          }
+        }
       })
     }
   }, [projectPath])

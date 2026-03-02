@@ -53,6 +53,7 @@ export interface RecentProject {
   isRemote?: boolean;
   remoteUrl?: string;
   remoteCachePath?: string;
+  wizardInProgress?: boolean;
 }
 
 const MAX_HISTORY_ENTRIES = 50;
@@ -1759,6 +1760,7 @@ export const useStore = create<AppState>()(
               developerMode: state.developerMode,
               scannedWorkflowConfig: state.scannedWorkflowConfig,
               bmadScanResult: state.bmadScanResult,
+              ...(state.projectWizard.isActive ? { projectWizard: { ...state.projectWizard } } : {}),
             },
           },
         });
@@ -1883,12 +1885,23 @@ export const useStore = create<AppState>()(
         const steps = getWizardSteps(
           primary as "bmm" | "gds" | "dashboard",
         );
+        const projectName = projectPath.split("/").pop() || "Unknown";
+        const resolvedOutput = outputFolder || "_bmad-output";
+        // Add to recent projects so user can exit wizard and resume later
+        get().addRecentProject({
+          path: projectPath,
+          projectType: primary as ProjectType,
+          name: projectName,
+          outputFolder: resolvedOutput,
+          developerMode,
+          wizardInProgress: true,
+        });
         set({
           projectWizard: {
             ...initialWizardState,
             isActive: true,
             projectPath,
-            outputFolder: outputFolder || "_bmad-output",
+            outputFolder: resolvedOutput,
             developerMode,
             selectedModules: modules,
             customContentPaths: customContentPaths?.length ? customContentPaths : undefined,
@@ -1899,7 +1912,7 @@ export const useStore = create<AppState>()(
           // Set project path/type so AgentChat can function during wizard
           projectPath,
           projectType: primary as ProjectType,
-          outputFolder: outputFolder || "_bmad-output",
+          outputFolder: resolvedOutput,
           developerMode: developerMode || "ai",
           // Clear stale scan data from previous project so old agents don't show
           bmadScanResult: null,
@@ -1970,12 +1983,15 @@ export const useStore = create<AppState>()(
         set({
           projectWizard: initialWizardState,
         }),
-      cancelWizard: () =>
+      cancelWizard: () => {
+        // Save current state to background so wizard + agents can be resumed
+        get().saveToBackground();
         set({
           projectWizard: initialWizardState,
           projectPath: null,
           projectType: null,
-        }),
+        });
+      },
       resumeWizard: (wizardState) =>
         set({
           projectWizard: { ...wizardState, error: null },
@@ -1987,6 +2003,7 @@ export const useStore = create<AppState>()(
           developerMode: wizardState.developerMode || "ai",
           bmadScanResult: null,
           scannedWorkflowConfig: null,
+          loading: false,
         }),
       goToWizardStep: (stepIndex) =>
         set((state) => ({
