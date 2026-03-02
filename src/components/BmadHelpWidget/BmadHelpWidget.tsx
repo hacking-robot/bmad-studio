@@ -12,7 +12,7 @@ import HelpChatThread from './HelpChatThread'
 const AGENT_ID = 'bmad-help'
 const MIN_WIDTH = 320
 const MIN_HEIGHT = 300
-const MAX_WIDTH = 800
+const MAX_WIDTH = 1000
 const MAX_HEIGHT = 900
 const DEFAULT_WIDTH = 480
 const DEFAULT_HEIGHT = 500
@@ -26,11 +26,12 @@ export default function BmadHelpWidget() {
   const chatThreads = useStore((state) => state.chatThreads)
 
   const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
-  const [isFullSize, setIsFullSize] = useState(false)
-  const prevSizeRef = useRef({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
   const isResizing = useRef(false)
   const sizeRef = useRef(size)
   sizeRef.current = size
+
+  // Consider "full size" if both dimensions are at or near max
+  const isFullSize = size.width >= MAX_WIDTH - 20 && size.height >= MAX_HEIGHT - 20
 
   const selectedToolInfo = AI_TOOLS.find(t => t.id === aiTool)
   const toolSupportsHeadless = selectedToolInfo?.cli.supportsHeadless ?? false
@@ -50,16 +51,13 @@ export default function BmadHelpWidget() {
   }, [])
 
   const handleToggleFullSize = useCallback(() => {
-    setIsFullSize(prev => {
-      if (prev) {
-        setSize(prevSizeRef.current)
-        return false
-      } else {
-        prevSizeRef.current = sizeRef.current
-        setSize({ width: MAX_WIDTH, height: MAX_HEIGHT })
-        return true
-      }
-    })
+    const cur = sizeRef.current
+    const atMax = cur.width >= MAX_WIDTH - 20 && cur.height >= MAX_HEIGHT - 20
+    if (atMax) {
+      setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
+    } else {
+      setSize({ width: MAX_WIDTH, height: MAX_HEIGHT })
+    }
   }, [])
 
   // Resize from top edge (height only)
@@ -73,7 +71,7 @@ export default function BmadHelpWidget() {
       if (!isResizing.current) return
       const newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startHeight - (ev.clientY - startY)))
       setSize(prev => ({ ...prev, height: newHeight }))
-      setIsFullSize(false)
+
     }
 
     const onMouseUp = () => {
@@ -101,7 +99,7 @@ export default function BmadHelpWidget() {
       if (!isResizing.current) return
       const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth - (ev.clientX - startX)))
       setSize(prev => ({ ...prev, width: newWidth }))
-      setIsFullSize(false)
+
     }
 
     const onMouseUp = () => {
@@ -132,7 +130,7 @@ export default function BmadHelpWidget() {
       const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth - (ev.clientX - startX)))
       const newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startHeight - (ev.clientY - startY)))
       setSize({ width: newWidth, height: newHeight })
-      setIsFullSize(false)
+
     }
 
     const onMouseUp = () => {
