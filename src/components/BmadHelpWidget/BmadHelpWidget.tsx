@@ -24,6 +24,10 @@ export default function BmadHelpWidget() {
   const projectPath = useStore((state) => state.projectPath)
   const aiTool = useStore((state) => state.aiTool)
   const chatThreads = useStore((state) => state.chatThreads)
+  const wizardActive = useStore((state) => state.projectWizard.isActive)
+
+  // In wizard mode there's no StatusBar, so position closer to bottom edge
+  const bottomOffset = wizardActive ? 12 : 36
 
   const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
   const isResizing = useRef(false)
@@ -167,7 +171,7 @@ export default function BmadHelpWidget() {
         <Box
           sx={{
             position: 'fixed',
-            bottom: 36,
+            bottom: bottomOffset,
             right: 16,
             width: size.width,
             height: size.height,
@@ -251,7 +255,7 @@ export default function BmadHelpWidget() {
           onClick={handleToggle}
           sx={{
             position: 'fixed',
-            bottom: 36,
+            bottom: bottomOffset,
             right: 16,
             zIndex: 1200,
             textTransform: 'none',
