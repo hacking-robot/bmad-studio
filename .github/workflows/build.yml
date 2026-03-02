@@ -69,12 +69,14 @@ jobs:
       - name: Determine ref
         id: ref
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
             echo "checkout_ref=${{ github.ref }}" >> $GITHUB_OUTPUT
             echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            VERSION=$(curl -s "https://api.github.com/repos/${{ github.repository }}/tags?per_page=1" | jq -r '.[0].name')
+            VERSION=$(gh api repos/${{ github.repository }}/tags --jq '.[0].name' 2>/dev/null)
             if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
               echo "Error: Could not determine latest tag"
               exit 1
@@ -119,11 +121,13 @@ jobs:
       - name: Determine version
         id: version
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
             echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            VERSION=$(curl -s "https://api.github.com/repos/${{ github.repository }}/tags?per_page=1" | jq -r '.[0].name')
+            VERSION=$(gh api repos/${{ github.repository }}/tags --jq '.[0].name' 2>/dev/null)
             if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
               echo "Error: Could not determine latest tag"
               exit 1
