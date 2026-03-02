@@ -3,6 +3,8 @@ import { Box, Fab, Badge, Typography, IconButton, Grow } from '@mui/material'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import CloseIcon from '@mui/icons-material/Close'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import OpenInFullIcon from '@mui/icons-material/OpenInFull'
+import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen'
 import { useStore } from '../../store'
 import { AI_TOOLS } from '../../types'
 import HelpChatThread from './HelpChatThread'
@@ -25,6 +27,8 @@ export default function BmadHelpWidget() {
   const clearChatThread = useStore((state) => state.clearChatThread)
 
   const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
+  const [isFullSize, setIsFullSize] = useState(false)
+  const prevSizeRef = useRef({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
   const isResizing = useRef(false)
 
   const selectedToolInfo = AI_TOOLS.find(t => t.id === aiTool)
@@ -47,6 +51,17 @@ export default function BmadHelpWidget() {
   const handleClear = () => {
     clearChatThread(AGENT_ID)
     window.chatAPI.cancelMessage(AGENT_ID, projectPath || undefined)
+  }
+
+  const handleToggleFullSize = () => {
+    if (isFullSize) {
+      setSize(prevSizeRef.current)
+      setIsFullSize(false)
+    } else {
+      prevSizeRef.current = size
+      setSize({ width: MAX_WIDTH, height: MAX_HEIGHT })
+      setIsFullSize(true)
+    }
   }
 
   // Resize from top edge (height only)
@@ -201,6 +216,9 @@ export default function BmadHelpWidget() {
             </Typography>
             <IconButton size="small" onClick={handleClear} sx={{ color: 'inherit', mr: 0.5 }} title="Clear chat">
               <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+            <IconButton size="small" onClick={handleToggleFullSize} sx={{ color: 'inherit', mr: 0.5 }} title={isFullSize ? 'Restore size' : 'Full size'}>
+              {isFullSize ? <CloseFullscreenIcon sx={{ fontSize: 16 }} /> : <OpenInFullIcon sx={{ fontSize: 16 }} />}
             </IconButton>
             <IconButton size="small" onClick={() => setBmadHelpOpen(false)} sx={{ color: 'inherit' }}>
               <CloseIcon sx={{ fontSize: 18 }} />
